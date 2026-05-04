@@ -1,0 +1,104 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-head calendar-page-head">
+  <div>
+    <h1>ปฏิทินการศึกษา / วันหยุด / วันทำงาน</h1>
+    <p class="muted">ใช้สำหรับให้ระบบข้ามวันหยุด คำนวณวันทำงาน และวางแผนรายคาบทั้งเทอม</p>
+  </div>
+  <form method="get" class="semester-picker">
+    <select name="semester_id" onchange="this.form.submit()">
+      {% for s in semesters %}
+      <option value="{{s.id}}" {% if selected_semester and s.id==selected_semester.id %}selected{% endif %}>{{s.name}}</option>
+      {% endfor %}
+    </select>
+  </form>
+</div>
+
+{% if selected_semester %}
+<div class="card semester-banner">
+  <div>
+    <div class="eyebrow">ภาคเรียนที่ใช้งาน</div>
+    <h2>{{ selected_semester.name }}</h2>
+    <p>{{ selected_semester.start_date.strftime('%d/%m/%Y') }} - {{ selected_semester.end_date.strftime('%d/%m/%Y') }}</p>
+  </div>
+  <form method="post" action="{{ url_for('calendar_seed_1_2569') }}" onsubmit="return confirm('นำเข้าปฏิทินการศึกษา 1/2569 ตามภาพตัวอย่าง?')">
+    <button class="success-btn">นำเข้าปฏิทิน 1/2569</button>
+  </form>
+</div>
+{% endif %}
+
+<div class="color-cards compact-cards">
+  {% for row in summary or [] %}
+  <div class="stat-card teal readable-stat">
+    <div class="stat-title">{{ row.month }}</div>
+    <div class="stat-number">{{ row.working }}</div>
+    <div class="stat-foot">วันทำงาน · หยุดราชการ {{ row.holiday }} · เสาร์อาทิตย์ {{ row.weekend }}</div>
+  </div>
+  {% endfor %}
+</div>
+
+<div class="card import-panel">
+  <h2>อัปเดตปฏิทินเทอมนี้</h2>
+  <div class="import-grid">
+    <form method="post" action="{{ url_for('calendar_import_excel') }}" enctype="multipart/form-data">
+      <input type="hidden" name="semester_id" value="{{ selected_semester.id if selected_semester else '' }}">
+      <label>นำเข้าจาก Excel</label>
+      <input type="file" name="file" accept=".xlsx,.xls" required>
+      <p class="hint">คอลัมน์ที่รองรับ: date/วันที่, title/รายการ, event_type/ประเภท, note/หมายเหตุ</p>
+      <button>นำเข้า/อัปเดตข้อมูล</button>
+    </form>
+    <form method="post" action="{{ url_for('calendar_upload_image') }}" enctype="multipart/form-data">
+      <input type="hidden" name="semester_id" value="{{ selected_semester.id if selected_semester else '' }}">
+      <label>แนบรูปปฏิทินการศึกษา</label>
+      <input type="file" name="image" accept="image/*" required>
+      <p class="hint">ใช้เก็บเป็นต้นฉบับอ้างอิงก่อนกรอกหรือ Import Excel</p>
+      <button class="secondary">บันทึกรูปอ้างอิง</button>
+    </form>
+  </div>
+  {% if images %}
+  <div class="uploaded-images">
+    <b>รูปปฏิทินที่แนบไว้:</b>
+    {% for img in images %}<span class="event-chip">{{ img.original_name }}</span>{% endfor %}
+  </div>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>{{ 'แก้ไขรายการปฏิทิน' if event else 'เพิ่มรายการปฏิทิน' }}</h2>
+  <form method="post" class="grid-form">
+    <input type="date" name="event_date" value="{{event.event_date if event else ''}}" required>
+    <input name="title" placeholder="ชื่อรายการ" value="{{event.title if event else ''}}" required>
+    <select name="event_type">
+      {% for t in ['วันทำงาน','วันหยุดราชการ','วันหยุดโรงเรียน','กิจกรรมโรงเรียน','ไปราชการ','อบรม','แข่งขัน'] %}
+      <option value="{{t}}" {% if event and event.event_type==t %}selected{% endif %}>{{t}}</option>
+      {% endfor %}
+    </select>
+    <input name="note" placeholder="หมายเหตุ" value="{{event.note if event else ''}}">
+    {% if current_user.role=='admin' %}<label class="check-inline"><input type="checkbox" name="global_event" checked> ปฏิทินกลาง</label>{% endif %}
+    <button>{{'บันทึกแก้ไข' if event else 'เพิ่มรายการ'}}</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2>รายการปฏิทิน</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>วันที่</th><th>ประเภท</th><th>รายการ</th><th>หมายเหตุ</th><th>จัดการ</th></tr>
+      {% for e in events %}
+      <tr>
+        <td data-label="วันที่">{{e.event_date.strftime('%d/%m/%Y')}}</td>
+        <td data-label="ประเภท"><span class="pill {{ 'red' if 'หยุด' in e.event_type else 'green' if e.event_type=='วันทำงาน' else 'blue' }}">{{e.event_type}}</span></td>
+        <td data-label="รายการ">{{e.title}}</td>
+        <td data-label="หมายเหตุ">{{e.note}}</td>
+        <td data-label="จัดการ">
+          <a class="btn small" href="{{url_for('calendar_edit', event_id=e.id)}}">แก้ไข</a>
+          {% if current_user.role=='admin' or e.teacher_id==current_user.id %}
+          <form method="post" action="{{url_for('calendar_delete', event_id=e.id)}}" class="inline" onsubmit="return confirm('ลบรายการนี้?')"><button class="danger-btn small">ลบ</button></form>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+</div>
+{% endblock %}

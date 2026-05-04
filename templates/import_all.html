@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>นำเข้า Excel ทั้งระบบ</h1>
+    <p>ใช้ไฟล์ตัวอย่างเพื่อเพิ่ม/อัปเดตครู นักเรียน รายวิชา ห้องเรียน บทเรียน ใบงาน แบบทดสอบ ตารางสอน และปฏิทินในครั้งเดียว</p>
+  </div>
+  <a class="btn secondary" href="{{ url_for('download_import_template') }}">⬇️ ดาวน์โหลดไฟล์ตัวอย่าง</a>
+</div>
+<section class="card import-all-card">
+  <form method="post" enctype="multipart/form-data">
+    <label>เลือกไฟล์ Excel (.xlsx)</label>
+    <input type="file" name="file" accept=".xlsx" required>
+    <button>นำเข้าข้อมูล</button>
+  </form>
+  <div class="hint-box">
+    <b>ชีตที่รองรับ</b>
+    <div class="chip-list">
+      <span>Teachers</span><span>Students</span><span>Subjects</span><span>Classrooms</span><span>TeacherAssignments</span><span>Units</span><span>Lessons</span><span>Worksheets</span><span>WorksheetQuestions</span><span>Quizzes</span><span>QuizQuestions</span><span>Schedule</span><span>Calendar</span>
+    </div>
+    <p class="muted">กรอกเพิ่มในไฟล์ตัวอย่างได้เลย ระบบจะสร้างรายการใหม่ และอัปเดตรายการเดิมบางส่วนจากชื่อ/รหัสที่ตรงกัน</p>
+  </div>
+</section>
+{% endblock %}

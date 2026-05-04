@@ -1,0 +1,15 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>แก้ไขห้องเรียน</h1>
+<form method="post" class="card form-stack">
+  <label>ชื่อห้อง</label><input name="name" value="{{room.name}}" required>
+  {% if current_user.role=='admin' %}
+  <label>ครูหลัก</label>
+  <select name="teacher_id">
+    <option value="">ยังไม่เลือกครู</option>
+    {% for t in teachers %}<option value="{{t.id}}" {% if room.teacher_id==t.id %}selected{% endif %}>{{t.full_name}}</option>{% endfor %}
+  </select>
+  {% endif %}
+  <button>บันทึก</button><a class="btn secondary" href="{{url_for('classrooms')}}">กลับ</a>
+</form>
+{% endblock %}

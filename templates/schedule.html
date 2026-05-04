@@ -1,0 +1,146 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>ตารางสอน</h1>
+    <p>สรุปตารางสอนรายสัปดาห์ แอดมินเลือกดูแยกตามครูได้ ครูและนักเรียนเห็นเฉพาะของตนเอง</p>
+  </div>
+  <div class="actions-row">
+    <button type="button" class="btn" onclick="saveScheduleImage()">📸 บันทึกตารางเป็นรูปภาพ</button>
+    <a class="btn secondary" href="#schedule-form">+ เพิ่มคาบ</a>
+  </div>
+</div>
+
+{% if current_user.role == 'admin' %}
+<section class="card">
+  <form method="get" class="form-row">
+    <label>ดูตารางของครู</label>
+    <select name="teacher_id" onchange="this.form.submit()">
+      <option value="">เลือกครู</option>
+      {% for t in teachers %}<option value="{{t.id}}" {% if active_teacher_id==t.id %}selected{% endif %}>{{t.full_name}} ({{t.username}})</option>{% endfor %}
+    </select>
+    <a class="btn secondary" href="{{ url_for('teacher_assignments') }}">มอบหมายวิชา/ห้องให้ครู</a>
+  </form>
+</section>
+{% endif %}
+
+<section class="card import-card">
+  <h2>นำเข้าตารางสอนจาก Excel</h2>
+  <form method="post" action="{{ url_for('schedule_import') }}" enctype="multipart/form-data" class="form-row">
+    {% if current_user.role == 'admin' %}
+    <select name="teacher_id" required>
+      <option value="">เลือกครูเจ้าของตาราง</option>
+      {% for t in teachers %}<option value="{{t.id}}" {% if active_teacher_id==t.id %}selected{% endif %}>{{t.full_name}}</option>{% endfor %}
+    </select>
+    {% endif %}
+    <input type="file" name="excel" accept=".xlsx,.xls" required>
+    <button>นำเข้า Excel</button>
+  </form>
+  <p class="hint">รูปแบบคอลัมน์ที่รองรับ: <b>วัน, คาบ, รายวิชา, ห้อง, สถานที่, หัวข้อ</b> เช่น จันทร์ | 1 | ว21104 วิทยาการคำนวณ 1 | ม.1/2-3 | ห้อง ม.1/2-3 | อัลกอริทึม</p>
+</section>
+
+<section class="schedule-summary-card compact-schedule" id="schedule-capture">
+  <div class="schedule-title">ตารางจัดการเรียนการสอน</div>
+  <div class="schedule-subtitle">เจ้าของตาราง: {{ teacher_title }} · ระบบครูรักสอน</div>
+  <div class="timetable-wrap compact-wrap">
+    <table class="timetable compact-timetable">
+      <thead>
+        <tr>
+          <th class="day-col">วัน/คาบ</th>
+          {% for p in range(1,9) %}
+          <th>
+            <div class="period-no">{{p}}</div>
+            <div class="time-cell">
+              {% if p==1 %}08:40-09:30{% elif p==2 %}09:31-10:20{% elif p==3 %}10:21-11:10{% elif p==4 %}11:11-12:00{% elif p==5 %}13:00-13:50{% elif p==6 %}13:51-14:40{% elif p==7 %}14:41-15:30{% elif p==8 %}15:31-16:00{% endif %}
+            </div>
+          </th>
+          {% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for d_i, d_name in day_pairs %}
+        <tr>
+          <th class="day-name">{{d_name}}<small>{% if d_i==0 %}Mon.{% elif d_i==1 %}Tue.{% elif d_i==2 %}Wed.{% elif d_i==3 %}Thu.{% elif d_i==4 %}Fri.{% endif %}</small></th>
+          {% for p in range(1,9) %}
+          {% set item = schedule_grid.get(d_i|string ~ '-' ~ p|string) %}
+          <td class="slot-cell {% if item %}has-class{% endif %}">
+            {% if item %}
+              <div class="slot-subject">{{ item.subject.name }}</div>
+              {% if item.lesson %}<a class="btn tiny" href="{{ url_for('lesson_detail', lesson_id=item.lesson.id) }}">เข้าเนื้อหา</a>{% endif %}
+              <div class="slot-room">{{ item.classroom.name }}</div>
+              <div class="slot-place">{{ item.room_name or '-' }}</div>
+              {% if item.topic or item.lesson %}<div class="slot-topic">{{ item.topic or item.lesson.title }}</div>{% endif %}
+            {% else %}
+              <span class="empty-slot">ว่าง</span>
+            {% endif %}
+          </td>
+          {% endfor %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+{% if current_user.role != 'student' %}
+<section class="card" id="schedule-form">
+<h2>{{'แก้ไขคาบสอน' if edit_row else 'เพิ่มคาบสอน'}}</h2>
+<form method="post" class="grid-form schedule-input-form">
+  {% if current_user.role == 'admin' %}
+  <select name="teacher_id" required>
+    <option value="">เลือกครูเจ้าของคาบ</option>
+    {% for t in teachers %}<option value="{{t.id}}" {% if active_teacher_id==t.id %}selected{% endif %}>{{t.full_name}}</option>{% endfor %}
+  </select>
+  {% endif %}
+  <select name="weekday">{% for d in day_names %}<option value="{{loop.index0}}" {% if edit_row and edit_row.weekday==loop.index0 %}selected{% endif %}>{{d}}</option>{% endfor %}</select>
+  <select name="period_no" id="period_no" required>
+    <option value="">เลือกคาบ</option>
+    {% for p in range(1,9) %}<option value="{{p}}" {% if edit_row and edit_row.period_no==p %}selected{% endif %}>คาบ {{p}}</option>{% endfor %}
+  </select>
+  <input name="start_time" id="start_time" type="time" value="{{edit_row.start_time if edit_row else ''}}" placeholder="เวลาเริ่ม">
+  <input name="end_time" id="end_time" type="time" value="{{edit_row.end_time if edit_row else ''}}" placeholder="เวลาจบ">
+  <select name="subject_id">{% for s in subjects %}<option value="{{s.id}}" {% if edit_row and edit_row.subject_id==s.id %}selected{% endif %}>{{s.name}}</option>{% endfor %}</select>
+  <select name="classroom_id">{% for r in rooms %}<option value="{{r.id}}" {% if edit_row and edit_row.classroom_id==r.id %}selected{% endif %}>{{r.name}}</option>{% endfor %}</select>
+  <select name="lesson_id"><option value="">ไม่ผูกบทเรียน</option>{% for l in lessons %}<option value="{{l.id}}" {% if edit_row and edit_row.lesson_id==l.id %}selected{% endif %}>{{l.title}}</option>{% endfor %}</select>
+  <input name="room_name" placeholder="สถานที่" value="{{edit_row.room_name if edit_row else ''}}">
+  <input name="topic" placeholder="หัวข้อที่จะสอน" value="{{edit_row.topic if edit_row else ''}}">
+  <button>{{'บันทึกแก้ไข' if edit_row else 'เพิ่มคาบ'}}</button>
+</form>
+</section>
+{% endif %}
+
+<h2>รายการคาบสอน</h2>
+<table>
+<tr>{% if current_user.role=='admin' %}<th>ครู</th>{% endif %}<th>วัน</th><th>คาบ</th><th>เวลา</th><th>วิชา</th><th>ห้อง</th><th>บทเรียน/หัวข้อ</th>{% if current_user.role!='student' %}<th>จัดการ</th>{% endif %}</tr>
+{% for s in schedules %}
+<tr>{% if current_user.role=='admin' %}<td data-label='ครู'>{{s.teacher.full_name if s.teacher is defined and s.teacher else ''}}</td>{% endif %}<td data-label="วัน">{{day_names[s.weekday]}}</td><td data-label="คาบ">{{s.period_no}}</td><td data-label="เวลา">{{s.start_time}}-{{s.end_time}}</td><td data-label="วิชา">{{s.subject.name}}</td><td data-label="ห้อง">{{s.classroom.name}}</td><td data-label="บทเรียน/หัวข้อ">{% if s.lesson %}<a class="btn small" href="{{url_for('lesson_detail', lesson_id=s.lesson.id)}}">{{s.lesson.title}}</a>{% else %}{{s.topic or '-'}}{% endif %}</td>{% if current_user.role!='student' %}<td data-label="จัดการ"><a class="btn small" href="{{url_for('schedule_edit', schedule_id=s.id)}}">แก้ไข</a><form method="post" action="{{url_for('schedule_delete', schedule_id=s.id)}}" class="inline" onsubmit="return confirm('ลบคาบนี้?')"><button class="danger-btn small">ลบ</button></form></td>{% endif %}</tr>
+{% endfor %}
+</table>
+
+<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+<script>
+const periodTimes = {
+  1:['08:40','09:30'],2:['09:31','10:20'],3:['10:21','11:10'],4:['11:11','12:00'],
+  5:['13:00','13:50'],6:['13:51','14:40'],7:['14:41','15:30'],8:['15:31','16:00']
+};
+const periodSelect = document.getElementById('period_no');
+if (periodSelect) {
+  periodSelect.addEventListener('change', () => {
+    const val = periodSelect.value;
+    if (periodTimes[val]) {
+      document.getElementById('start_time').value = periodTimes[val][0];
+      document.getElementById('end_time').value = periodTimes[val][1];
+    }
+  });
+}
+async function saveScheduleImage(){
+  const node = document.getElementById('schedule-capture');
+  if (!window.html2canvas) { alert('โหลดตัวบันทึกรูปภาพไม่สำเร็จ กรุณาต่ออินเทอร์เน็ตแล้วลองใหม่'); return; }
+  const canvas = await html2canvas(node, {backgroundColor:'#ffffff', scale:2, useCORS:true});
+  const link = document.createElement('a');
+  link.download = 'ตารางสอน-ครูรักสอน.png';
+  link.href = canvas.toDataURL('image/png');
+  link.click();
+}
+</script>
+{% endblock %}

@@ -1,0 +1,18 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>ผู้ใช้</h1>
+<section class="card">
+<form method="post" class="form-row"><input name="full_name" placeholder="ชื่อ-สกุล" required><input name="username" placeholder="username" required><input name="password" placeholder="password" value="1234"><select name="role"><option value="teacher">ครู</option><option value="student">นักเรียน</option><option value="admin">แอดมิน</option></select><button>เพิ่ม</button></form>
+</section>
+<div class="cards two-col">
+<section class="card import-card">
+<h2>นำเข้าครูจาก Excel</h2>
+<form method="post" action="{{ url_for('import_all') }}" enctype="multipart/form-data" class="form-row"><input type="hidden" name="kind" value="teachers"><input type="file" name="file" accept=".xlsx,.xls" required><button>นำเข้าครู</button><a class="btn secondary" href="{{ url_for('download_import_template_kind', kind='teachers') }}">ไฟล์ตัวอย่าง</a></form>
+</section>
+<section class="card import-card">
+<h2>นำเข้านักเรียนจาก Excel</h2>
+<form method="post" action="{{ url_for('import_all') }}" enctype="multipart/form-data" class="form-row"><input type="hidden" name="kind" value="students"><input type="file" name="file" accept=".xlsx,.xls" required><button>นำเข้านักเรียน</button><a class="btn secondary" href="{{ url_for('download_import_template_kind', kind='students') }}">ไฟล์ตัวอย่าง</a></form>
+</section>
+</div>
+<table><tr><th>ชื่อ</th><th>username</th><th>บทบาท</th><th>จัดการ</th></tr>{% for u in users %}<tr><td>{{u.full_name}}</td><td>{{u.username}}</td><td>{{u.role}}</td><td><a class="btn small" href="{{url_for('user_edit', user_id=u.id)}}">แก้ไข</a><form method="post" action="{{url_for('user_delete', user_id=u.id)}}" class="inline" onsubmit="return confirm('ลบผู้ใช้นี้?')"><button class="danger-btn small">ลบ</button></form></td></tr>{% endfor %}</table>
+{% endblock %}

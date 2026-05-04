@@ -1,0 +1,25 @@
+{% extends 'base.html' %}{% block content %}<h1>{{subject.name}}</h1><div class="card"><b>ตรวจความพร้อมตามหน่วยกิต/คาบ</b><p>จำนวนคาบรายวิชา: {{subject.total_periods}}</p></div>{% if current_user.role=='admin' %}
+<section class="card import-card">
+<h2>นำเข้าข้อมูลของรายวิชานี้จาก Excel</h2>
+<div class="form-row">
+  <form method="post" action="{{ url_for('import_all') }}" enctype="multipart/form-data" class="inline"><input type="hidden" name="kind" value="units"><input type="file" name="file" accept=".xlsx,.xls" required><button>นำเข้าหน่วย</button><a class="btn secondary" href="{{ url_for('download_import_template_kind', kind='units') }}">ตัวอย่าง</a></form>
+  <form method="post" action="{{ url_for('import_all') }}" enctype="multipart/form-data" class="inline"><input type="hidden" name="kind" value="lessons"><input type="file" name="file" accept=".xlsx,.xls" required><button>นำเข้าบทเรียน</button><a class="btn secondary" href="{{ url_for('download_import_template_kind', kind='lessons') }}">ตัวอย่าง</a></form>
+</div>
+</section>
+{% endif %}
+<div class="quick-actions card">
+  <a class="btn" href="{{ url_for('subject_worksheets', subject_id=subject.id) }}">ดู/ตรวจใบงานทั้งหมด</a>
+  <span class="muted">กดเข้ารายวิชาแล้วจัดการเช็กชื่อ ใบงาน และคะแนนได้จากหน้านี้</span>
+</div>
+<h2>เพิ่มหน่วยการเรียนรู้</h2><form method="post" class="stack-form"><input name="title" placeholder="ชื่อหน่วย" required><input name="required_periods" type="number" value="1" placeholder="คาบที่กำหนด"><textarea name="indicators" placeholder="ตัวชี้วัด/ผลการเรียนรู้"></textarea><button>เพิ่มหน่วย</button></form><h2>ความครบของหน่วย</h2><table><tr><th>หน่วย</th><th>บทเรียน</th><th>ใบงาน</th><th>แบบทดสอบ</th><th>ครบ</th><th>จัดการ</th></tr>{% for u,lesson_count,worksheets,quizzes,percent,missing in completeness %}<tr><td>{{u.title}}<br><small>{{u.indicators}}</small></td><td>{{lesson_count}}/{{u.required_periods}}</td><td>{{worksheets}}</td><td>{{quizzes}}</td><td><div class="bar"><span style="width:{{percent}}%"></span></div>{{percent}}% {% if missing>0 %}<b class="bad">ขาด {{missing}} คาบ</b>{% else %}<b class="ok">ครบ</b>{% endif %}</td><td><a class="btn small" href="{{ url_for('lesson_create', unit_id=u.id) }}">เพิ่มบทเรียน</a><a class="btn secondary small" href="{{url_for('unit_edit', unit_id=u.id)}}">แก้ไข</a><form method="post" action="{{url_for('unit_delete', unit_id=u.id)}}" class="inline" onsubmit="return confirm('ลบหน่วยนี้?')"><button class="danger-btn small">ลบ</button></form></td></tr>{% endfor %}</table>
+<section class="card">
+<h2>เช็กชื่อและคะแนนของรายวิชานี้</h2>
+<table><tr><th>ห้องเรียน</th><th>จัดการ</th></tr>
+{% for sr in subject_rooms %}
+<tr><td>{{ sr.classroom.name }}</td><td>
+<a class="btn small" href="{{ url_for('attendance', subject_id=subject.id, classroom_id=sr.classroom_id) }}">เช็กชื่อ</a>
+<a class="btn secondary small" href="{{ url_for('grades', subject_id=subject.id, classroom_id=sr.classroom_id) }}">สมุดคะแนน/ตัดเกรด</a>
+</td></tr>
+{% else %}<tr><td colspan="2">ยังไม่ได้ผูกวิชานี้กับห้องเรียน</td></tr>{% endfor %}</table>
+</section>
+{% endblock %}

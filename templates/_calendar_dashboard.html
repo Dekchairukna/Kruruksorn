@@ -1,0 +1,74 @@
+<section class="dashboard-calendar card">
+  <div class="section-head">
+    <div>
+      <h2>ปฏิทินการศึกษา{% if active_semester %} {{ active_semester.name }}{% endif %}</h2>
+      {% if today_position %}
+      <p class="muted">วันที่จริงวันนี้คือ {{ today_position.date.day }} {{ today_position.month_name }} {{ today_position.date.year + 543 }} เป็นวัน<b>{{ today_position.weekday_name }}</b>{% if today_position.out_of_range %} — อยู่นอกช่วงภาคเรียน/ช่วงเดือนที่แสดง จึงไม่ไฮไลต์ผิดวัน{% else %} อยู่ที่ <b>{{ today_position.month_name }}</b> แถวสัปดาห์ที่ <b>{{ today_position.week_no }}</b> ช่องวัน<b>{{ today_position.weekday_name }}</b>{% endif %}</p>
+      {% endif %}
+    </div>
+    <a class="btn secondary" href="{{ url_for('calendar_events') }}">จัดการปฏิทิน</a>
+  </div>
+  <div class="academic-calendar-grid">
+    {% for m in cal_months %}
+    <div class="mini-month">
+      <div class="mini-month-title">{{ m.month_name }} {{ m.be_year }}</div>
+      <table class="mini-calendar">
+        <thead><tr><th class="sun">อา</th><th class="mon">จ</th><th class="tue">อ</th><th class="wed">พ</th><th class="thu">พฤ</th><th class="fri">ศ</th><th class="sat">ส</th></tr></thead>
+        <tbody>
+          {% for week in m.weeks %}
+          <tr>
+            {% for c in week %}
+            {% set holiday = c.events|selectattr('event_type','equalto','วันหยุดราชการ')|list %}
+            {% set school = c.events|selectattr('event_type','ne','วันหยุดราชการ')|list %}
+            <td class="{% if c.day==0 %}empty{% endif %} {% if c.weekday in [0,6] and c.day %}weekendday{% endif %} {% if c.is_today %}today{% endif %} {% if holiday %}holiday{% elif school %}eventday{% endif %}"
+                {% if c.day %}
+                data-date="{{ c.date.strftime('%d/%m/%Y') }}"
+                data-dayname="{{ ['อาทิตย์','จันทร์','อังคาร','พุธ','พฤหัสบดี','ศุกร์','เสาร์'][c.weekday] }}"
+                data-events="{% if c.events %}{% for e in c.events %}{{ e.event_type }}: {{ e.title }}{% if e.note %} ({{ e.note }}){% endif %}{% if not loop.last %}||{% endif %}{% endfor %}{% else %}วันทำงาน/ไม่มีรายการพิเศษ{% endif %}"
+                onclick="showCalendarDay(this)"
+                {% endif %}>
+              {% if c.day %}
+              <span class="day-no">{{ c.day }}</span>
+              {% if c.events %}<span class="dot" title="{{ c.events[0].title }}"></span>{% endif %}
+              {% endif %}
+            </td>
+            {% endfor %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endfor %}
+  </div>
+  <div id="calendar-day-detail" class="calendar-detail-panel">
+    <h3>กดวันที่ในปฏิทินเพื่อดูรายละเอียด</h3>
+    <div class="muted">ระบบจะแสดงว่าวันนั้นเป็นวันอะไร และมีรายการอะไรบ้าง</div>
+  </div>
+  <div class="upcoming-box">
+    <h3>รายการสำคัญใกล้ถึง</h3>
+    <div class="chips">
+      {% for e in upcoming %}
+      <span class="event-chip {{ 'holiday' if e.event_type=='วันหยุดราชการ' else '' }}">{{ e.event_date.strftime('%d/%m/%Y') }} · {{ e.title }}</span>
+      {% else %}<span class="muted">ยังไม่มีรายการ</span>{% endfor %}
+    </div>
+  </div>
+
+<script>
+function showCalendarDay(cell){
+  const box = document.getElementById('calendar-day-detail');
+  const date = cell.dataset.date || '';
+  const dayname = cell.dataset.dayname || '';
+  const raw = cell.dataset.events || '';
+  const items = raw.split('||').filter(Boolean);
+  const htmlItems = items.map(function(t){
+    const isHoliday = t.indexOf('วันหยุด') !== -1;
+    const parts = t.split(':');
+    const type = parts.length > 1 ? parts[0].trim() : 'รายการ';
+    const title = parts.length > 1 ? parts.slice(1).join(':').trim() : t;
+    return `<div class="calendar-detail-item"><span class="calendar-detail-type ${isHoliday ? 'holiday' : ''}">${type}</span> ${title}</div>`;
+  }).join('');
+  box.innerHTML = `<h3>วันที่ ${date}</h3><div class="calendar-detail-date">ตรงกับวัน${dayname}</div><div class="calendar-detail-list">${htmlItems}</div>`;
+  box.scrollIntoView({behavior:'smooth', block:'nearest'});
+}
+</script>
+</section>

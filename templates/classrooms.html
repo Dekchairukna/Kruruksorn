@@ -1,0 +1,42 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>ห้องเรียน</h1>
+<form method="post" class="form-row card">
+  <input name="name" placeholder="เช่น ม.1/1" required>
+  {% if current_user.role=='admin' %}
+  <select name="teacher_id">
+    <option value="">ยังไม่เลือกครูประจำ/ผู้สอน</option>
+    {% for t in teachers %}<option value="{{t.id}}">{{t.full_name}}</option>{% endfor %}
+  </select>
+  {% endif %}
+  <button>สร้างห้อง</button>
+</form>
+{% if current_user.role=='admin' %}
+<section class="card import-card">
+  <h2>นำเข้าห้องเรียนจาก Excel</h2>
+  <form method="post" action="{{ url_for('import_all') }}" enctype="multipart/form-data" class="form-row">
+    <input type="hidden" name="kind" value="classrooms">
+    <input type="file" name="file" accept=".xlsx,.xls" required>
+    <button>นำเข้าห้องเรียน</button>
+    <a class="btn secondary" href="{{ url_for('download_import_template_kind', kind='classrooms') }}">ไฟล์ตัวอย่าง</a>
+  </form>
+</section>
+<p><a class="btn" href="{{url_for('teacher_assignments')}}">⚙️ มอบหมายวิชา/ห้องให้ครู</a></p>
+{% endif %}
+<div class="cards">
+{% for r in rooms %}
+  <div class="card">
+    <h3>{{r.name}} {% if r.is_active==False %}<span class='tag muted-tag'>ปิดใช้งาน</span>{% endif %}</h3>
+    <p class="muted">ครูหลัก: {{r.teacher.full_name if r.teacher else 'ยังไม่กำหนด'}}</p>
+    <a class="btn" href="{{ url_for('classroom_students', classroom_id=r.id) }}">นักเรียนในห้อง</a>
+    <a class="btn secondary" href="{{url_for('classroom_edit', classroom_id=r.id)}}">แก้ไข</a>
+    {% if r.is_active==False and current_user.role=='admin' %}
+    <form method="post" action="{{url_for('classroom_restore', classroom_id=r.id)}}" class="inline"><button class="success-btn">เปิดใช้งาน</button></form>
+    {% else %}
+    <form method="post" action="{{url_for('classroom_deactivate', classroom_id=r.id)}}" class="inline" onsubmit="return confirm('ปิดใช้งานห้องนี้? ข้อมูลเดิมจะยังอยู่')"><button class="warning-btn">ปิดใช้งาน</button></form>
+    {% endif %}
+    <form method="post" action="{{url_for('classroom_delete', classroom_id=r.id)}}" class="inline" onsubmit="return confirm('ลบห้องเรียนนี้ถาวร? ถ้ามีข้อมูลผูกไว้ ระบบจะปิดใช้งานแทน')"><button class="danger-btn">ลบถาวร</button></form>
+  </div>
+{% endfor %}
+</div>
+{% endblock %}

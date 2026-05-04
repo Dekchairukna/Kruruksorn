@@ -1,0 +1,45 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>รายวิชา</h1>
+<form method="post" class="form-row card">
+  <input name="name" placeholder="ชื่อวิชา" required>
+  <input name="credit" type="number" step="0.5" value="1.0" placeholder="หน่วยกิต">
+  <input name="total_periods" type="number" value="40" placeholder="จำนวนคาบ">
+  {% if current_user.role=='admin' %}
+  <select name="teacher_id">
+    <option value="">ยังไม่เลือกครูผู้สอน</option>
+    {% for t in teachers %}<option value="{{t.id}}">{{t.full_name}}</option>{% endfor %}
+  </select>
+  {% endif %}
+  <button>สร้างรายวิชา</button>
+</form>
+{% if current_user.role=='admin' %}
+<section class="card import-card">
+  <h2>นำเข้ารายวิชาจาก Excel</h2>
+  <form method="post" action="{{ url_for('import_all') }}" enctype="multipart/form-data" class="form-row">
+    <input type="hidden" name="kind" value="subjects">
+    <input type="file" name="file" accept=".xlsx,.xls" required>
+    <button>นำเข้ารายวิชา</button>
+    <a class="btn secondary" href="{{ url_for('download_import_template_kind', kind='subjects') }}">ไฟล์ตัวอย่าง</a>
+  </form>
+</section>
+<p><a class="btn" href="{{url_for('teacher_assignments')}}">⚙️ มอบหมายวิชา/ห้องให้ครู</a></p>
+{% endif %}
+<div class="cards">
+{% for s in subjects %}
+  <div class="card">
+    <h3>{{s.name}} {% if s.is_active==False %}<span class='tag muted-tag'>ปิดใช้งาน</span>{% endif %}</h3>
+    <p>{{s.credit}} หน่วยกิต · {{s.total_periods}} คาบ</p>
+    <p class="muted">ครูหลัก: {{s.teacher.full_name if s.teacher else 'ยังไม่กำหนด'}}</p>
+    <a class="btn" href="{{ url_for('subject_detail', subject_id=s.id) }}">จัดการหน่วย/บทเรียน</a>
+    <a class="btn secondary" href="{{url_for('subject_edit', subject_id=s.id)}}">แก้ไข</a>
+    {% if s.is_active==False and current_user.role=='admin' %}
+    <form method="post" action="{{url_for('subject_restore', subject_id=s.id)}}" class="inline"><button class="success-btn">เปิดใช้งาน</button></form>
+    {% else %}
+    <form method="post" action="{{url_for('subject_deactivate', subject_id=s.id)}}" class="inline" onsubmit="return confirm('ปิดใช้งานรายวิชานี้? ข้อมูลเดิมจะยังอยู่')"><button class="warning-btn">ปิดใช้งาน</button></form>
+    {% endif %}
+    <form method="post" action="{{url_for('subject_delete', subject_id=s.id)}}" class="inline" onsubmit="return confirm('ลบรายวิชานี้ถาวร? ถ้ามีข้อมูลผูกไว้ ระบบจะปิดใช้งานแทน')"><button class="danger-btn">ลบถาวร</button></form>
+  </div>
+{% endfor %}
+</div>
+{% endblock %}

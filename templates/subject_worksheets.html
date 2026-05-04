@@ -1,0 +1,21 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>ใบงานของรายวิชา: {{ subject.name }}</h1>
+<div class="card"><a class="btn secondary" href="{{ url_for('subject_detail', subject_id=subject.id) }}">กลับไปรายวิชา</a></div>
+<div class="cards">
+{% for item in items %}
+  {% set w=item.worksheet %}
+  <div class="card">
+    <h3>{{ w.title }}</h3>
+    <p><b>บทเรียน:</b> {{ item.lesson.title }}</p>
+    <p><b>หน่วย:</b> {{ item.unit.title }}</p>
+    <p><b>ประเภท:</b> {% if w.worksheet_type=='petanque_score' %}ใบงานเปตอง{% elif w.worksheet_type=='upload' %}อัปโหลดไฟล์{% else %}ใบงานวิชาการ{% endif %}</p>
+    {% if w.file_path %}<p><a class="btn small" href="{{ url_for('uploaded_file', filename=w.file_path) }}" target="_blank">เปิดไฟล์ใบงาน</a></p>{% endif %}
+    <a class="btn" href="{{ url_for('worksheet_review', worksheet_id=w.id) }}">ตรวจใบงาน</a>
+    <a class="btn secondary" href="{{ url_for('lesson_detail', lesson_id=item.lesson.id) }}">เปิดบทเรียน</a>
+  </div>
+{% else %}
+  <div class="card">ยังไม่มีใบงานในรายวิชานี้</div>
+{% endfor %}
+</div>
+{% endblock %}

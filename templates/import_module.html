@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>{{ module.title }}</h1>
+    <p>{{ module.desc }} — ใช้เฉพาะชีต <b>{{ module.sheet }}</b></p>
+  </div>
+  <div class="actions-row">
+    <a class="btn secondary" href="{{ url_for('imports_center') }}">← กลับศูนย์นำเข้า</a>
+    <a class="btn" href="{{ url_for('download_import_template_kind', kind=kind) }}">⬇️ ดาวน์โหลดไฟล์ตัวอย่างหมวดนี้</a>
+  </div>
+</div>
+<section class="card import-upload-card">
+  <form method="post" enctype="multipart/form-data" action="{{ url_for('import_all') }}">
+    <input type="hidden" name="kind" value="{{ kind }}">
+    <label>เลือกไฟล์ Excel (.xlsx)</label>
+    <input type="file" name="file" accept=".xlsx" required>
+    <button>นำเข้าเฉพาะ {{ module.title }}</button>
+  </form>
+  <div class="hint-box">
+    <b>หมายเหตุ</b>
+    <p class="muted">หน้านี้จะนำเข้าเฉพาะหมวดนี้เท่านั้น ถึงไฟล์จะมีชีตอื่น ระบบจะไม่อ่านชีตอื่น</p>
+  </div>
+</section>
+{% endblock %}

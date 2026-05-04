@@ -1,0 +1,44 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>จัดการภาคเรียน</h1>
+    <p class="muted">ใช้เปลี่ยนเทอม เปิดเทอม ปิดเทอม และให้ปฏิทิน/แผนรายคาบอิงช่วงวันที่ของเทอมนั้น</p>
+  </div>
+</div>
+
+<div class="card">
+  <h2>{{ 'แก้ไขภาคเรียน' if edit_row else 'เพิ่มภาคเรียนใหม่' }}</h2>
+  <form method="post" class="grid-form">
+    <input name="name" placeholder="ชื่อภาคเรียน เช่น ภาคเรียนที่ 2/2569" value="{{ edit_row.name if edit_row else '' }}" required>
+    <input name="academic_year" placeholder="ปีการศึกษา" value="{{ edit_row.academic_year if edit_row else '2569' }}">
+    <input name="term_no" placeholder="ภาคเรียนที่" value="{{ edit_row.term_no if edit_row else '2' }}">
+    <input type="date" name="start_date" value="{{ edit_row.start_date if edit_row else '' }}" required>
+    <input type="date" name="end_date" value="{{ edit_row.end_date if edit_row else '' }}" required>
+    <label class="check-inline"><input type="checkbox" name="is_active" {% if edit_row and edit_row.is_active %}checked{% endif %}> ใช้เป็นเทอมปัจจุบัน</label>
+    <button>{{ 'บันทึกแก้ไข' if edit_row else 'เพิ่มภาคเรียน' }}</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2>รายการภาคเรียน</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>ชื่อภาคเรียน</th><th>ปี</th><th>ช่วงวันที่</th><th>สถานะ</th><th>จัดการ</th></tr>
+      {% for s in semesters %}
+      <tr>
+        <td data-label="ชื่อภาคเรียน">{{ s.name }}</td>
+        <td data-label="ปี">{{ s.academic_year }}</td>
+        <td data-label="ช่วงวันที่">{{ s.start_date.strftime('%d/%m/%Y') }} - {{ s.end_date.strftime('%d/%m/%Y') }}</td>
+        <td data-label="สถานะ">{% if s.is_active %}<span class="pill green">เทอมปัจจุบัน</span>{% else %}<span class="pill blue">เก็บไว้</span>{% endif %}</td>
+        <td data-label="จัดการ">
+          <a class="btn small" href="{{ url_for('semester_edit', semester_id=s.id) }}">แก้ไข</a>
+          <form method="post" action="{{ url_for('semester_active', semester_id=s.id) }}" class="inline"><button class="small secondary">ใช้เทอมนี้</button></form>
+          <form method="post" action="{{ url_for('semester_delete', semester_id=s.id) }}" class="inline" onsubmit="return confirm('ลบภาคเรียนนี้?')"><button class="small danger-btn">ลบ</button></form>
+        </td>
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+</div>
+{% endblock %}

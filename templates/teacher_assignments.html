@@ -1,0 +1,63 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>มอบหมายวิชา/ห้องให้ครู</h1>
+<div class="card">
+  <form method="get" class="form-row">
+    <select name="teacher_id" required onchange="this.form.submit()">
+      <option value="">เลือกครู</option>
+      {% for t in teachers %}<option value="{{t.id}}" {% if selected_teacher_id==t.id %}selected{% endif %}>{{t.full_name}} ({{t.username}})</option>{% endfor %}
+    </select>
+    <button class="secondary">ดูรายการ</button>
+  </form>
+</div>
+{% if selected_teacher_id %}
+<form method="post" class="card assign-grid-form">
+  <input type="hidden" name="teacher_id" value="{{selected_teacher_id}}">
+  <div class="assign-box">
+    <h2>เลือกรายวิชาให้ครู</h2>
+    <p class="hint">ติ๊กเฉพาะวิชาที่ครูคนนี้สอน ตารางสอนจะเลือกได้เฉพาะวิชาที่ติ๊กไว้</p>
+    <div class="check-list">
+      {% for s in subjects %}
+      <label><input type="checkbox" name="subject_ids" value="{{s.id}}" {% if s.id in assigned_subject_ids %}checked{% endif %}> {{s.name}} <small>{{s.credit}} นก. / {{s.total_periods}} คาบ</small></label>
+      {% endfor %}
+    </div>
+  </div>
+  <div class="assign-box">
+    <h2>เลือกห้องเรียนให้ครู</h2>
+    <p class="hint">ติ๊กเฉพาะห้องที่ครูคนนี้รับผิดชอบ ตารางสอนจะเลือกได้เฉพาะห้องที่ติ๊กไว้</p>
+    <div class="check-list">
+      {% for r in classrooms %}
+      <label><input type="checkbox" name="classroom_ids" value="{{r.id}}" {% if r.id in assigned_classroom_ids %}checked{% endif %}> {{r.name}}</label>
+      {% endfor %}
+    </div>
+  </div>
+  <button>บันทึกการมอบหมาย</button>
+</form>
+
+<section class="card">
+  <h2>รายการที่มอบหมายแล้ว</h2>
+  <div class="mini-grid">
+    <div>
+      <h3>รายวิชา</h3>
+      {% if assigned_subject_links %}
+        {% for link in assigned_subject_links %}
+          <form method="post" action="{{ url_for('teacher_subject_delete', link_id=link.id) }}" class="inline chip-form" onsubmit="return confirm('ยกเลิกมอบหมายวิชานี้จากครู? ข้อมูลวิชาไม่หาย')">
+            <span class="tag">{{ link.subject.name }} <button class="chip-x" title="ยกเลิกมอบหมาย">×</button></span>
+          </form>
+        {% endfor %}
+      {% else %}<p class="muted">ยังไม่ได้มอบหมายรายวิชา</p>{% endif %}
+    </div>
+    <div>
+      <h3>ห้องเรียน</h3>
+      {% if assigned_classroom_links %}
+        {% for link in assigned_classroom_links %}
+          <form method="post" action="{{ url_for('teacher_classroom_delete', link_id=link.id) }}" class="inline chip-form" onsubmit="return confirm('ยกเลิกมอบหมายห้องนี้จากครู? ข้อมูลห้องไม่หาย')">
+            <span class="tag green">{{ link.classroom.name }} <button class="chip-x" title="ยกเลิกมอบหมาย">×</button></span>
+          </form>
+        {% endfor %}
+      {% else %}<p class="muted">ยังไม่ได้มอบหมายห้องเรียน</p>{% endif %}
+    </div>
+  </div>
+</section>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>นำเข้า Excel แยกหมวด</h1>
+    <p>เลือกอัปโหลดเฉพาะข้อมูลที่ต้องการ ไม่ต้องรวมทั้งระบบในไฟล์เดียว</p>
+  </div>
+  <a class="btn secondary" href="{{ url_for('download_import_template') }}">⬇️ ไฟล์ตัวอย่างรวมทั้งหมด</a>
+</div>
+<div class="import-module-grid">
+{% for kind,m in modules.items() %}
+  <section class="card pastel-card">
+    <div class="import-icon">📄</div>
+    <h2>{{ m.title }}</h2>
+    <p class="muted">{{ m.desc }}</p>
+    <div class="actions-row">
+      <a class="btn" href="{{ url_for('import_module_page', kind=kind) }}">อัปโหลดหมวดนี้</a>
+      <a class="btn secondary" href="{{ url_for('download_import_template_kind', kind=kind) }}">ไฟล์ตัวอย่าง</a>
+    </div>
+  </section>
+{% endfor %}
+</div>
+{% endblock %}

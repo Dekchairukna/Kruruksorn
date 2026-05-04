@@ -1,0 +1,54 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>{{ 'แก้ไขบทเรียน' if lesson else 'เพิ่มบทเรียน' }}</h1>
+    <p>หน่วย: {{ unit.title }} · ใส่เนื้อหาและแนบไฟล์ประกอบบทเรียนให้นักเรียนเปิดเรียนได้ทันที</p>
+  </div>
+</div>
+
+<section class="card lesson-editor-card">
+<form method="post" enctype="multipart/form-data" class="lesson-form">
+  <label>ชื่อบทเรียน</label>
+  <input name="title" value="{{ lesson.title if lesson else '' }}" required>
+
+  <label>จุดประสงค์การเรียนรู้</label>
+  <textarea name="objective" rows="4" placeholder="เช่น นักเรียนสามารถอธิบาย...">{{ lesson.objective if lesson else '' }}</textarea>
+
+  <label>เนื้อหาบทเรียน</label>
+  <textarea name="content" rows="14" class="content-editor" placeholder="พิมพ์เนื้อหาเหมือนเตรียมใบความรู้ สามารถขึ้นบรรทัด แบ่งหัวข้อ ใส่ขั้นตอนการเรียนได้">{{ lesson.content if lesson else '' }}</textarea>
+  <p class="hint">ใช้พื้นที่นี้เหมือนเขียนใบความรู้ ถ้าต้องการจัดหน้าเหมือน Word มากขึ้น ให้แนบไฟล์ PDF/Word/PPT ด้านล่างได้เลย</p>
+
+  <label>ลิงก์สื่อ/วิดีโอ</label>
+  <input name="media_url" value="{{ lesson.media_url if lesson else '' }}" placeholder="เช่น YouTube, Google Drive, เว็บไซต์บทเรียน">
+
+  <label>ไฟล์ประกอบบทเรียน / รูปภาพ</label>
+  <input type="file" name="lesson_files" multiple accept=".pdf,.png,.jpg,.jpeg,.doc,.docx,.ppt,.pptx,.mp4,.webm,.mov">
+  <p class="hint">รองรับ PDF, PNG, JPG, Word, PowerPoint, MP4, WebM, MOV อัปโหลดได้หลายไฟล์พร้อมกัน</p>
+
+  <button>บันทึกบทเรียน</button>
+</form>
+</section>
+
+{% if lesson and files %}
+<section class="card">
+  <h2>ไฟล์บทเรียนที่แนบไว้แล้ว</h2>
+  <div class="lesson-file-list">
+    {% for f in files %}
+    <div class="lesson-file-row">
+      <div>
+        <b>{{ f.original_file_name }}</b>
+        <span class="badge-soft">{{ f.file_type }}</span>
+      </div>
+      <div>
+        <a class="btn small" href="{{ url_for('uploaded_file', filename=f.file_path) }}" target="_blank">เปิดไฟล์</a>
+        <form method="post" action="{{ url_for('lesson_file_delete', file_id=f.id) }}" class="inline" onsubmit="return confirm('ลบไฟล์นี้?')">
+          <button class="danger-btn small">ลบ</button>
+        </form>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+{% endblock %}

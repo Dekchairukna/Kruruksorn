@@ -1,0 +1,18 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>แก้ไขรายวิชา</h1>
+<form method="post" class="card form-stack">
+  <label>ชื่อวิชา</label><input name="name" value="{{subject.name}}" required>
+  <label>หน่วยกิต</label><input name="credit" type="number" step="0.5" value="{{subject.credit}}">
+  <label>จำนวนคาบ</label><input name="total_periods" type="number" value="{{subject.total_periods}}">
+  {% if current_user.role=='admin' %}
+  <label>ครูหลัก</label>
+  <select name="teacher_id">
+    <option value="">ยังไม่เลือกครูผู้สอน</option>
+    {% for t in teachers %}<option value="{{t.id}}" {% if subject.teacher_id==t.id %}selected{% endif %}>{{t.full_name}}</option>{% endfor %}
+  </select>
+  <small class="muted">ถ้าไม่เลือกครู ระบบจะเก็บเป็นรายวิชากลาง แล้วค่อยไปมอบหมายให้ครูภายหลังได้</small>
+  {% endif %}
+  <button>บันทึก</button><a class="btn secondary" href="{{url_for('subjects')}}">กลับ</a>
+</form>
+{% endblock %}

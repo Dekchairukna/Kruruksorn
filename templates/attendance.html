@@ -1,0 +1,50 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>เช็กเวลาเรียน</h1>
+<p class="muted">{{ subject.name }} / {{ room.name }}</p>
+<div class="action-row">
+  <a class="btn secondary" href="{{ url_for('records_center') }}">← กลับ</a>
+  <a class="btn" href="{{ url_for('export_attendance', subject_id=subject.id, classroom_id=room.id) }}">Export เวลาเรียน</a>
+  <a class="btn secondary" href="{{ url_for('grades', subject_id=subject.id, classroom_id=room.id) }}">ไปสมุดคะแนน</a>
+</div>
+<section class="card">
+<form method="post">
+  <div class="form-row">
+    <label>วันที่ <input name="date" type="date" value="{{ att_date }}" required></label>
+    <label>ตั้งทุกคนเป็น
+      <select name="bulk_status">
+        <option value="">ไม่ใช้</option>
+        {% for st in ['มา','ขาด','ลา','มาสาย','กิจกรรม'] %}<option value="{{st}}">{{st}}</option>{% endfor %}
+      </select>
+    </label>
+    <button>บันทึกเช็กชื่อ</button>
+  </div>
+  <table>
+    <tr><th>นักเรียน</th><th>สถานะวันนี้</th></tr>
+    {% for l in links %}
+    <tr>
+      <td>{{ l.student.full_name }}<br><small>{{ l.student.username }}</small></td>
+      <td><select name="s_{{ l.student_id }}">
+        {% for st in ['มา','ขาด','ลา','มาสาย','กิจกรรม'] %}<option value="{{st}}" {% if old.get(l.student_id,'มา')==st %}selected{% endif %}>{{st}}</option>{% endfor %}
+      </select></td>
+    </tr>
+    {% else %}
+    <tr><td colspan="2">ยังไม่มีนักเรียนในห้องนี้</td></tr>
+    {% endfor %}
+  </table>
+</form>
+<form method="post" action="{{ url_for('attendance_delete_day', subject_id=subject.id, classroom_id=room.id) }}" onsubmit="return confirm('ลบข้อมูลเช็กชื่อของวันที่เลือก?')" class="danger-zone">
+  <input type="hidden" name="date" value="{{ att_date }}">
+  <button class="danger-btn">ลบเช็กชื่อวันที่นี้</button>
+</form>
+</section>
+<section class="card">
+<h2>สรุปเวลาเรียนทั้งเทอม</h2>
+<table>
+  <tr><th>นักเรียน</th><th>มา</th><th>ขาด</th><th>ลา</th><th>มาสาย</th><th>กิจกรรม</th></tr>
+  {% for r in summary %}
+  <tr><td>{{ r.student.full_name }}</td><td>{{ r['มา'] }}</td><td>{{ r['ขาด'] }}</td><td>{{ r['ลา'] }}</td><td>{{ r['มาสาย'] }}</td><td>{{ r['กิจกรรม'] }}</td></tr>
+  {% endfor %}
+</table>
+</section>
+{% endblock %}

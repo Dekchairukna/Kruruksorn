@@ -1,0 +1,10 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>แดชบอร์ดผู้ดูแลระบบ</h1>
+<div class="grid colorful">
+  <div class="stat-card green"><b>ผู้ใช้ทั้งหมด</b><h2>{{users}}</h2><small>บัญชี</small></div>
+  <div class="stat-card blue"><b>ครู</b><h2>{{teachers}}</h2><small>คน</small></div>
+  <div class="stat-card pink"><b>นักเรียน</b><h2>{{students}}</h2><small>คน</small></div>
+</div>
+{% include '_calendar_dashboard.html' %}
+{% endblock %}
