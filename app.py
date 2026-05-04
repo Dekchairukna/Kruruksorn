@@ -18,7 +18,12 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'krurakson-dev')
-app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', f"sqlite:///{os.path.join(INSTANCE_DIR, 'krurakson.db')}")
+
+# Railway/Render/Heroku มักส่ง DATABASE_URL เป็น postgres:// แต่ SQLAlchemy ต้องการ postgresql://
+database_url = os.environ.get('DATABASE_URL')
+if database_url and database_url.startswith('postgres://'):
+    database_url = database_url.replace('postgres://', 'postgresql://', 1)
+app.config['SQLALCHEMY_DATABASE_URI'] = database_url or f"sqlite:///{os.path.join(INSTANCE_DIR, 'krurakson.db')}"
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['UPLOAD_FOLDER'] = UPLOAD_DIR
 app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100MB รองรับวิดีโอบทเรียน
@@ -2682,9 +2687,13 @@ def ensure_schema_columns():
         conn.commit()
 
 def init_db():
-    db.create_all(); ensure_schema_columns(); seed()
+    db.create_all()
+    ensure_schema_columns()
+    seed()
+
+# สร้าง/อัปเดตฐานข้อมูลอัตโนมัติทั้งตอนรัน local และตอน deploy ด้วย gunicorn
+with app.app_context():
+    init_db()
 
 if __name__ == '__main__':
-    with app.app_context():
-        init_db()
     app.run(debug=True, host='0.0.0.0', port=int(os.environ.get('PORT', 8000)))
