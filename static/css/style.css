@@ -462,7 +462,7 @@ input,select,textarea{background:#fff!important;border-color:#d9e8ef!important;c
   /* หน้าเพิ่มรายการ/ตารางบนมือถือให้เป็นการ์ดอ่านง่าย */
   .import-grid{grid-template-columns:1fr!important;gap:12px!important;}
   input,select,textarea{border-radius:18px!important;background:#fff!important;border:1px solid #e5e7eb!important;min-height:46px!important;}
-  button,.btn{border-radius:18px!important;min-height:39px!important;font-weight:950!important;}
+  button,.btn{border-radius:14px!important;min-height:30px!important;font-weight:950!important;}
 
   .mobile-bottom-nav{
     background:rgba(255,255,255,.94)!important;backdrop-filter:blur(18px)!important;border:1px solid rgba(226,232,240,.9)!important;
@@ -619,7 +619,7 @@ input,select,textarea{background:#fff!important;border-color:#d9e8ef!important;c
   .mobile-weekdays b{display:flex;align-items:center;justify-content:center;height:42px;border-radius:16px;font-size:15px;color:#223044;}
   .mobile-weekdays .sun{background:#ffe1e1;color:#b91c1c}.mobile-weekdays .mon{background:#f8fafc}.mobile-weekdays .tue{background:#f8fafc}.mobile-weekdays .wed{background:#f8fafc}.mobile-weekdays .thu{background:#f8fafc}.mobile-weekdays .fri{background:#f8fafc}.mobile-weekdays .sat{background:#dff3ff;color:#0369a1}
   .mobile-month-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:7px;}
-  .mobile-day{position:relative;aspect-ratio:1/1;min-height:52px;border-radius:18px;border:2px solid #e8eef5;background:#fafcff;color:#172033;font-size:20px;font-weight:950;display:flex;align-items:flex-start;justify-content:flex-start;padding:8px;box-shadow:none;margin:0;}
+  .mobile-day{position:relative;aspect-ratio:1/1;min-height:52px;border-radius:18px;border:2px solid #e8eef5;background:#fafcff;color:#172033;font-size:15px;font-weight:950;display:flex;align-items:flex-start;justify-content:flex-start;padding:8px;box-shadow:none;margin:0;}
   .mobile-day.empty{visibility:hidden;pointer-events:none;}
   .mobile-day.weekendday{background:#fff7f8;border-color:#ffe1e8;}
   .mobile-day.eventday{background:#fffbe8;border-color:#ffd74d;color:#172033;}
@@ -843,4 +843,148 @@ input,select,textarea{background:#fff!important;border-color:#d9e8ef!important;c
 .mobile-day:focus{
   outline:none!important;
   box-shadow:inset 0 0 0 2px #38bdf8!important;
+}
+
+/* v33: FIX mobile hamburger/sidebar navigation
+   - หน้าเว็บคอมไม่เปลี่ยน
+   - มือถือให้ปุ่ม ☰ เปิดแถบเมนูได้จริง
+   - เอา bottom nav แบบแอปออกทั้งหมด */
+@media (max-width: 760px) {
+  body {
+    padding-bottom: 0 !important;
+    overflow-x: hidden !important;
+  }
+
+  .topbar {
+    display: flex !important;
+    position: sticky !important;
+    top: 0 !important;
+    z-index: 2000 !important;
+    align-items: center !important;
+    gap: 14px !important;
+    min-height: 72px !important;
+    padding: 14px 18px !important;
+    background: rgba(255, 255, 255, .92) !important;
+    color: #172033 !important;
+    border-bottom: 1px solid #e5e7eb !important;
+    box-shadow: 0 12px 34px rgba(15, 23, 42, .08) !important;
+    backdrop-filter: blur(14px) !important;
+  }
+
+  .hamburger {
+    width: 52px !important;
+    height: 52px !important;
+    border-radius: 16px !important;
+    background: #eef2f7 !important;
+    color: #172033 !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    font-size: 30px !important;
+    font-weight: 900 !important;
+    line-height: 1 !important;
+    cursor: pointer !important;
+    user-select: none !important;
+  }
+
+  .topbrand {
+    display: block !important;
+    font-size: 25px !important;
+    font-weight: 950 !important;
+    color: #172033 !important;
+    letter-spacing: -.3px !important;
+  }
+
+  .topuser {
+    margin-left: auto !important;
+    max-width: 190px !important;
+    background: #f3e8ff !important;
+    color: #6d28d9 !important;
+    padding: 10px 14px !important;
+    border-radius: 999px !important;
+    font-weight: 900 !important;
+    font-size: 14px !important;
+    overflow: hidden !important;
+    white-space: nowrap !important;
+    text-overflow: ellipsis !important;
+  }
+
+  .sidebar {
+    display: block !important;
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    bottom: 0 !important;
+    width: min(84vw, 340px) !important;
+    max-width: 340px !important;
+    z-index: 3000 !important;
+    overflow-y: auto !important;
+    padding: 22px !important;
+    transform: translateX(-110%) !important;
+    transition: transform .25s ease !important;
+    background: linear-gradient(180deg, #ffffff 0%, #f8fbff 56%, #f5efff 100%) !important;
+    color: #172033 !important;
+    border-right: 1px solid #e5e7eb !important;
+    box-shadow: 24px 0 70px rgba(15, 23, 42, .25) !important;
+  }
+
+  .nav-toggle:checked ~ .sidebar {
+    transform: translateX(0) !important;
+  }
+
+  .brand-card {
+    border-bottom: 1px solid #e5e7eb !important;
+  }
+
+  .brand,
+  .brand-sub,
+  .user,
+  .user b,
+  .user small {
+    color: #172033 !important;
+  }
+
+  .logo-mark {
+    background: #ffffff !important;
+    color: #7c3aed !important;
+    box-shadow: 0 12px 28px rgba(124, 58, 237, .14) !important;
+  }
+
+  .sidebar .user {
+    background: #f3e8ff !important;
+    border: 1px solid #e9d5ff !important;
+    border-radius: 20px !important;
+  }
+
+  .sidebar nav a {
+    display: flex !important;
+    align-items: center !important;
+    gap: 11px !important;
+    color: #172033 !important;
+    background: #ffffff !important;
+    border: 1px solid #edf2f7 !important;
+    border-radius: 18px !important;
+    padding: 14px 15px !important;
+    margin: 8px 0 !important;
+    font-weight: 900 !important;
+    text-decoration: none !important;
+    box-shadow: 0 8px 20px rgba(15, 23, 42, .045) !important;
+  }
+
+  .sidebar nav a:hover,
+  .sidebar nav a:focus {
+    background: #f3e8ff !important;
+    color: #6d28d9 !important;
+  }
+
+  .main {
+    margin-left: 0 !important;
+    padding: 20px 18px 28px !important;
+    max-width: none !important;
+  }
+
+  .mobile-bottom-nav,
+  .mobile-modal-backdrop {
+    display: none !important;
+  }
 }

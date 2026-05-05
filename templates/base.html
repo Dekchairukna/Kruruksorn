@@ -51,5 +51,15 @@
   {% block content %}{% endblock %}
 </main>
 
+<script>
+// v33: ปิดแถบเมนูมือถือหลังเลือกหน้า
+document.addEventListener('DOMContentLoaded', function(){
+  const toggle = document.getElementById('nav-toggle');
+  document.querySelectorAll('.sidebar nav a').forEach(function(a){
+    a.addEventListener('click', function(){ if(toggle) toggle.checked = false; });
+  });
+});
+</script>
+
 </body>
 </html>
