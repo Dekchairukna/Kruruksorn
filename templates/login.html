@@ -1,1 +1,7 @@
-{% extends 'base.html' %}{% block content %}<div class="login-card"><h1>ครูรักสอน</h1><p>วางแผนคาบ สั่งงาน ตรวจงาน สรุปคะแนน</p><form method="post"><label>ชื่อผู้ใช้</label><input name="username" required><label>รหัสผ่าน</label><input name="password" type="password" required><button>เข้าสู่ระบบ</button></form><div class="hint">admin/1234 · teacher/1234 · student/1234</div></div>{% endblock %}
+{% extends 'base.html' %}{% block content %}<div class="login-card">
+    <h1>ครูรักสอน</h1>
+    <p>วางแผนคาบ สั่งงาน ตรวจงาน สรุปคะแนน</p>
+    <form method="post"><label>ชื่อผู้ใช้</label><input name="username" required><label>รหัสผ่าน</label><input
+            name="password" type="password" required><button>เข้าสู่ระบบ</button></form>
+    <div class="hint"></div>
+</div>{% endblock %}
