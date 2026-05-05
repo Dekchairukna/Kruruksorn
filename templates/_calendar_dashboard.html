@@ -25,7 +25,7 @@
                 data-date="{{ c.date.strftime('%d/%m/%Y') }}"
                 data-dayname="{{ ['อาทิตย์','จันทร์','อังคาร','พุธ','พฤหัสบดี','ศุกร์','เสาร์'][c.weekday] }}"
                 data-events="{% if c.events %}{% for e in c.events %}{{ e.event_type }}: {{ e.title }}{% if e.note %} ({{ e.note }}){% endif %}{% if not loop.last %}||{% endif %}{% endfor %}{% else %}วันทำงาน/ไม่มีรายการพิเศษ{% endif %}"
-                onclick="showCalendarDay(this)"
+                onclick="showCalendarDay(this, event)"
                 {% endif %}>
               {% if c.day %}
               <span class="day-no">{{ c.day }}</span>
@@ -40,10 +40,50 @@
     </div>
     {% endfor %}
   </div>
-  <div id="calendar-day-detail" class="calendar-detail-panel">
-    <h3>กดวันที่ในปฏิทินเพื่อดูรายละเอียด</h3>
-    <div class="muted">ระบบจะแสดงว่าวันนั้นเป็นวันอะไร และมีรายการอะไรบ้าง</div>
+
+  <div class="mobile-calendar-stack" aria-label="ปฏิทินการศึกษาสำหรับมือถือ">
+    <div class="mobile-month-tabs">
+      {% for m in cal_months %}
+      <a href="#mobile-month-{{ loop.index }}">{{ m.month_name[:3] }} {{ m.be_year }}</a>
+      {% endfor %}
+    </div>
+    {% for m in cal_months %}
+    {% set ns = namespace(total=0) %}
+    {% for week in m.weeks %}{% for c in week %}{% if c.events %}{% set ns.total = ns.total + (c.events|length) %}{% endif %}{% endfor %}{% endfor %}
+    <section class="mobile-month-card" id="mobile-month-{{ loop.index }}">
+      <div class="mobile-month-head">
+        <div>
+          <h3>{{ m.month_name }} {{ m.be_year }}</h3>
+          <p>แตะวันที่เพื่อดูรายละเอียด</p>
+        </div>
+        <span>{{ ns.total }} รายการ</span>
+      </div>
+      <div class="mobile-weekdays">
+        <b class="sun">อา</b><b class="mon">จ</b><b class="tue">อ</b><b class="wed">พ</b><b class="thu">พฤ</b><b class="fri">ศ</b><b class="sat">ส</b>
+      </div>
+      <div class="mobile-month-grid">
+        {% for week in m.weeks %}
+          {% for c in week %}
+          {% set holiday = c.events|selectattr('event_type','equalto','วันหยุดราชการ')|list %}
+          {% set school = c.events|selectattr('event_type','ne','วันหยุดราชการ')|list %}
+          <button type="button"
+            class="mobile-day {% if c.day==0 %}empty{% endif %} {% if c.weekday in [0,6] and c.day %}weekendday{% endif %} {% if c.is_today %}today{% endif %} {% if holiday %}holiday{% elif school %}eventday{% endif %}"
+            {% if c.day %}
+            data-date="{{ c.date.strftime('%d/%m/%Y') }}"
+            data-dayname="{{ ['อาทิตย์','จันทร์','อังคาร','พุธ','พฤหัสบดี','ศุกร์','เสาร์'][c.weekday] }}"
+            data-events="{% if c.events %}{% for e in c.events %}{{ e.event_type }}: {{ e.title }}{% if e.note %} ({{ e.note }}){% endif %}{% if not loop.last %}||{% endif %}{% endfor %}{% else %}วันทำงาน/ไม่มีรายการพิเศษ{% endif %}"
+            onclick="showCalendarDay(this, event)"
+            {% else %}disabled{% endif %}>
+            {% if c.day %}<span>{{ c.day }}</span>{% if c.is_today %}<em>วันนี้</em>{% endif %}{% if c.events %}<i></i>{% endif %}{% endif %}
+          </button>
+          {% endfor %}
+        {% endfor %}
+      </div>
+    </section>
+    {% endfor %}
   </div>
+
+  <div id="dayTooltip" class="day-tooltip" role="status" aria-live="polite"></div>
   <div class="upcoming-box">
     <h3>รายการสำคัญใกล้ถึง</h3>
     <div class="chips">
@@ -54,21 +94,63 @@
   </div>
 
 <script>
-function showCalendarDay(cell){
-  const box = document.getElementById('calendar-day-detail');
+const dayTooltip = document.getElementById('dayTooltip');
+let tooltipTimer = null;
+
+function showCalendarDay(cell, event){
+  if(!cell || !dayTooltip || !cell.dataset.date) return;
   const date = cell.dataset.date || '';
   const dayname = cell.dataset.dayname || '';
   const raw = cell.dataset.events || '';
   const items = raw.split('||').filter(Boolean);
   const htmlItems = items.map(function(t){
     const isHoliday = t.indexOf('วันหยุด') !== -1;
-    const parts = t.split(':');
-    const type = parts.length > 1 ? parts[0].trim() : 'รายการ';
-    const title = parts.length > 1 ? parts.slice(1).join(':').trim() : t;
-    return `<div class="calendar-detail-item"><span class="calendar-detail-type ${isHoliday ? 'holiday' : ''}">${type}</span> ${title}</div>`;
+    return `<div class="tooltip-line ${isHoliday ? 'holiday' : ''}">${t}</div>`;
   }).join('');
-  box.innerHTML = `<h3>วันที่ ${date}</h3><div class="calendar-detail-date">ตรงกับวัน${dayname}</div><div class="calendar-detail-list">${htmlItems}</div>`;
-  box.scrollIntoView({behavior:'smooth', block:'nearest'});
+  dayTooltip.innerHTML = `
+    <div class="tooltip-date">${date}</div>
+    <div class="tooltip-day">วัน${dayname}</div>
+    <div class="tooltip-events">${htmlItems || '<div class="tooltip-line">ไม่มีรายการ</div>'}</div>
+  `;
+  dayTooltip.classList.add('show');
+  moveCalendarTooltip(event || window.event);
+  clearTimeout(tooltipTimer);
+  tooltipTimer = setTimeout(function(){ hideCalendarTooltip(); }, 4500);
 }
+
+function moveCalendarTooltip(event){
+  if(!dayTooltip || !event) return;
+  let x = event.pageX;
+  let y = event.pageY;
+  if((!x || !y) && event.touches && event.touches.length){
+    x = event.touches[0].pageX;
+    y = event.touches[0].pageY;
+  }
+  if(!x || !y){
+    const r = event.target?.getBoundingClientRect?.();
+    x = (r ? r.left + window.scrollX : window.scrollX + 24);
+    y = (r ? r.bottom + window.scrollY : window.scrollY + 24);
+  }
+  const tooltipWidth = 260;
+  const left = Math.min(x + 12, window.scrollX + window.innerWidth - tooltipWidth - 12);
+  dayTooltip.style.left = Math.max(window.scrollX + 8, left) + 'px';
+  dayTooltip.style.top = (y + 12) + 'px';
+}
+
+function hideCalendarTooltip(){
+  if(dayTooltip) dayTooltip.classList.remove('show');
+}
+
+document.addEventListener('DOMContentLoaded', function(){
+  document.querySelectorAll('.mini-calendar td[data-date], .mobile-day[data-date]').forEach(function(cell){
+    cell.addEventListener('mouseenter', function(e){ showCalendarDay(cell, e); });
+    cell.addEventListener('mousemove', moveCalendarTooltip);
+    cell.addEventListener('mouseleave', hideCalendarTooltip);
+    cell.addEventListener('click', function(e){ e.preventDefault(); e.stopPropagation(); showCalendarDay(cell, e); });
+    cell.addEventListener('touchstart', function(e){ e.stopPropagation(); showCalendarDay(cell, e); }, {passive:true});
+  });
+});
+document.addEventListener('click', function(){ hideCalendarTooltip(); });
+document.addEventListener('keydown', function(e){ if(e.key === 'Escape') hideCalendarTooltip(); });
 </script>
 </section>

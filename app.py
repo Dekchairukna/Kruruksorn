@@ -18,12 +18,7 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'krurakson-dev')
-
-# Railway/Render/Heroku มักส่ง DATABASE_URL เป็น postgres:// แต่ SQLAlchemy ต้องการ postgresql://
-database_url = os.environ.get('DATABASE_URL')
-if database_url and database_url.startswith('postgres://'):
-    database_url = database_url.replace('postgres://', 'postgresql://', 1)
-app.config['SQLALCHEMY_DATABASE_URI'] = database_url or f"sqlite:///{os.path.join(INSTANCE_DIR, 'krurakson.db')}"
+app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', f"sqlite:///{os.path.join(INSTANCE_DIR, 'krurakson.db')}")
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['UPLOAD_FOLDER'] = UPLOAD_DIR
 app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100MB รองรับวิดีโอบทเรียน
@@ -610,35 +605,6 @@ def thai_month_name(m):
 
 def buddhist_year(d):
     return d.year + 543
-
-def parse_calendar_date(value):
-    """รับวันที่จาก input/Excel ทั้ง ค.ศ. และ พ.ศ. แล้วคืนค่าเป็น date แบบ ค.ศ."""
-    if isinstance(value, datetime):
-        return value.date()
-    if isinstance(value, date):
-        return value
-    text = str(value or '').strip().replace('/', '-')
-    if not text:
-        return None
-    parts = text.split('-')
-    # รองรับ YYYY-MM-DD และ DD-MM-YYYY
-    if len(parts) != 3:
-        return None
-    try:
-        if len(parts[0]) == 4:
-            y, m, d = map(int, parts)
-        else:
-            d, m, y = map(int, parts)
-        if y > 2400:
-            y -= 543
-        return date(y, m, d)
-    except Exception:
-        return None
-
-def semester_for_date(d):
-    if not d:
-        return get_active_semester()
-    return Semester.query.filter(Semester.start_date <= d, Semester.end_date >= d).first() or get_active_semester()
 
 def month_range_between(start, end):
     months = []
@@ -2339,26 +2305,12 @@ def calendar_events():
     semesters = Semester.query.order_by(Semester.start_date.desc()).all()
     selected_semester = Semester.query.get(request.args.get('semester_id', type=int)) if request.args.get('semester_id') else get_active_semester()
     if request.method == 'POST':
-        event_date = parse_calendar_date(request.form.get('event_date'))
-        if not event_date:
-            flash('วันที่ไม่ถูกต้อง กรุณาเลือกวันที่ใหม่', 'danger')
-            return redirect(url_for('calendar_events', semester_id=selected_semester.id if selected_semester else None))
-        owner_id = None if current_user.role=='admin' and request.form.get('global_event') else current_user.id
         db.session.add(CalendarEvent(
-            teacher_id=owner_id,
-            event_date=event_date,
-            title=request.form['title'].strip(),
-            event_type=request.form.get('event_type','กิจกรรมโรงเรียน'),
-            note=request.form.get('note','')
+            teacher_id=None if current_user.role=='admin' and request.form.get('global_event') else current_user.id,
+            event_date=datetime.strptime(request.form['event_date'],'%Y-%m-%d').date(),
+            title=request.form['title'], event_type=request.form.get('event_type','กิจกรรมโรงเรียน'), note=request.form.get('note','')
         ))
-        db.session.commit()
-        target_semester = semester_for_date(event_date)
-        if selected_semester and not (selected_semester.start_date <= event_date <= selected_semester.end_date):
-            flash('เพิ่มรายการแล้ว แต่วันที่อยู่คนละภาคเรียน ระบบจึงพาไปภาคเรียนที่ตรงกับวันที่นั้น', 'warning')
-        else:
-            flash('เพิ่มรายการปฏิทินแล้ว', 'success')
-        return redirect(url_for('calendar_events', semester_id=target_semester.id if target_semester else None))
-
+        db.session.commit(); flash('เพิ่มรายการปฏิทินแล้ว', 'success'); return redirect(url_for('calendar_events', semester_id=selected_semester.id if selected_semester else None) + '#calendar-preview')
     q = CalendarEvent.query if current_user.role=='admin' else CalendarEvent.query.filter((CalendarEvent.teacher_id==current_user.id) | (CalendarEvent.teacher_id==None))
     if selected_semester:
         q = q.filter(CalendarEvent.event_date>=selected_semester.start_date, CalendarEvent.event_date<=selected_semester.end_date)
@@ -2366,7 +2318,7 @@ def calendar_events():
     summary = working_day_summary(teacher_id=current_user.id if current_user.role=='teacher' else None, semester=selected_semester)
     images = CalendarImage.query.filter_by(semester_id=selected_semester.id).order_by(CalendarImage.uploaded_at.desc()).all() if selected_semester else []
     cal_months, upcoming, today_position = build_calendar_dashboard(teacher_id=current_user.id if current_user.role=='teacher' else None, semester=selected_semester)
-    return render_template('calendar.html', events=events, event=None, summary=summary, semesters=semesters, selected_semester=selected_semester, images=images, cal_months=cal_months, upcoming=upcoming, today_position=today_position)
+    return render_template('calendar.html', events=events, event=None, summary=summary, semesters=semesters, selected_semester=selected_semester, images=images, cal_months=cal_months, upcoming=upcoming, today_position=today_position, active_semester=selected_semester)
 
 @app.route('/calendar/import-excel', methods=['POST'])
 @login_required
@@ -2394,9 +2346,19 @@ def calendar_import_excel():
         if not row or not row[date_i] or not row[title_i]:
             continue
         raw_date = row[date_i]
-        d = parse_calendar_date(raw_date)
-        if not d:
-            continue
+        if isinstance(raw_date, datetime):
+            d = raw_date.date()
+        elif isinstance(raw_date, date):
+            d = raw_date
+        else:
+            txt = str(raw_date).strip().replace('/', '-')
+            parts = txt.split('-')
+            if len(parts[0]) == 4:
+                d = datetime.strptime(txt, '%Y-%m-%d').date()
+            else:
+                d = datetime.strptime(txt, '%d-%m-%Y').date()
+            if d.year > 2400:
+                d = date(d.year-543, d.month, d.day)
         title = str(row[title_i]).strip()
         typ = str(row[type_i]).strip() if len(row) > type_i and row[type_i] else 'กิจกรรมโรงเรียน'
         note = str(row[note_i]).strip() if len(row) > note_i and row[note_i] else ''
@@ -2444,16 +2406,10 @@ def calendar_edit(event_id):
     event = CalendarEvent.query.get_or_404(event_id)
     if current_user.role!='admin' and event.teacher_id not in (current_user.id, None): return deny_redirect('calendar_events')
     if request.method == 'POST':
-        parsed_date = parse_calendar_date(request.form.get('event_date'))
-        if not parsed_date:
-            flash('วันที่ไม่ถูกต้อง', 'danger')
-            return redirect(url_for('calendar_edit', event_id=event.id))
-        event.event_date=parsed_date; event.title=request.form['title']; event.event_type=request.form.get('event_type','กิจกรรมโรงเรียน'); event.note=request.form.get('note','')
-        db.session.commit(); flash('แก้ไขปฏิทินแล้ว', 'success');
-        target_semester = semester_for_date(event.event_date)
-        return redirect(url_for('calendar_events', semester_id=target_semester.id if target_semester else None))
+        event.event_date=datetime.strptime(request.form['event_date'],'%Y-%m-%d').date(); event.title=request.form['title']; event.event_type=request.form.get('event_type','กิจกรรมโรงเรียน'); event.note=request.form.get('note','')
+        db.session.commit(); flash('แก้ไขปฏิทินแล้ว', 'success'); return redirect(url_for('calendar_events'))
     semesters = Semester.query.order_by(Semester.start_date.desc()).all()
-    selected_semester = semester_for_date(event.event_date)
+    selected_semester = get_active_semester()
     q = CalendarEvent.query if current_user.role=='admin' else CalendarEvent.query.filter((CalendarEvent.teacher_id==current_user.id) | (CalendarEvent.teacher_id==None))
     if selected_semester:
         q = q.filter(CalendarEvent.event_date>=selected_semester.start_date, CalendarEvent.event_date<=selected_semester.end_date)
@@ -2461,7 +2417,7 @@ def calendar_edit(event_id):
     summary = working_day_summary(teacher_id=current_user.id if current_user.role=='teacher' else None, semester=selected_semester)
     images = CalendarImage.query.filter_by(semester_id=selected_semester.id).order_by(CalendarImage.uploaded_at.desc()).all() if selected_semester else []
     cal_months, upcoming, today_position = build_calendar_dashboard(teacher_id=current_user.id if current_user.role=='teacher' else None, semester=selected_semester)
-    return render_template('calendar.html', events=events, event=event, summary=summary, semesters=semesters, selected_semester=selected_semester, images=images, cal_months=cal_months, upcoming=upcoming, today_position=today_position)
+    return render_template('calendar.html', events=events, event=event, summary=summary, semesters=semesters, selected_semester=selected_semester, images=images, cal_months=cal_months, upcoming=upcoming, today_position=today_position, active_semester=selected_semester)
 
 @app.route('/calendar/<int:event_id>/delete', methods=['POST'])
 @login_required
@@ -2707,60 +2663,30 @@ def seed():
 
 
 def ensure_schema_columns():
-    """อัปเกรดฐานข้อมูลเดิมแบบปลอดภัย
-    - SQLite ใช้ PRAGMA/ALTER TABLE
-    - PostgreSQL บน Railway ใช้ information_schema และ ALTER TABLE IF NOT EXISTS
-    """
-    dialect = db.engine.dialect.name
+    # รองรับการอัปเกรดจากเวอร์ชันเก่าที่มีฐานข้อมูลเดิมอยู่แล้ว
     with db.engine.connect() as conn:
-        if dialect == 'sqlite':
-            def cols(table):
-                return {row[1] for row in conn.exec_driver_sql(f"PRAGMA table_info({table})").fetchall()}
-            if 'is_active' not in cols('subject'):
-                conn.exec_driver_sql("ALTER TABLE subject ADD COLUMN is_active BOOLEAN DEFAULT 1")
-            if 'is_active' not in cols('classroom'):
-                conn.exec_driver_sql("ALTER TABLE classroom ADD COLUMN is_active BOOLEAN DEFAULT 1")
-            if 'file_path' not in cols('worksheet'):
-                conn.exec_driver_sql("ALTER TABLE worksheet ADD COLUMN file_path VARCHAR(500) DEFAULT ''")
-            if 'original_file_name' not in cols('worksheet'):
-                conn.exec_driver_sql("ALTER TABLE worksheet ADD COLUMN original_file_name VARCHAR(255) DEFAULT ''")
-            if 'file_path' not in cols('worksheet_answer'):
-                conn.exec_driver_sql("ALTER TABLE worksheet_answer ADD COLUMN file_path VARCHAR(500) DEFAULT ''")
-            if 'original_file_name' not in cols('worksheet_answer'):
-                conn.exec_driver_sql("ALTER TABLE worksheet_answer ADD COLUMN original_file_name VARCHAR(255) DEFAULT ''")
-            if 'assignment_type' not in cols('assignment'):
-                conn.exec_driver_sql("ALTER TABLE assignment ADD COLUMN assignment_type VARCHAR(30) DEFAULT 'special'")
-        else:
-            def has_col(table, col):
-                sql = """
-                SELECT 1 FROM information_schema.columns
-                WHERE table_name = :table AND column_name = :col
-                """
-                return conn.exec_driver_sql(sql, {'table': table, 'col': col}).first() is not None
-            if not has_col('subject', 'is_active'):
-                conn.exec_driver_sql("ALTER TABLE subject ADD COLUMN is_active BOOLEAN DEFAULT TRUE")
-            if not has_col('classroom', 'is_active'):
-                conn.exec_driver_sql("ALTER TABLE classroom ADD COLUMN is_active BOOLEAN DEFAULT TRUE")
-            if not has_col('worksheet', 'file_path'):
-                conn.exec_driver_sql("ALTER TABLE worksheet ADD COLUMN file_path VARCHAR(500) DEFAULT ''")
-            if not has_col('worksheet', 'original_file_name'):
-                conn.exec_driver_sql("ALTER TABLE worksheet ADD COLUMN original_file_name VARCHAR(255) DEFAULT ''")
-            if not has_col('worksheet_answer', 'file_path'):
-                conn.exec_driver_sql("ALTER TABLE worksheet_answer ADD COLUMN file_path VARCHAR(500) DEFAULT ''")
-            if not has_col('worksheet_answer', 'original_file_name'):
-                conn.exec_driver_sql("ALTER TABLE worksheet_answer ADD COLUMN original_file_name VARCHAR(255) DEFAULT ''")
-            if not has_col('assignment', 'assignment_type'):
-                conn.exec_driver_sql("ALTER TABLE assignment ADD COLUMN assignment_type VARCHAR(30) DEFAULT 'special'")
+        def cols(table):
+            return {row[1] for row in conn.exec_driver_sql(f"PRAGMA table_info({table})").fetchall()}
+        if 'is_active' not in cols('subject'):
+            conn.exec_driver_sql("ALTER TABLE subject ADD COLUMN is_active BOOLEAN DEFAULT 1")
+        if 'is_active' not in cols('classroom'):
+            conn.exec_driver_sql("ALTER TABLE classroom ADD COLUMN is_active BOOLEAN DEFAULT 1")
+        if 'file_path' not in cols('worksheet'):
+            conn.exec_driver_sql("ALTER TABLE worksheet ADD COLUMN file_path VARCHAR(500) DEFAULT ''")
+        if 'original_file_name' not in cols('worksheet'):
+            conn.exec_driver_sql("ALTER TABLE worksheet ADD COLUMN original_file_name VARCHAR(255) DEFAULT ''")
+        if 'file_path' not in cols('worksheet_answer'):
+            conn.exec_driver_sql("ALTER TABLE worksheet_answer ADD COLUMN file_path VARCHAR(500) DEFAULT ''")
+        if 'original_file_name' not in cols('worksheet_answer'):
+            conn.exec_driver_sql("ALTER TABLE worksheet_answer ADD COLUMN original_file_name VARCHAR(255) DEFAULT ''")
+        if 'assignment_type' not in cols('assignment'):
+            conn.exec_driver_sql("ALTER TABLE assignment ADD COLUMN assignment_type VARCHAR(30) DEFAULT 'special'")
         conn.commit()
 
 def init_db():
-    db.create_all()
-    ensure_schema_columns()
-    seed()
-
-# สร้าง/อัปเดตฐานข้อมูลอัตโนมัติทั้งตอนรัน local และตอน deploy ด้วย gunicorn
-with app.app_context():
-    init_db()
+    db.create_all(); ensure_schema_columns(); seed()
 
 if __name__ == '__main__':
+    with app.app_context():
+        init_db()
     app.run(debug=True, host='0.0.0.0', port=int(os.environ.get('PORT', 8000)))

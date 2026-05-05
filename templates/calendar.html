@@ -27,9 +27,19 @@
 </div>
 {% endif %}
 
-{% include '_calendar_dashboard.html' %}
+<div id="calendar-preview" class="calendar-page-preview">
+  {% include '_calendar_dashboard.html' %}
+</div>
 
-
+<div class="color-cards compact-cards">
+  {% for row in summary or [] %}
+  <div class="stat-card teal readable-stat">
+    <div class="stat-title">{{ row.month }}</div>
+    <div class="stat-number">{{ row.working }}</div>
+    <div class="stat-foot">วันทำงาน · หยุดราชการ {{ row.holiday }} · เสาร์อาทิตย์ {{ row.weekend }}</div>
+  </div>
+  {% endfor %}
+</div>
 
 <div class="card import-panel">
   <h2>อัปเดตปฏิทินเทอมนี้</h2>

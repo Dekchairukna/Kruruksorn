@@ -2,7 +2,7 @@
 <html lang="th">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>ครูรักสอน</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
@@ -25,6 +25,7 @@
     <a href="{{ url_for('index') }}">🏠 แดชบอร์ด</a>
     {% if current_user.role == 'student' %}
       <a href="{{ url_for('schedule') }}">📅 ตารางเรียนของฉัน</a>
+      <a href="{{ url_for('student_assignments') if false else url_for('assignments') }}">📝 งานของฉัน</a>
     {% endif %}
     {% if current_user.role in ['admin','teacher'] %}
       <a href="{{ url_for('subjects') }}">📚 รายวิชา</a>
@@ -49,5 +50,6 @@
   {% endwith %}
   {% block content %}{% endblock %}
 </main>
+
 </body>
 </html>
