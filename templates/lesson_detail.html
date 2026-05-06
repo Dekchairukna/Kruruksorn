@@ -3,7 +3,7 @@
 <div class="page-head">
   <div>
     <h1>{{ lesson.title }}</h1>
-    <p>{{ lesson.unit.subject.name }} · {{ lesson.unit.title }}</p>
+    <p>{{ lesson.unit.subject.name }} · {{ lesson.unit.title }}{% if period_no %} · คาบที่ {{ period_no }} ของหน่วย{% endif %}</p>
   </div>
   {% if current_user.role in ['teacher','admin'] %}
   <div class="actions-row">
@@ -87,11 +87,12 @@
 </p>
 {% endif %}
 
+{% if period_no %}<section class="card highlight"><b>กำลังแสดงเฉพาะงานของคาบที่ {{ period_no }}</b><p class="muted">ถ้าครูผูกใบงาน/แบบทดสอบไว้คาบอื่น ระบบจะไม่แสดงในคาบนี้ เพื่อให้นักเรียนทำตามลำดับคาบเรียน</p></section>{% endif %}
 <h2>ใบงาน</h2>
 <div class="cards">
 {% for w in worksheets %}
   <div class="card">
-    <h3>{{ w.title }}</h3>
+    <h3>{{ w.title }}</h3><p><span class="badge-soft">คาบที่ {{ w.period_no or 1 }}</span></p>
     <p><b>ประเภท:</b> {% if w.worksheet_type=='petanque_score' %}ใบงานเปตอง{% elif w.worksheet_type=='upload' %}อัปโหลดไฟล์{% else %}ใบงานวิชาการ{% endif %}</p>
     <p>{{ w.description }}</p>
     {% if w.file_path %}<p><a class="btn small" href="{{ url_for('uploaded_file', filename=w.file_path) }}" target="_blank">เปิดไฟล์ใบงาน</a></p>{% endif %}
@@ -110,7 +111,7 @@
 <h2>แบบทดสอบ</h2>
 <div class="cards">
 {% for q in quizzes %}
-  <div class="card"><h3>{{ q.title }}</h3><p>ผ่าน {{ q.pass_percent }}%</p>{% if current_user.role == 'student' and lesson_status %}<a class="btn" href="{{ url_for('do_quiz', status_id=lesson_status.id, quiz_id=q.id) }}">ทำแบบทดสอบ</a>{% endif %}{% if current_user.role in ['teacher','admin'] %}<a class="btn" href="{{ url_for('quiz_questions', quiz_id=q.id) }}">ข้อสอบ</a> <a class="btn secondary" href="{{ url_for('quiz_edit', quiz_id=q.id) }}">แก้ไข</a><form method="post" action="{{ url_for('quiz_delete', quiz_id=q.id) }}" class="inline" onsubmit="return confirm('ลบแบบทดสอบนี้?')"><button class="danger-btn">ลบ</button></form>{% endif %}</div>
+  <div class="card"><h3>{{ q.title }}</h3><p><span class="badge-soft">คาบที่ {{ q.period_no or 1 }}</span></p><p>ผ่าน {{ q.pass_percent }}%</p>{% if current_user.role == 'student' and lesson_status %}<a class="btn" href="{{ url_for('do_quiz', status_id=lesson_status.id, quiz_id=q.id) }}">ทำแบบทดสอบ</a>{% endif %}{% if current_user.role in ['teacher','admin'] %}<a class="btn" href="{{ url_for('quiz_questions', quiz_id=q.id) }}">ข้อสอบ</a> <a class="btn secondary" href="{{ url_for('quiz_edit', quiz_id=q.id) }}">แก้ไข</a><form method="post" action="{{ url_for('quiz_delete', quiz_id=q.id) }}" class="inline" onsubmit="return confirm('ลบแบบทดสอบนี้?')"><button class="danger-btn">ลบ</button></form>{% endif %}</div>
 {% else %}<div class="card">ยังไม่มีแบบทดสอบ</div>{% endfor %}
 </div>
 {% endblock %}

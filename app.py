@@ -157,6 +157,16 @@ class SubjectClassroom(db.Model):
     subject = db.relationship('Subject')
     classroom = db.relationship('Classroom')
 
+class SubjectStudent(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    subject_id = db.Column(db.Integer, db.ForeignKey('subject.id'), nullable=False)
+    classroom_id = db.Column(db.Integer, db.ForeignKey('classroom.id'), nullable=False)
+    student_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    subject = db.relationship('Subject')
+    classroom = db.relationship('Classroom')
+    student = db.relationship('User')
+
 class Unit(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     subject_id = db.Column(db.Integer, db.ForeignKey('subject.id'), nullable=False)
@@ -173,6 +183,7 @@ class Lesson(db.Model):
     content = db.Column(db.Text, default='')
     media_url = db.Column(db.String(500), default='')
     required_minutes = db.Column(db.Integer, default=50)
+    period_no = db.Column(db.Integer, default=1)  # คาบที่ของบทเรียนภายในหน่วย
     unit = db.relationship('Unit')
 
 
@@ -193,6 +204,7 @@ class Worksheet(db.Model):
     description = db.Column(db.Text, default='')
     file_path = db.Column(db.String(500), default='')
     original_file_name = db.Column(db.String(255), default='')
+    period_no = db.Column(db.Integer, default=1)  # ใบงานนี้ใช้ในคาบที่เท่าไหร่ของหน่วย
     lesson = db.relationship('Lesson')
 
 class WorksheetQuestion(db.Model):
@@ -209,6 +221,7 @@ class Quiz(db.Model):
     lesson_id = db.Column(db.Integer, db.ForeignKey('lesson.id'), nullable=False)
     title = db.Column(db.String(255), nullable=False)
     pass_percent = db.Column(db.Integer, default=60)
+    period_no = db.Column(db.Integer, default=1)  # แบบทดสอบนี้ใช้ในคาบที่เท่าไหร่ของหน่วย
     lesson = db.relationship('Lesson')
 
 class QuizQuestion(db.Model):
@@ -413,6 +426,64 @@ def subject_classrooms_for_user(subject_id=None):
             rows.append(link)
     return rows
 
+def student_subject_ids(student_id=None):
+    """รายวิชาที่นักเรียนมีชื่อเรียนจริง จากเมนูจัดนักเรียนเข้าวิชา"""
+    student_id = student_id or (current_user.id if current_user.is_authenticated else None)
+    if not student_id:
+        return []
+    return [x.subject_id for x in SubjectStudent.query.filter_by(student_id=student_id).all()]
+
+def subject_students_query(subject_id, classroom_id=None):
+    q = SubjectStudent.query.filter_by(subject_id=subject_id)
+    if classroom_id:
+        q = q.filter_by(classroom_id=classroom_id)
+    return q
+
+def enroll_student(subject_id, classroom_id, student_id):
+    exists = SubjectStudent.query.filter_by(subject_id=subject_id, classroom_id=classroom_id, student_id=student_id).first()
+    if not exists:
+        db.session.add(SubjectStudent(subject_id=subject_id, classroom_id=classroom_id, student_id=student_id))
+        return True
+    return False
+
+def sync_student_to_room_subjects(classroom_id, student_id):
+    """เมื่อเพิ่มนักเรียนเข้าห้อง ให้เชื่อมกับรายวิชาที่ผูกกับห้องนั้นทันที"""
+    added = 0
+    links = SubjectClassroom.query.filter_by(classroom_id=classroom_id).all()
+    for link in links:
+        if enroll_student(link.subject_id, classroom_id, student_id):
+            added += 1
+    return added
+
+def sync_classroom_subject_enrollments(classroom_id):
+    """ซิงก์นักเรียนทั้งห้องเข้าวิชาที่ผูกกับห้อง ใช้แก้ข้อมูลเดิมที่ยังไม่เชื่อมกัน"""
+    added = 0
+    students = ClassroomStudent.query.filter_by(classroom_id=classroom_id).all()
+    subject_links = SubjectClassroom.query.filter_by(classroom_id=classroom_id).all()
+    for cs in students:
+        for sl in subject_links:
+            if enroll_student(sl.subject_id, classroom_id, cs.student_id):
+                added += 1
+    return added
+
+def unlink_student_from_room_subjects(classroom_id, student_id):
+    """เมื่อนำนักเรียนออกจากห้อง ให้เอาออกจากรายวิชาที่ผูกกับห้องนั้นด้วย"""
+    return SubjectStudent.query.filter_by(classroom_id=classroom_id, student_id=student_id).delete()
+
+def unenroll_student(subject_id, classroom_id, student_id):
+    SubjectStudent.query.filter_by(subject_id=subject_id, classroom_id=classroom_id, student_id=student_id).delete()
+
+def student_can_access_subject(subject_id, student_id=None):
+    student_id = student_id or (current_user.id if current_user.is_authenticated else None)
+    return SubjectStudent.query.filter_by(subject_id=subject_id, student_id=student_id).first() is not None
+
+def enrolled_classroom_students(subject_id, classroom_id):
+    """คืน ClassroomStudent เฉพาะคนที่มีชื่อเรียนในรายวิชานี้ ใช้กับเช็กชื่อ/คะแนน"""
+    enrolled_ids = {x.student_id for x in SubjectStudent.query.filter_by(subject_id=subject_id, classroom_id=classroom_id).all()}
+    if not enrolled_ids:
+        return []
+    return ClassroomStudent.query.filter(ClassroomStudent.classroom_id==classroom_id, ClassroomStudent.student_id.in_(enrolled_ids)).all()
+
 def get_grade_setting(subject_id):
     setting = GradeSetting.query.filter_by(subject_id=subject_id).first()
     if not setting:
@@ -495,21 +566,37 @@ def is_school_blocked_day(target_date, teacher_id=None):
     return q.first() is not None or target_date.weekday() >= 5
 
 def ordered_lessons_for_subject(subject_id):
-    return Lesson.query.join(Unit).filter(Unit.subject_id==subject_id).order_by(Unit.id, Lesson.id).all()
+    return Lesson.query.join(Unit).filter(Unit.subject_id==subject_id).order_by(Unit.id, Lesson.period_no, Lesson.id).all()
 
-def auto_lesson_for_schedule(schedule_row, target_date=None):
-    """ถ้าครูผูกบทเรียนไว้ ใช้บทเรียนนั้นก่อน; ถ้าไม่ผูก ให้เรียงบทเรียนตามวันที่มีเรียนจริงในภาคเรียน"""
+def unit_period_sequence(subject_id):
+    """สร้างลำดับการสอนทั้งเทอมแบบลงลึกระดับคาบ: หน่วยละกี่คาบ, คาบนี้ใช้บทเรียน/ใบงาน/แบบทดสอบอะไร"""
+    rows = []
+    units = Unit.query.filter_by(subject_id=subject_id).order_by(Unit.id).all()
+    for unit in units:
+        lessons = Lesson.query.filter_by(unit_id=unit.id).order_by(Lesson.period_no, Lesson.id).all()
+        for pno in range(1, max(1, unit.required_periods or 1) + 1):
+            exact = [l for l in lessons if (l.period_no or 1) == pno]
+            lesson = exact[0] if exact else (lessons[min(pno-1, len(lessons)-1)] if lessons else None)
+            worksheets = Worksheet.query.filter_by(lesson_id=lesson.id, period_no=pno).order_by(Worksheet.id).all() if lesson else []
+            quizzes = Quiz.query.filter_by(lesson_id=lesson.id, period_no=pno).order_by(Quiz.id).all() if lesson else []
+            rows.append(SimpleNamespace(unit=unit, unit_period_no=pno, unit_total_periods=max(1, unit.required_periods or 1), lesson=lesson, worksheets=worksheets, quizzes=quizzes))
+    return rows
+
+def auto_period_for_schedule(schedule_row, target_date=None):
+    """คืนข้อมูลคาบที่ควรเรียนจริงตามวันเรียน โดยข้ามวันหยุด และวนตามจำนวนคาบของแต่ละหน่วย"""
     if schedule_row.lesson_id:
-        return schedule_row.lesson
-    lessons = ordered_lessons_for_subject(schedule_row.subject_id)
-    if not lessons:
+        lesson = schedule_row.lesson
+        pno = lesson.period_no or 1
+        return SimpleNamespace(unit=lesson.unit, unit_period_no=pno, unit_total_periods=lesson.unit.required_periods or 1, lesson=lesson, worksheets=Worksheet.query.filter_by(lesson_id=lesson.id, period_no=pno).all(), quizzes=Quiz.query.filter_by(lesson_id=lesson.id, period_no=pno).all())
+    seq = unit_period_sequence(schedule_row.subject_id)
+    if not seq:
         return None
     sem = get_active_semester()
     target_date = target_date or date.today()
     start = sem.start_date if sem else target_date
     end = min(target_date, sem.end_date if sem else target_date)
     if end < start:
-        return lessons[0]
+        return seq[0]
     cur = start
     count = 0
     while cur <= end:
@@ -517,11 +604,16 @@ def auto_lesson_for_schedule(schedule_row, target_date=None):
             count += 1
         cur += timedelta(days=1)
     idx = max(0, count - 1)
-    return lessons[idx] if idx < len(lessons) else lessons[-1]
+    return seq[idx] if idx < len(seq) else seq[-1]
+
+def auto_lesson_for_schedule(schedule_row, target_date=None):
+    plan = auto_period_for_schedule(schedule_row, target_date)
+    return plan.lesson if plan else None
 
 def build_student_learning_plan(student, limit=80):
     room_ids = [x.classroom_id for x in ClassroomStudent.query.filter_by(student_id=student.id).all()]
-    schedules = TeachingSchedule.query.filter(TeachingSchedule.classroom_id.in_(room_ids or [-1])).order_by(TeachingSchedule.weekday, TeachingSchedule.period_no).all()
+    allowed_subject_ids = student_subject_ids(student.id)
+    schedules = TeachingSchedule.query.filter(TeachingSchedule.classroom_id.in_(room_ids or [-1]), TeachingSchedule.subject_id.in_(allowed_subject_ids or [-1])).order_by(TeachingSchedule.weekday, TeachingSchedule.period_no).all()
     sem = get_active_semester()
     if not sem:
         return []
@@ -531,8 +623,8 @@ def build_student_learning_plan(student, limit=80):
         for srow in [x for x in schedules if x.weekday == cur.weekday()]:
             if is_school_blocked_day(cur, srow.teacher_id):
                 continue
-            les = auto_lesson_for_schedule(srow, cur)
-            rows.append(SimpleNamespace(date=cur, schedule=srow, lesson=les))
+            period_plan = auto_period_for_schedule(srow, cur)
+            rows.append(SimpleNamespace(date=cur, schedule=srow, lesson=period_plan.lesson if period_plan else None, period_plan=period_plan))
         cur += timedelta(days=1)
     return rows
 
@@ -540,6 +632,8 @@ def get_or_create_lesson_status(lesson, student):
     # หา/สร้างงานภายในสำหรับบทเรียนประจำคาบ ไม่ให้ปนกับงานพิเศษ
     room_ids = [x.classroom_id for x in ClassroomStudent.query.filter_by(student_id=student.id).all()]
     subject_id = lesson.unit.subject_id
+    if not student_can_access_subject(subject_id, student.id):
+        return None
     sched = TeachingSchedule.query.filter(TeachingSchedule.subject_id==subject_id, TeachingSchedule.classroom_id.in_(room_ids or [-1])).first()
     classroom_id = sched.classroom_id if sched else (room_ids[0] if room_ids else None)
     teacher_id = sched.teacher_id if sched else (lesson.unit.subject.teacher_id or User.query.filter_by(role='admin').first().id)
@@ -693,14 +787,17 @@ def teacher_dashboard():
 def student_dashboard():
     statuses = AssignmentStatus.query.filter_by(student_id=current_user.id).join(Assignment).filter(Assignment.assignment_type=='special').order_by(Assignment.created_at.desc()).all()
     room_ids = [x.classroom_id for x in ClassroomStudent.query.filter_by(student_id=current_user.id).all()]
-    schedules = TeachingSchedule.query.filter(TeachingSchedule.classroom_id.in_(room_ids or [-1])).order_by(TeachingSchedule.weekday, TeachingSchedule.period_no).all()
+    allowed_subject_ids = student_subject_ids(current_user.id)
+    schedules = TeachingSchedule.query.filter(TeachingSchedule.classroom_id.in_(room_ids or [-1]), TeachingSchedule.subject_id.in_(allowed_subject_ids or [-1])).order_by(TeachingSchedule.weekday, TeachingSchedule.period_no).all()
     today = date.today()
     today_idx = today.weekday()
     today_schedules = [x for x in schedules if x.weekday == today_idx and not is_school_blocked_day(today, x.teacher_id)]
     for row in schedules:
-        row.auto_lesson = auto_lesson_for_schedule(row, today)
+        row.auto_period = auto_period_for_schedule(row, today)
+        row.auto_lesson = row.auto_period.lesson if row.auto_period else None
     for row in today_schedules:
-        row.auto_lesson = auto_lesson_for_schedule(row, today)
+        row.auto_period = auto_period_for_schedule(row, today)
+        row.auto_lesson = row.auto_period.lesson if row.auto_period else None
     learning_plan = build_student_learning_plan(current_user, limit=120)
     return render_template('student_dashboard.html', statuses=statuses, schedules=schedules, today_schedules=today_schedules, learning_plan=learning_plan, day_names=['จันทร์','อังคาร','พุธ','พฤหัสบดี','ศุกร์','เสาร์','อาทิตย์'])
 
@@ -779,6 +876,7 @@ def classroom_has_history(classroom_id):
     return any([
         ClassroomStudent.query.filter_by(classroom_id=classroom_id).first(),
         SubjectClassroom.query.filter_by(classroom_id=classroom_id).first(),
+        SubjectStudent.query.filter_by(classroom_id=classroom_id).first(),
         Assignment.query.filter_by(classroom_id=classroom_id).first(),
         TeachingSchedule.query.filter_by(classroom_id=classroom_id).first(),
         Attendance.query.filter_by(classroom_id=classroom_id).first(),
@@ -814,6 +912,7 @@ def classroom_delete(classroom_id):
         db.session.commit(); flash('ห้องนี้มีนักเรียน/ตาราง/งาน/เช็กชื่อแล้ว จึงเปลี่ยนเป็น “ปิดใช้งาน” แทนการลบเพื่อกันข้อมูลหาย', 'warning')
         return redirect(url_for('classrooms'))
     TeacherClassroom.query.filter_by(classroom_id=room.id).delete()
+    SubjectStudent.query.filter_by(classroom_id=room.id).delete()
     db.session.delete(room); db.session.commit(); flash('ลบห้องเรียนที่ไม่มีข้อมูลผูกไว้แล้ว', 'success')
     return redirect(url_for('classrooms'))
 
@@ -824,7 +923,9 @@ def classroom_student_delete(link_id):
     link = ClassroomStudent.query.get_or_404(link_id)
     if not owns_classroom(link.classroom): return deny_redirect('classrooms')
     room_id = link.classroom_id
-    db.session.delete(link); db.session.commit(); flash('นำนักเรียนออกจากห้องแล้ว', 'success')
+    student_id = link.student_id
+    removed_subjects = unlink_student_from_room_subjects(room_id, student_id)
+    db.session.delete(link); db.session.commit(); flash(f'นำนักเรียนออกจากห้องแล้ว และลบออกจากวิชาของห้องนี้ {removed_subjects} รายการ', 'success')
     return redirect(url_for('classroom_students', classroom_id=room_id))
 
 
@@ -911,17 +1012,47 @@ def teacher_classroom_delete(link_id):
 @role_required('teacher','admin')
 def classroom_students(classroom_id):
     room = Classroom.query.get_or_404(classroom_id)
-    if current_user.role != 'admin' and room.teacher_id != current_user.id:
+    if not owns_classroom(room):
         flash('ไม่มีสิทธิ์', 'danger'); return redirect(url_for('classrooms'))
     if request.method == 'POST':
-        student_id = int(request.form['student_id'])
+        student_id = request.form.get('student_id', type=int)
+        if not student_id:
+            flash('กรุณาเลือกนักเรียนก่อน', 'danger')
+            return redirect(url_for('classroom_students', classroom_id=room.id))
+        student = User.query.get(student_id)
+        if not student or student.role != 'student':
+            flash('ไม่พบนักเรียนที่เลือก', 'danger')
+            return redirect(url_for('classroom_students', classroom_id=room.id))
+        created_room_link = False
         if not ClassroomStudent.query.filter_by(classroom_id=room.id, student_id=student_id).first():
             db.session.add(ClassroomStudent(classroom_id=room.id, student_id=student_id))
-            db.session.commit()
+            db.session.flush()
+            created_room_link = True
+        added_subjects = sync_student_to_room_subjects(room.id, student_id)
+        db.session.commit()
+        if created_room_link:
+            flash(f'เพิ่ม {student.full_name} เข้าห้อง {room.name} แล้ว และเชื่อมเข้าวิชาของห้องนี้ {added_subjects} วิชา', 'success')
+        else:
+            flash(f'{student.full_name} อยู่ในห้องนี้อยู่แล้ว อัปเดตการเชื่อมวิชาเพิ่ม {added_subjects} วิชา', 'success')
         return redirect(url_for('classroom_students', classroom_id=room.id))
-    links = ClassroomStudent.query.filter_by(classroom_id=room.id).all()
+    links = ClassroomStudent.query.filter_by(classroom_id=room.id).join(User, ClassroomStudent.student_id==User.id).order_by(User.full_name).all()
     students = User.query.filter_by(role='student').order_by(User.full_name).all()
-    return render_template('classroom_students.html', room=room, links=links, students=students)
+    subject_links = SubjectClassroom.query.filter_by(classroom_id=room.id).all()
+    enrolled_counts = {sl.subject_id: SubjectStudent.query.filter_by(subject_id=sl.subject_id, classroom_id=room.id).count() for sl in subject_links}
+    return render_template('classroom_students.html', room=room, links=links, students=students, subject_links=subject_links, enrolled_counts=enrolled_counts)
+
+@app.route('/classroom/<int:classroom_id>/sync_subjects', methods=['POST'])
+@login_required
+@role_required('teacher','admin')
+def classroom_sync_subjects(classroom_id):
+    room = Classroom.query.get_or_404(classroom_id)
+    if not owns_classroom(room):
+        return deny_redirect('classrooms')
+    added = sync_classroom_subject_enrollments(room.id)
+    db.session.commit()
+    flash(f'ซิงก์นักเรียนในห้อง {room.name} เข้ารายวิชาที่ผูกกับห้องนี้แล้ว เพิ่มใหม่ {added} รายการ', 'success')
+    return redirect(url_for('classroom_students', classroom_id=room.id))
+
 
 @app.route('/import_students', methods=['GET','POST'])
 @login_required
@@ -958,6 +1089,8 @@ def import_students():
                 user.full_name = str(full_name); user.birth_date = birth_text; updated += 1
             if not ClassroomStudent.query.filter_by(classroom_id=classroom_id, student_id=user.id).first():
                 db.session.add(ClassroomStudent(classroom_id=classroom_id, student_id=user.id))
+                db.session.flush()
+            sync_student_to_room_subjects(classroom_id, user.id)
         db.session.commit()
         flash(f'นำเข้าเรียบร้อย สร้างใหม่ {created} คน อัปเดต {updated} คน', 'success')
         return redirect(url_for('import_students'))
@@ -1425,6 +1558,7 @@ def subject_delete(subject_id):
         db.session.commit(); flash('รายวิชานี้มีข้อมูลบทเรียน/งาน/ตาราง/คะแนนแล้ว จึงเปลี่ยนเป็น “ปิดใช้งาน” แทนการลบเพื่อกันข้อมูลหาย', 'warning')
         return redirect(url_for('subjects'))
     TeacherSubject.query.filter_by(subject_id=subject.id).delete()
+    SubjectStudent.query.filter_by(subject_id=subject.id).delete()
     GradeSetting.query.filter_by(subject_id=subject.id).delete()
     db.session.delete(subject); db.session.commit(); flash('ลบรายวิชาที่ไม่มีข้อมูลผูกไว้แล้ว', 'success')
     return redirect(url_for('subjects'))
@@ -1450,6 +1584,43 @@ def subject_detail(subject_id):
         completeness.append((u, lesson_count, worksheets, quizzes, percent, max(0,u.required_periods-lesson_count)))
     subject_rooms = subject_classrooms_for_user(subject.id)
     return render_template('subject_detail.html', subject=subject, units=units, completeness=completeness, subject_rooms=subject_rooms)
+
+
+@app.route('/unit/<int:unit_id>/period-plan', methods=['GET','POST'])
+@login_required
+@role_required('teacher','admin')
+def unit_period_plan(unit_id):
+    unit = Unit.query.get_or_404(unit_id)
+    if not owns_unit(unit): return deny_redirect('subjects')
+    lessons = Lesson.query.filter_by(unit_id=unit.id).order_by(Lesson.period_no, Lesson.id).all()
+    if request.method == 'POST':
+        unit.required_periods = int(request.form.get('required_periods', unit.required_periods or 1) or 1)
+        for lesson in lessons:
+            lesson.period_no = int(request.form.get(f'lesson_{lesson.id}_period', lesson.period_no or 1) or 1)
+        for lesson in lessons:
+            for ws in Worksheet.query.filter_by(lesson_id=lesson.id).all():
+                ws.period_no = int(request.form.get(f'worksheet_{ws.id}_period', ws.period_no or 1) or 1)
+            for qz in Quiz.query.filter_by(lesson_id=lesson.id).all():
+                qz.period_no = int(request.form.get(f'quiz_{qz.id}_period', qz.period_no or 1) or 1)
+        db.session.commit(); flash('บันทึกแผนกระจายบทเรียน/ใบงาน/แบบทดสอบรายคาบแล้ว', 'success')
+        return redirect(url_for('unit_period_plan', unit_id=unit.id))
+    lessons = Lesson.query.filter_by(unit_id=unit.id).order_by(Lesson.period_no, Lesson.id).all()
+    rows=[]
+    all_items=[]
+    for lesson in lessons:
+        for ws in Worksheet.query.filter_by(lesson_id=lesson.id).order_by(Worksheet.period_no, Worksheet.id).all():
+            all_items.append(SimpleNamespace(kind='ใบงาน', obj=ws, lesson=lesson, field_name=f'worksheet_{ws.id}_period', period_no=ws.period_no or 1))
+        for qz in Quiz.query.filter_by(lesson_id=lesson.id).order_by(Quiz.period_no, Quiz.id).all():
+            all_items.append(SimpleNamespace(kind='แบบทดสอบ', obj=qz, lesson=lesson, field_name=f'quiz_{qz.id}_period', period_no=qz.period_no or 1))
+    for pno in range(1, max(1, unit.required_periods or 1)+1):
+        pls = [l for l in lessons if (l.period_no or 1)==pno]
+        lesson = pls[0] if pls else (lessons[min(pno-1, len(lessons)-1)] if lessons else None)
+        worksheets=[]; quizzes=[]
+        for l in lessons:
+            worksheets += Worksheet.query.filter_by(lesson_id=l.id, period_no=pno).order_by(Worksheet.id).all()
+            quizzes += Quiz.query.filter_by(lesson_id=l.id, period_no=pno).order_by(Quiz.id).all()
+        rows.append(SimpleNamespace(period_no=pno, lesson=lesson, worksheets=worksheets, quizzes=quizzes))
+    return render_template('unit_period_plan.html', unit=unit, lessons=lessons, rows=rows, all_items=all_items)
 
 @app.route('/unit/<int:unit_id>/edit', methods=['GET','POST'])
 @login_required
@@ -1500,7 +1671,7 @@ def lesson_create(unit_id):
     subject = unit.subject
     if not owns_subject(subject): flash('ไม่มีสิทธิ์','danger'); return redirect(url_for('subjects'))
     if request.method == 'POST':
-        l = Lesson(unit_id=unit.id, title=request.form['title'], objective=request.form.get('objective',''), content=request.form.get('content',''), media_url=request.form.get('media_url',''))
+        l = Lesson(unit_id=unit.id, title=request.form['title'], objective=request.form.get('objective',''), content=request.form.get('content',''), media_url=request.form.get('media_url',''), period_no=int(request.form.get('period_no',1) or 1))
         db.session.add(l); db.session.flush()
         add_lesson_uploads(l)
         db.session.commit()
@@ -1519,6 +1690,7 @@ def lesson_edit(lesson_id):
         lesson.objective = request.form.get('objective','')
         lesson.content = request.form.get('content','')
         lesson.media_url = request.form.get('media_url','')
+        lesson.period_no = int(request.form.get('period_no', lesson.period_no or 1) or 1)
         add_lesson_uploads(lesson)
         db.session.commit(); flash('แก้ไขบทเรียนแล้ว เนื้อหา/ไฟล์แนบจะแสดงในหน้าบทเรียนทันที', 'success')
         return redirect(url_for('lesson_detail', lesson_id=lesson.id))
@@ -1562,11 +1734,20 @@ def lesson_delete(lesson_id):
 @login_required
 def lesson_detail(lesson_id):
     lesson = Lesson.query.get_or_404(lesson_id)
-    worksheets = Worksheet.query.filter_by(lesson_id=lesson.id).all()
-    quizzes = Quiz.query.filter_by(lesson_id=lesson.id).all()
+    if current_user.role == 'student' and not student_can_access_subject(lesson.unit.subject_id, current_user.id):
+        flash('ยังไม่มีชื่อเรียนรายวิชานี้', 'danger')
+        return redirect(url_for('student_dashboard'))
+    raw_period = request.args.get('period_no')
+    period_no = int(raw_period) if raw_period and raw_period.isdigit() else None
+    if period_no:
+        worksheets = Worksheet.query.filter_by(lesson_id=lesson.id, period_no=period_no).order_by(Worksheet.id).all()
+        quizzes = Quiz.query.filter_by(lesson_id=lesson.id, period_no=period_no).order_by(Quiz.id).all()
+    else:
+        worksheets = Worksheet.query.filter_by(lesson_id=lesson.id).order_by(Worksheet.period_no, Worksheet.id).all()
+        quizzes = Quiz.query.filter_by(lesson_id=lesson.id).order_by(Quiz.period_no, Quiz.id).all()
     files = LessonFile.query.filter_by(lesson_id=lesson.id).order_by(LessonFile.created_at.desc()).all()
     lesson_status = get_or_create_lesson_status(lesson, current_user) if current_user.role == 'student' else None
-    return render_template('lesson_detail.html', lesson=lesson, worksheets=worksheets, quizzes=quizzes, files=files, lesson_status=lesson_status, youtube_embed=youtube_embed_url(lesson.media_url))
+    return render_template('lesson_detail.html', lesson=lesson, worksheets=worksheets, quizzes=quizzes, files=files, lesson_status=lesson_status, youtube_embed=youtube_embed_url(lesson.media_url), period_no=period_no)
 
 
 @app.route('/subject/<int:subject_id>/worksheets')
@@ -1617,7 +1798,7 @@ def worksheet_create(lesson_id):
     lesson = Lesson.query.get_or_404(lesson_id)
     if not owns_lesson(lesson): return deny_redirect('subjects')
     if request.method == 'POST':
-        ws = Worksheet(lesson_id=lesson.id, title=request.form['title'], worksheet_type=request.form.get('worksheet_type','academic'), description=request.form.get('description',''))
+        ws = Worksheet(lesson_id=lesson.id, title=request.form['title'], worksheet_type=request.form.get('worksheet_type','academic'), description=request.form.get('description',''), period_no=int(request.form.get('period_no',1) or 1))
         try:
             fp, original = save_uploaded_file(request.files.get('worksheet_file'), 'worksheets')
             ws.file_path, ws.original_file_name = fp, original
@@ -1651,6 +1832,7 @@ def worksheet_edit(worksheet_id):
         ws.title = request.form['title']
         ws.worksheet_type = request.form.get('worksheet_type','academic')
         ws.description = request.form.get('description','')
+        ws.period_no = int(request.form.get('period_no', ws.period_no or 1) or 1)
         try:
             fp, original = save_uploaded_file(request.files.get('worksheet_file'), 'worksheets')
             if fp:
@@ -1697,7 +1879,7 @@ def worksheet_question_delete(question_id):
 def quiz_create(lesson_id):
     lesson = Lesson.query.get_or_404(lesson_id)
     if request.method == 'POST':
-        qz = Quiz(lesson_id=lesson.id, title=request.form['title'], pass_percent=int(request.form.get('pass_percent',60)))
+        qz = Quiz(lesson_id=lesson.id, title=request.form['title'], pass_percent=int(request.form.get('pass_percent',60)), period_no=int(request.form.get('period_no',1) or 1))
         db.session.add(qz); db.session.commit(); return redirect(url_for('quiz_questions', quiz_id=qz.id))
     return render_template('quiz_form.html', lesson=lesson)
 
@@ -1729,6 +1911,7 @@ def quiz_edit(quiz_id):
     if request.method == 'POST':
         quiz.title = request.form['title']
         quiz.pass_percent = int(request.form.get('pass_percent',60))
+        quiz.period_no = int(request.form.get('period_no', quiz.period_no or 1) or 1)
         db.session.commit(); flash('แก้ไขแบบทดสอบแล้ว', 'success')
         return redirect(url_for('lesson_detail', lesson_id=quiz.lesson_id))
     return render_template('quiz_form.html', lesson=quiz.lesson, quiz=quiz)
@@ -1785,7 +1968,7 @@ def assign():
     if request.method == 'POST':
         a = Assignment(teacher_id=current_user.id, subject_id=int(request.form['subject_id']), classroom_id=int(request.form['classroom_id']), lesson_id=int(request.form['lesson_id']), title=request.form['title'], due_date=datetime.strptime(request.form['due_date'],'%Y-%m-%d').date() if request.form.get('due_date') else None)
         db.session.add(a); db.session.flush()
-        links = ClassroomStudent.query.filter_by(classroom_id=a.classroom_id).all()
+        links = enrolled_classroom_students(a.subject_id, a.classroom_id)
         for link in links:
             db.session.add(AssignmentStatus(assignment_id=a.id, student_id=link.student_id))
         db.session.commit(); flash('สั่งงานให้นักเรียนในห้องแล้ว', 'success'); return redirect(url_for('teacher_dashboard'))
@@ -1974,9 +2157,10 @@ def schedule():
         schedules = TeachingSchedule.query.filter_by(teacher_id=current_user.id).order_by(TeachingSchedule.weekday, TeachingSchedule.period_no).all()
         teacher_title = current_user.full_name
     else:
-        # นักเรียนเห็นเฉพาะตารางสอนของห้องที่ตนเองอยู่
+        # นักเรียนเห็นเฉพาะตารางสอนของห้องที่ตนเองอยู่ และเฉพาะวิชาที่มีชื่อเรียนจริง
         student_room_ids = [x.classroom_id for x in ClassroomStudent.query.filter_by(student_id=current_user.id).all()]
-        schedules = TeachingSchedule.query.filter(TeachingSchedule.classroom_id.in_(student_room_ids or [-1])).order_by(TeachingSchedule.weekday, TeachingSchedule.period_no).all()
+        allowed_subject_ids = student_subject_ids(current_user.id)
+        schedules = TeachingSchedule.query.filter(TeachingSchedule.classroom_id.in_(student_room_ids or [-1]), TeachingSchedule.subject_id.in_(allowed_subject_ids or [-1])).order_by(TeachingSchedule.weekday, TeachingSchedule.period_no).all()
         subjects = []
         rooms = []
         active_teacher_id = None
@@ -2430,6 +2614,57 @@ def calendar_delete(event_id):
 
 
 
+@app.route('/subject_enrollments', methods=['GET','POST'])
+@login_required
+@role_required('teacher','admin')
+def subject_enrollments():
+    subjects = teacher_filter(Subject).order_by(Subject.name).all()
+    selected_subject_id = request.values.get('subject_id', type=int)
+    selected_classroom_id = request.values.get('classroom_id', type=int)
+    selected_subject = Subject.query.get(selected_subject_id) if selected_subject_id else (subjects[0] if subjects else None)
+    if selected_subject and not owns_subject(selected_subject):
+        return deny_redirect('subjects')
+    # ห้องที่เลือกได้ ต้องเป็นห้องที่ผูกกับวิชาและอยู่ในสิทธิ์ครู
+    subject_room_links = subject_classrooms_for_user(selected_subject.id) if selected_subject else []
+    if selected_subject and not subject_room_links:
+        # กันกรณียังไม่ผูกวิชากับห้อง ให้เห็นห้องที่ครูรับผิดชอบก่อน
+        allowed_rooms = teacher_filter(Classroom).order_by(Classroom.name).all()
+        subject_room_links = [SimpleNamespace(classroom=r) for r in allowed_rooms]
+    selected_room = None
+    if selected_classroom_id:
+        selected_room = Classroom.query.get(selected_classroom_id)
+    elif subject_room_links:
+        selected_room = subject_room_links[0].classroom
+    if selected_room and not owns_classroom(selected_room):
+        return deny_redirect('subjects')
+
+    if request.method == 'POST':
+        selected_subject_id = int(request.form['subject_id'])
+        selected_classroom_id = int(request.form['classroom_id'])
+        selected_subject = Subject.query.get_or_404(selected_subject_id)
+        selected_room = Classroom.query.get_or_404(selected_classroom_id)
+        if not owns_subject(selected_subject) or not owns_classroom(selected_room):
+            return deny_redirect('subjects')
+        if not SubjectClassroom.query.filter_by(subject_id=selected_subject.id, classroom_id=selected_room.id).first():
+            db.session.add(SubjectClassroom(subject_id=selected_subject.id, classroom_id=selected_room.id))
+        selected_ids = {int(x) for x in request.form.getlist('student_ids')}
+        # ลบเฉพาะคนในห้องนี้ที่ไม่ได้ติ๊ก เพื่อให้แก้รายชื่อได้จริง
+        current_links = SubjectStudent.query.filter_by(subject_id=selected_subject.id, classroom_id=selected_room.id).all()
+        for link in current_links:
+            if link.student_id not in selected_ids:
+                db.session.delete(link)
+        for sid in selected_ids:
+            enroll_student(selected_subject.id, selected_room.id, sid)
+        db.session.commit()
+        flash('บันทึกรายชื่อนักเรียนในวิชาแล้ว', 'success')
+        return redirect(url_for('subject_enrollments', subject_id=selected_subject.id, classroom_id=selected_room.id))
+
+    classroom_student_links = ClassroomStudent.query.filter_by(classroom_id=selected_room.id).order_by(ClassroomStudent.id).all() if selected_room else []
+    enrolled_ids = {x.student_id for x in SubjectStudent.query.filter_by(subject_id=selected_subject.id, classroom_id=selected_room.id).all()} if selected_subject and selected_room else set()
+    enrolled_count = SubjectStudent.query.filter_by(subject_id=selected_subject.id).count() if selected_subject else 0
+    return render_template('subject_enrollments.html', subjects=subjects, selected_subject=selected_subject, selected_room=selected_room, subject_room_links=subject_room_links, classroom_student_links=classroom_student_links, enrolled_ids=enrolled_ids, enrolled_count=enrolled_count)
+
+
 @app.route('/records')
 @login_required
 @role_required('teacher','admin')
@@ -2445,7 +2680,7 @@ def records_center():
 def attendance(subject_id, classroom_id):
     subject = Subject.query.get_or_404(subject_id); room = Classroom.query.get_or_404(classroom_id)
     if not owns_subject(subject) or not owns_classroom(room): return deny_redirect('records_center')
-    links = ClassroomStudent.query.filter_by(classroom_id=room.id).all()
+    links = enrolled_classroom_students(subject.id, room.id)
     att_date = datetime.strptime(request.args.get('date', date.today().isoformat()), '%Y-%m-%d').date()
     if request.method == 'POST':
         att_date = datetime.strptime(request.form['date'], '%Y-%m-%d').date()
@@ -2485,7 +2720,7 @@ def export_attendance(subject_id, classroom_id):
     if not owns_subject(subject) or not owns_classroom(room): return deny_redirect('records_center')
     wb=Workbook(); ws=wb.active; ws.title='attendance'
     ws.append(['ชื่อ','มา','ขาด','ลา','มาสาย','กิจกรรม'])
-    links = ClassroomStudent.query.filter_by(classroom_id=room.id).all()
+    links = enrolled_classroom_students(subject.id, room.id)
     for link in links:
         atts = Attendance.query.filter_by(subject_id=subject.id, classroom_id=room.id, student_id=link.student_id).all()
         ws.append([link.student.full_name, sum(1 for a in atts if a.status=='มา'), sum(1 for a in atts if a.status=='ขาด'), sum(1 for a in atts if a.status=='ลา'), sum(1 for a in atts if a.status=='มาสาย'), sum(1 for a in atts if a.status=='กิจกรรม')])
@@ -2498,7 +2733,7 @@ def export_attendance(subject_id, classroom_id):
 def grades(subject_id, classroom_id):
     subject = Subject.query.get_or_404(subject_id); room = Classroom.query.get_or_404(classroom_id)
     if not owns_subject(subject) or not owns_classroom(room): return deny_redirect('records_center')
-    links = ClassroomStudent.query.filter_by(classroom_id=room.id).all()
+    links = enrolled_classroom_students(subject.id, room.id)
     setting = get_grade_setting(subject.id)
     if request.method == 'POST':
         setting.worksheet_weight = float(request.form.get('worksheet_weight', setting.worksheet_weight))
@@ -2527,7 +2762,7 @@ def export_grades(subject_id, classroom_id):
     if not owns_subject(subject) or not owns_classroom(room): return deny_redirect('records_center')
     wb=Workbook(); ws=wb.active; ws.title='grades'
     ws.append(['ชื่อ','แบบทดสอบเฉลี่ย','เรียนจบ/งานทั้งหมด','มา','ขาด','ลา','มาสาย','กิจกรรม','กลางภาค','ปลายภาค','จิตพิสัย','คะแนนรวม','เกรด'])
-    links = ClassroomStudent.query.filter_by(classroom_id=room.id).all()
+    links = enrolled_classroom_students(subject.id, room.id)
     for link in links:
         r=calculate_grade_row(subject, room, link.student)
         ws.append([r['student'].full_name, r['quiz_avg'], f"{r['complete']}/{r['total_assignments']}", r['present'], r['absent'], r['leave'], r['late'], r['activity'], r['manual'].midterm, r['manual'].final, r['manual'].behavior, r['total'], r['grade']])
@@ -2675,12 +2910,26 @@ def ensure_schema_columns():
             conn.exec_driver_sql("ALTER TABLE worksheet ADD COLUMN file_path VARCHAR(500) DEFAULT ''")
         if 'original_file_name' not in cols('worksheet'):
             conn.exec_driver_sql("ALTER TABLE worksheet ADD COLUMN original_file_name VARCHAR(255) DEFAULT ''")
+        if 'period_no' not in cols('worksheet'):
+            conn.exec_driver_sql("ALTER TABLE worksheet ADD COLUMN period_no INTEGER DEFAULT 1")
+        if 'period_no' not in cols('quiz'):
+            conn.exec_driver_sql("ALTER TABLE quiz ADD COLUMN period_no INTEGER DEFAULT 1")
+        if 'period_no' not in cols('lesson'):
+            conn.exec_driver_sql("ALTER TABLE lesson ADD COLUMN period_no INTEGER DEFAULT 1")
         if 'file_path' not in cols('worksheet_answer'):
             conn.exec_driver_sql("ALTER TABLE worksheet_answer ADD COLUMN file_path VARCHAR(500) DEFAULT ''")
         if 'original_file_name' not in cols('worksheet_answer'):
             conn.exec_driver_sql("ALTER TABLE worksheet_answer ADD COLUMN original_file_name VARCHAR(255) DEFAULT ''")
         if 'assignment_type' not in cols('assignment'):
             conn.exec_driver_sql("ALTER TABLE assignment ADD COLUMN assignment_type VARCHAR(30) DEFAULT 'special'")
+        try:
+            conn.exec_driver_sql("CREATE UNIQUE INDEX IF NOT EXISTS ux_classroom_student ON classroom_student (classroom_id, student_id)")
+        except Exception:
+            pass
+        try:
+            conn.exec_driver_sql("CREATE UNIQUE INDEX IF NOT EXISTS ux_subject_student ON subject_student (subject_id, classroom_id, student_id)")
+        except Exception:
+            pass
         conn.commit()
 
 def init_db():

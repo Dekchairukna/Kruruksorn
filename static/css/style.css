@@ -462,7 +462,7 @@ input,select,textarea{background:#fff!important;border-color:#d9e8ef!important;c
   /* หน้าเพิ่มรายการ/ตารางบนมือถือให้เป็นการ์ดอ่านง่าย */
   .import-grid{grid-template-columns:1fr!important;gap:12px!important;}
   input,select,textarea{border-radius:18px!important;background:#fff!important;border:1px solid #e5e7eb!important;min-height:46px!important;}
-  button,.btn{border-radius:14px!important;min-height:30px!important;font-weight:950!important;}
+  button,.btn{border-radius:18px!important;min-height:39px!important;font-weight:950!important;}
 
   .mobile-bottom-nav{
     background:rgba(255,255,255,.94)!important;backdrop-filter:blur(18px)!important;border:1px solid rgba(226,232,240,.9)!important;
@@ -616,10 +616,10 @@ input,select,textarea{background:#fff!important;border-color:#d9e8ef!important;c
   .mobile-month-head p{margin:3px 0 0;color:#8a94a6;font-weight:800;font-size:13px;}
   .mobile-month-head span{flex:0 0 auto;border-radius:999px;background:#ecfeff;border:2px solid #bae6fd;color:#0f766e;padding:8px 12px;font-weight:950;font-size:14px;}
   .mobile-weekdays{display:grid;grid-template-columns:repeat(7,1fr);gap:7px;margin-bottom:10px;}
-  .mobile-weekdays b{display:flex;align-items:center;justify-content:center;height:30px;border-radius:14px;font-size:15px;color:#223044;}
-  .mobile-weekdays .sun{background:#f05d5d;color:#b91c1c}.mobile-weekdays .mon{background:#f8fafc}.mobile-weekdays .tue{background:#f8fafc}.mobile-weekdays .wed{background:#f8fafc}.mobile-weekdays .thu{background:#f8fafc}.mobile-weekdays .fri{background:#f8fafc}.mobile-weekdays .sat{background:#dff3ff;color:#0369a1}
+  .mobile-weekdays b{display:flex;align-items:center;justify-content:center;height:42px;border-radius:16px;font-size:15px;color:#223044;}
+  .mobile-weekdays .sun{background:#ffe1e1;color:#b91c1c}.mobile-weekdays .mon{background:#f8fafc}.mobile-weekdays .tue{background:#f8fafc}.mobile-weekdays .wed{background:#f8fafc}.mobile-weekdays .thu{background:#f8fafc}.mobile-weekdays .fri{background:#f8fafc}.mobile-weekdays .sat{background:#dff3ff;color:#0369a1}
   .mobile-month-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:7px;}
-  .mobile-day{position:relative;aspect-ratio:1/1;min-height:52px;border-radius:18px;border:2px solid #e8eef5;background:#fafcff;color:#172033;font-size:15px;font-weight:950;display:flex;align-items:flex-start;justify-content:flex-start;padding:8px;box-shadow:none;margin:0;}
+  .mobile-day{position:relative;aspect-ratio:1/1;min-height:52px;border-radius:18px;border:2px solid #e8eef5;background:#fafcff;color:#172033;font-size:20px;font-weight:950;display:flex;align-items:flex-start;justify-content:flex-start;padding:8px;box-shadow:none;margin:0;}
   .mobile-day.empty{visibility:hidden;pointer-events:none;}
   .mobile-day.weekendday{background:#fff7f8;border-color:#ffe1e8;}
   .mobile-day.eventday{background:#fffbe8;border-color:#ffd74d;color:#172033;}
@@ -988,3 +988,12 @@ input,select,textarea{background:#fff!important;border-color:#d9e8ef!important;c
     display: none !important;
   }
 }
+
+/* v34: จัดนักเรียนเข้าวิชา */
+.enrollment-card .actions-row{margin:12px 0 16px}
+.student-check-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin-top:14px}
+.student-check-card{display:flex;gap:12px;align-items:flex-start;background:#f8fafc;border:1px solid #e2e8f0;border-radius:16px;padding:13px;cursor:pointer;transition:.15s ease}
+.student-check-card:hover{background:#ecfeff;border-color:#67e8f9}
+.student-check-card input{width:auto;margin:4px 0 0;transform:scale(1.25)}
+.student-check-card small{display:block;color:#64748b;margin-top:2px}
+@media(max-width:760px){.student-check-grid{grid-template-columns:1fr}.enrollment-card .actions-row button,.enrollment-card .actions-row .btn{width:100%}}

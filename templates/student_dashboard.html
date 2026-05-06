@@ -11,12 +11,15 @@
   <h2>📅 บทเรียนจากตารางวันนี้</h2>
   <div class="cards">
   {% for s in today_schedules %}
+    {% set plan = s.auto_period if s.auto_period is defined else None %}
     {% set les = s.auto_lesson if s.auto_lesson is defined else s.lesson %}
     <div class="card mini-card pastel-lesson-card">
       <h3>คาบ {{ s.period_no }} · {{ s.subject.name }}</h3>
       <p>{{ s.start_time }}-{{ s.end_time }} | {{ s.classroom.name }}</p>
+      <p><b>หน่วย:</b> {{ plan.unit.title if plan else '-' }} {% if plan %}(คาบ {{ plan.unit_period_no }}/{{ plan.unit_total_periods }}){% endif %}</p>
       <p><b>บทเรียน:</b> {{ les.title if les else (s.topic or 'ครูยังไม่ได้เพิ่มบทเรียน') }}</p>
-      {% if les %}<a class="btn" href="{{ url_for('lesson_detail', lesson_id=les.id) }}">เข้าเนื้อหา</a>{% else %}<span class="badge-soft">รอครูเพิ่มบทเรียนในวิชานี้</span>{% endif %}
+      {% if plan %}<p><b>ใบงาน:</b> {{ plan.worksheets|length }} · <b>แบบทดสอบ:</b> {{ plan.quizzes|length }}</p>{% endif %}
+      {% if les %}<a class="btn" href="{{ url_for('lesson_detail', lesson_id=les.id, period_no=plan.unit_period_no if plan else None) }}">เข้าเนื้อหา/ใบงานคาบนี้</a>{% else %}<span class="badge-soft">รอครูเพิ่มบทเรียนในวิชานี้</span>{% endif %}
     </div>
   {% else %}
     <div class="card">วันนี้ยังไม่มีคาบเรียน หรือเป็นวันหยุดตามปฏิทิน</div>
@@ -29,7 +32,7 @@
   <p class="hint">ระบบจะเรียงบทเรียนตามลำดับที่ครูเพิ่มไว้ในหน่วยการเรียนรู้ เช่น จันทร์แรก = บทเรียนที่ 1, จันทร์ต่อไป = บทเรียนที่ 2, 3, 4 โดยข้ามวันหยุดตามปฏิทิน</p>
   <div class="table-scroll">
     <table>
-      <tr><th>วันที่</th><th>วัน</th><th>คาบ</th><th>เวลา</th><th>วิชา</th><th>ห้อง</th><th>บทเรียน</th></tr>
+      <tr><th>วันที่</th><th>วัน</th><th>คาบ</th><th>เวลา</th><th>วิชา</th><th>ห้อง</th><th>หน่วย/คาบ</th><th>งานประจำคาบ</th><th>บทเรียน</th></tr>
       {% for row in learning_plan %}
       <tr>
         <td data-label="วันที่">{{ row.date.strftime('%d/%m/') }}{{ row.date.year + 543 }}</td>
@@ -38,11 +41,13 @@
         <td data-label="เวลา">{{ row.schedule.start_time }}-{{ row.schedule.end_time }}</td>
         <td data-label="วิชา">{{ row.schedule.subject.name }}</td>
         <td data-label="ห้อง">{{ row.schedule.classroom.name }}</td>
+        <td data-label="หน่วย/คาบ">{% if row.period_plan %}{{ row.period_plan.unit.title }}<br><small>คาบ {{ row.period_plan.unit_period_no }}/{{ row.period_plan.unit_total_periods }}</small>{% else %}-{% endif %}</td>
+        <td data-label="งานประจำคาบ">{% if row.period_plan %}ใบงาน {{ row.period_plan.worksheets|length }} · แบบทดสอบ {{ row.period_plan.quizzes|length }}{% else %}-{% endif %}</td>
         <td data-label="บทเรียน">
-          {% if row.lesson %}<a class="btn small" href="{{ url_for('lesson_detail', lesson_id=row.lesson.id) }}">{{ row.lesson.title }}</a>{% else %}<span class="muted">ยังไม่มีบทเรียน</span>{% endif %}
+          {% if row.lesson %}<a class="btn small" href="{{ url_for('lesson_detail', lesson_id=row.lesson.id, period_no=row.period_plan.unit_period_no if row.period_plan else None) }}">{{ row.lesson.title }}</a>{% else %}<span class="muted">ยังไม่มีบทเรียน</span>{% endif %}
         </td>
       </tr>
-      {% else %}<tr><td colspan="7">ยังไม่มีแผนบทเรียนจากตารางเรียน</td></tr>{% endfor %}
+      {% else %}<tr><td colspan="9">ยังไม่มีแผนบทเรียนจากตารางเรียน</td></tr>{% endfor %}
     </table>
   </div>
 </section>
@@ -60,7 +65,7 @@
         <td data-label="เวลา">{{ s.start_time }}-{{ s.end_time }}</td>
         <td data-label="วิชา">{{ s.subject.name }}</td>
         <td data-label="ห้อง">{{ s.classroom.name }}</td>
-        <td data-label="บทเรียน">{% if les %}<a class="btn small" href="{{ url_for('lesson_detail', lesson_id=les.id) }}">{{ les.title }}</a>{% else %}{{ s.topic or '-' }}{% endif %}</td>
+        <td data-label="บทเรียน">{% if les %}<a class="btn small" href="{{ url_for('lesson_detail', lesson_id=les.id, period_no=s.auto_period.unit_period_no if s.auto_period is defined and s.auto_period else None) }}">{{ les.title }}</a>{% else %}{{ s.topic or '-' }}{% endif %}</td>
       </tr>
       {% endfor %}
     </table>

@@ -1,0 +1,81 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>จัดนักเรียนเข้าวิชา</h1>
+    <p>กำหนดว่านักเรียนคนไหนเรียนวิชาไหน ระบบจะใช้ข้อมูลนี้ควบคุมการเห็นตารางเรียน บทเรียน ใบงาน ข้อสอบ เช็กชื่อ และคะแนน</p>
+  </div>
+  <a class="btn secondary" href="{{ url_for('subjects') }}">กลับรายวิชา</a>
+</div>
+
+<div class="card">
+  <h2>เลือกวิชาและห้อง</h2>
+  <form method="get" class="form-row">
+    <label>รายวิชา
+      <select name="subject_id" onchange="this.form.submit()">
+        {% for s in subjects %}
+          <option value="{{ s.id }}" {% if selected_subject and selected_subject.id==s.id %}selected{% endif %}>{{ s.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>ห้องเรียน
+      <select name="classroom_id" onchange="this.form.submit()">
+        {% for link in subject_room_links %}
+          <option value="{{ link.classroom.id }}" {% if selected_room and selected_room.id==link.classroom.id %}selected{% endif %}>{{ link.classroom.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <div style="align-self:end">
+      <button type="submit">แสดงรายชื่อ</button>
+    </div>
+  </form>
+  {% if selected_subject %}
+    <p class="hint">วิชา <b>{{ selected_subject.name }}</b> มีนักเรียนที่ถูกเพิ่มเข้าเรียนแล้วทั้งหมด <b>{{ enrolled_count }}</b> รายการ</p>
+  {% endif %}
+</div>
+
+{% if selected_subject and selected_room %}
+<div class="card enrollment-card">
+  <div class="section-head">
+    <div>
+      <h2>{{ selected_subject.name }} · {{ selected_room.name }}</h2>
+      <p class="muted">ติ๊กนักเรียนที่เรียนวิชานี้ ถ้าไม่ติ๊ก ระบบจะไม่ให้เห็นวิชานี้ในบัญชีนักเรียน</p>
+    </div>
+    <span class="pill green">เลือกแล้ว {{ enrolled_ids|length }} คน</span>
+  </div>
+
+  <form method="post" id="enrollForm">
+    <input type="hidden" name="subject_id" value="{{ selected_subject.id }}">
+    <input type="hidden" name="classroom_id" value="{{ selected_room.id }}">
+
+    <div class="actions-row">
+      <button type="button" class="secondary" onclick="toggleAllStudents(true)">เลือกทั้งห้อง</button>
+      <button type="button" class="secondary" onclick="toggleAllStudents(false)">ล้างทั้งหมด</button>
+      <button type="submit">บันทึกผู้เรียนวิชานี้</button>
+    </div>
+
+    {% if classroom_student_links %}
+      <div class="student-check-grid">
+        {% for link in classroom_student_links %}
+        <label class="student-check-card">
+          <input class="student-check" type="checkbox" name="student_ids" value="{{ link.student.id }}" {% if link.student.id in enrolled_ids %}checked{% endif %}>
+          <span>
+            <b>{{ link.student.full_name }}</b>
+            <small>{{ link.student.username }}</small>
+          </span>
+        </label>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="alert warning">ห้องนี้ยังไม่มีนักเรียน ให้เพิ่มนักเรียนเข้าห้องก่อน</div>
+    {% endif %}
+  </form>
+</div>
+{% endif %}
+
+<script>
+function toggleAllStudents(checked){
+  document.querySelectorAll('.student-check').forEach(function(el){ el.checked = checked; });
+}
+</script>
+{% endblock %}

@@ -1,1 +1,13 @@
-{% extends 'base.html' %}{% block content %}<h1>{{'แก้ไขแบบทดสอบ' if quiz else 'เพิ่มแบบทดสอบ'}}: {{lesson.title}}</h1><form method="post"><label>ชื่อแบบทดสอบ</label><input name="title" value="{{quiz.title if quiz else ''}}" required><label>เกณฑ์ผ่าน (%)</label><input name="pass_percent" type="number" value="{{quiz.pass_percent if quiz else 60}}"><button>บันทึกแบบทดสอบ</button></form>{% endblock %}
+{% extends 'base.html' %}{% block content %}
+<h1>{{'แก้ไขแบบทดสอบ' if quiz else 'เพิ่มแบบทดสอบ'}}: {{lesson.title}}</h1>
+<form method="post" class="stack-form card">
+  <label>ชื่อแบบทดสอบ</label>
+  <input name="title" value="{{quiz.title if quiz else ''}}" required>
+  <label>แบบทดสอบนี้ใช้ในคาบที่เท่าไหร่ของหน่วย</label>
+  <input name="period_no" type="number" min="1" value="{{quiz.period_no if quiz else 1}}">
+  <label>เกณฑ์ผ่าน (%)</label>
+  <input name="pass_percent" type="number" value="{{quiz.pass_percent if quiz else 60}}">
+  <button>บันทึกแบบทดสอบ</button>
+  <a class="btn secondary" href="{{ url_for('lesson_detail', lesson_id=lesson.id) }}">กลับ</a>
+</form>
+{% endblock %}

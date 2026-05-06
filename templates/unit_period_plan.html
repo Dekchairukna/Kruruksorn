@@ -1,0 +1,68 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>แผนกระจายงานรายคาบ</h1>
+    <p>{{ unit.subject.name }} · {{ unit.title }}</p>
+  </div>
+  <a class="btn secondary" href="{{ url_for('subject_detail', subject_id=unit.subject_id) }}">กลับรายวิชา</a>
+</div>
+
+<section class="card highlight">
+  <h2>แนวคิดการกระจายงาน</h2>
+  <p>กำหนดว่า <b>หน่วยนี้ใช้เรียนกี่คาบ</b> แล้วระบุว่าแต่ละบทเรียน/ใบงาน/แบบทดสอบอยู่คาบไหน เช่น หน่วยที่ 1 ใช้ 3 คาบ → ใบงานที่ 1 อยู่คาบ 1, ใบงานที่ 2 อยู่คาบ 2 เป็นต้น</p>
+</section>
+
+<section class="card">
+  <form method="post" class="stack-form">
+    <label>จำนวนคาบของหน่วยนี้</label>
+    <input type="number" min="1" name="required_periods" value="{{ unit.required_periods or 1 }}" required>
+
+    <h2>บทเรียนในหน่วยนี้</h2>
+    <div class="table-scroll">
+      <table>
+        <tr><th>บทเรียน</th><th>อยู่คาบที่</th><th>จัดการ</th></tr>
+        {% for l in lessons %}
+        <tr>
+          <td data-label="บทเรียน">{{ l.title }}</td>
+          <td data-label="อยู่คาบที่"><input type="number" min="1" name="lesson_{{ l.id }}_period" value="{{ l.period_no or 1 }}"></td>
+          <td data-label="จัดการ"><a class="btn small" href="{{ url_for('lesson_detail', lesson_id=l.id) }}">เปิด</a></td>
+        </tr>
+        {% else %}<tr><td colspan="3">ยังไม่มีบทเรียนในหน่วยนี้</td></tr>{% endfor %}
+      </table>
+    </div>
+
+    <h2>ใบงานและแบบทดสอบทั้งหมดในหน่วยนี้</h2>
+    <div class="table-scroll">
+      <table>
+        <tr><th>ประเภท</th><th>ชื่อ</th><th>บทเรียน</th><th>อยู่คาบที่</th></tr>
+        {% for item in all_items %}
+          <tr>
+            <td data-label="ประเภท">{{ item.kind }}</td>
+            <td data-label="ชื่อ">{{ item.obj.title }}</td>
+            <td data-label="บทเรียน">{{ item.lesson.title }}</td>
+            <td data-label="อยู่คาบที่"><input type="number" min="1" name="{{ item.field_name }}" value="{{ item.period_no }}"></td>
+          </tr>
+        {% else %}<tr><td colspan="4">ยังไม่มีใบงาน/แบบทดสอบในหน่วยนี้</td></tr>{% endfor %}
+      </table>
+    </div>
+    <button>บันทึกแผนรายคาบ</button>
+  </form>
+</section>
+
+<section class="card">
+  <h2>ภาพรวมที่นักเรียนจะเห็นตามคาบ</h2>
+  <div class="cards">
+    {% for row in rows %}
+    <div class="card pastel-lesson-card">
+      <h3>คาบที่ {{ row.period_no }} / {{ unit.required_periods }}</h3>
+      <p><b>บทเรียน:</b> {{ row.lesson.title if row.lesson else 'ยังไม่ได้กำหนดบทเรียน' }}</p>
+      <p><b>ใบงาน:</b> {{ row.worksheets|length }} รายการ</p>
+      <ul>{% for w in row.worksheets %}<li>{{ w.title }}</li>{% endfor %}</ul>
+      <p><b>แบบทดสอบ:</b> {{ row.quizzes|length }} รายการ</p>
+      <ul>{% for q in row.quizzes %}<li>{{ q.title }}</li>{% endfor %}</ul>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}

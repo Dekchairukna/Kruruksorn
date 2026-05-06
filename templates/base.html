@@ -30,6 +30,7 @@
     {% if current_user.role in ['admin','teacher'] %}
       <a href="{{ url_for('subjects') }}">📚 รายวิชา</a>
       <a href="{{ url_for('classrooms') }}">🏫 ห้องเรียน</a>
+      <a href="{{ url_for('subject_enrollments') }}">🎒 จัดนักเรียนเข้าวิชา</a>
       <a href="{{ url_for('assign') }}">📌 สั่งงาน</a>
       <a href="{{ url_for('assignments') }}">📝 งานที่สั่งแล้ว</a>
       <a href="{{ url_for('schedule') }}">📅 ตารางสอน</a>
