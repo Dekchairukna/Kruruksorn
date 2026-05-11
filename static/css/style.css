@@ -893,3 +893,70 @@ input,select,textarea{background:#fff!important;border-color:#d9e8ef!important;c
 .mini-add-room select {
   min-width: 170px;
 }
+
+
+/* ===== v29 FIX: mobile dashboard menu not opening =====
+   สาเหตุเดิม: CSS มือถือเวอร์ชัน v24 ใส่ .sidebar{display:none!important}
+   ทำให้กดปุ่ม ☰ แล้วรายการแดชบอร์ดไม่แสดงบนโทรศัพท์
+*/
+.nav-backdrop{display:none;}
+@media (max-width: 760px){
+  .nav-toggle{position:fixed;opacity:0;pointer-events:none;}
+  .topbar{display:flex!important;}
+  .hamburger{cursor:pointer;user-select:none;touch-action:manipulation;}
+
+  .sidebar{
+    display:block!important;
+    position:fixed!important;
+    top:0!important;
+    left:0!important;
+    bottom:auto!important;
+    width:min(86vw,330px)!important;
+    max-width:330px!important;
+    height:100dvh!important;
+    max-height:100dvh!important;
+    padding:18px!important;
+    overflow-y:auto!important;
+    overflow-x:hidden!important;
+    -webkit-overflow-scrolling:touch!important;
+    z-index:9999!important;
+    transform:translateX(-110%)!important;
+    transition:transform .24s ease!important;
+    box-shadow:16px 0 42px rgba(15,23,42,.24)!important;
+  }
+
+  .nav-toggle:checked ~ .sidebar{
+    transform:translateX(0)!important;
+  }
+
+  .nav-backdrop{
+    display:block!important;
+    position:fixed!important;
+    inset:0!important;
+    background:rgba(15,23,42,.44)!important;
+    opacity:0!important;
+    visibility:hidden!important;
+    pointer-events:none!important;
+    z-index:9998!important;
+    transition:opacity .2s ease, visibility .2s ease!important;
+    backdrop-filter:blur(2px)!important;
+  }
+
+  .nav-toggle:checked ~ .nav-backdrop{
+    opacity:1!important;
+    visibility:visible!important;
+    pointer-events:auto!important;
+  }
+
+  .sidebar .brand-card{margin-top:4px!important;}
+  .sidebar nav{display:grid!important;gap:8px!important;padding-bottom:26px!important;}
+  .sidebar nav a{
+    display:flex!important;
+    align-items:center!important;
+    min-height:48px!important;
+    padding:12px 14px!important;
+    border-radius:17px!important;
+    text-decoration:none!important;
+    touch-action:manipulation!important;
+  }
+}
