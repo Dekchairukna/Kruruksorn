@@ -30,7 +30,6 @@
     {% if current_user.role in ['admin','teacher'] %}
       <a href="{{ url_for('subjects') }}">📚 รายวิชา</a>
       <a href="{{ url_for('classrooms') }}">🏫 ห้องเรียน</a>
-      <a href="{{ url_for('subject_enrollments') }}">🎒 จัดนักเรียนเข้าวิชา</a>
       <a href="{{ url_for('assign') }}">📌 สั่งงาน</a>
       <a href="{{ url_for('assignments') }}">📝 งานที่สั่งแล้ว</a>
       <a href="{{ url_for('schedule') }}">📅 ตารางสอน</a>
@@ -38,7 +37,10 @@
       <a href="{{ url_for('calendar_events') }}">🌤️ ปฏิทิน</a>
       {% if current_user.role=='admin' %}<a href="{{ url_for('semesters') }}">🗓️ ภาคเรียน</a>{% endif %}
       <a href="{{ url_for('import_students') }}">⬆️ นำเข้านักเรียน</a>
-      {% if current_user.role=='admin' %}<a href="{{ url_for('imports_center') }}">📥 นำเข้า Excel แยกหมวด</a>{% endif %}
+      {% if current_user.role=='admin' %}
+        <a href="{{ url_for('import_all') }}">📦 นำเข้า Excel ทั้งระบบ</a>
+        <a href="{{ url_for('imports_center') }}">📥 นำเข้า Excel แยกหมวด</a>
+      {% endif %}
     {% endif %}
     {% if current_user.role=='admin' %}<a href="{{ url_for('teacher_assignments') }}">🧩 มอบหมายครู</a><a href="{{ url_for('users') }}">👥 ผู้ใช้</a>{% endif %}
     <a href="{{ url_for('logout') }}">🚪 ออกจากระบบ</a>
@@ -51,16 +53,6 @@
   {% endwith %}
   {% block content %}{% endblock %}
 </main>
-
-<script>
-// v33: ปิดแถบเมนูมือถือหลังเลือกหน้า
-document.addEventListener('DOMContentLoaded', function(){
-  const toggle = document.getElementById('nav-toggle');
-  document.querySelectorAll('.sidebar nav a').forEach(function(a){
-    a.addEventListener('click', function(){ if(toggle) toggle.checked = false; });
-  });
-});
-</script>
 
 </body>
 </html>

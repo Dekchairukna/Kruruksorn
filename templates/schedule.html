@@ -34,9 +34,10 @@
     </select>
     {% endif %}
     <input type="file" name="excel" accept=".xlsx,.xls" required>
+    <label class="inline-check"><input type="checkbox" name="replace_all" value="1"> ลบตารางเรียนเดิมก่อนนำเข้า</label>
     <button>นำเข้า Excel</button>
   </form>
-  <p class="hint">รูปแบบคอลัมน์ที่รองรับ: <b>วัน, คาบ, รายวิชา, ห้อง, สถานที่, หัวข้อ</b> เช่น จันทร์ | 1 | ว21104 วิทยาการคำนวณ 1 | ม.1/2-3 | ห้อง ม.1/2-3 | อัลกอริทึม</p>
+  <p class="hint">รูปแบบคอลัมน์ที่รองรับ: <b>ครู, วัน, คาบ, รหัสวิชา, ชื่อวิชา, ชั้น/ห้อง, ห้องเรียน, หัวข้อ</b><br>ถ้ามีชื่อครูที่ยังไม่มีในระบบ ระบบจะสร้างบัญชีครูให้อัตโนมัติ โดยตั้งรหัสผ่านเริ่มต้นเป็น <b>1234</b></p>
 </section>
 
 <section class="schedule-summary-card compact-schedule" id="schedule-capture">
@@ -62,14 +63,18 @@
         <tr>
           <th class="day-name">{{d_name}}<small>{% if d_i==0 %}Mon.{% elif d_i==1 %}Tue.{% elif d_i==2 %}Wed.{% elif d_i==3 %}Thu.{% elif d_i==4 %}Fri.{% endif %}</small></th>
           {% for p in range(1,9) %}
-          {% set item = schedule_grid.get(d_i|string ~ '-' ~ p|string) %}
-          <td class="slot-cell {% if item %}has-class{% endif %}">
-            {% if item %}
-              <div class="slot-subject">{{ item.subject.name }}</div>
-              {% if item.lesson %}<a class="btn tiny" href="{{ url_for('lesson_detail', lesson_id=item.lesson.id) }}">เข้าเนื้อหา</a>{% endif %}
-              <div class="slot-room">{{ item.classroom.name }}</div>
-              <div class="slot-place">{{ item.room_name or '-' }}</div>
-              {% if item.topic or item.lesson %}<div class="slot-topic">{{ item.topic or item.lesson.title }}</div>{% endif %}
+          {% set items = schedule_grid.get(d_i|string ~ '-' ~ p|string, []) %}
+          <td class="slot-cell {% if items %}has-class{% endif %}">
+            {% if items %}
+              {% for item in items %}
+                <div class="slot-group {% if not loop.last %}slot-group-sep{% endif %}">
+                  <div class="slot-subject">{{ item.subject.name }}</div>
+                  {% if item.lesson %}<a class="btn tiny" href="{{ url_for('lesson_detail', lesson_id=item.lesson.id) }}">เข้าเนื้อหา</a>{% endif %}
+                  <div class="slot-room">{{ item.classrooms|join(' + ') }}</div>
+                  <div class="slot-place">{{ item.places|join(' / ') if item.places else '-' }}</div>
+                  {% if item.topics %}<div class="slot-topic">{{ item.topics|join(' / ') }}</div>{% endif %}
+                </div>
+              {% endfor %}
             {% else %}
               <span class="empty-slot">ว่าง</span>
             {% endif %}

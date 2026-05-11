@@ -845,155 +845,51 @@ input,select,textarea{background:#fff!important;border-color:#d9e8ef!important;c
   box-shadow:inset 0 0 0 2px #38bdf8!important;
 }
 
-/* v33: FIX mobile hamburger/sidebar navigation
-   - หน้าเว็บคอมไม่เปลี่ยน
-   - มือถือให้ปุ่ม ☰ เปิดแถบเมนูได้จริง
-   - เอา bottom nav แบบแอปออกทั้งหมด */
-@media (max-width: 760px) {
-  body {
-    padding-bottom: 0 !important;
-    overflow-x: hidden !important;
-  }
+/* v25: คาบสอนรวมสองห้องในช่องเดียว */
+.slot-group { padding: 2px 0; }
+.slot-group-sep { border-bottom: 1px dashed rgba(15, 23, 42, .18); margin-bottom: 4px; padding-bottom: 4px; }
+.slot-room { font-weight: 800; }
 
-  .topbar {
-    display: flex !important;
-    position: sticky !important;
-    top: 0 !important;
-    z-index: 2000 !important;
-    align-items: center !important;
-    gap: 14px !important;
-    min-height: 72px !important;
-    padding: 14px 18px !important;
-    background: rgba(255, 255, 255, .92) !important;
-    color: #172033 !important;
-    border-bottom: 1px solid #e5e7eb !important;
-    box-shadow: 0 12px 34px rgba(15, 23, 42, .08) !important;
-    backdrop-filter: blur(14px) !important;
-  }
-
-  .hamburger {
-    width: 52px !important;
-    height: 52px !important;
-    border-radius: 16px !important;
-    background: #eef2f7 !important;
-    color: #172033 !important;
-    display: inline-flex !important;
-    align-items: center !important;
-    justify-content: center !important;
-    font-size: 30px !important;
-    font-weight: 900 !important;
-    line-height: 1 !important;
-    cursor: pointer !important;
-    user-select: none !important;
-  }
-
-  .topbrand {
-    display: block !important;
-    font-size: 25px !important;
-    font-weight: 950 !important;
-    color: #172033 !important;
-    letter-spacing: -.3px !important;
-  }
-
-  .topuser {
-    margin-left: auto !important;
-    max-width: 190px !important;
-    background: #f3e8ff !important;
-    color: #6d28d9 !important;
-    padding: 10px 14px !important;
-    border-radius: 999px !important;
-    font-weight: 900 !important;
-    font-size: 14px !important;
-    overflow: hidden !important;
-    white-space: nowrap !important;
-    text-overflow: ellipsis !important;
-  }
-
-  .sidebar {
-    display: block !important;
-    position: fixed !important;
-    top: 0 !important;
-    left: 0 !important;
-    bottom: 0 !important;
-    width: min(84vw, 340px) !important;
-    max-width: 340px !important;
-    z-index: 3000 !important;
-    overflow-y: auto !important;
-    padding: 22px !important;
-    transform: translateX(-110%) !important;
-    transition: transform .25s ease !important;
-    background: linear-gradient(180deg, #ffffff 0%, #f8fbff 56%, #f5efff 100%) !important;
-    color: #172033 !important;
-    border-right: 1px solid #e5e7eb !important;
-    box-shadow: 24px 0 70px rgba(15, 23, 42, .25) !important;
-  }
-
-  .nav-toggle:checked ~ .sidebar {
-    transform: translateX(0) !important;
-  }
-
-  .brand-card {
-    border-bottom: 1px solid #e5e7eb !important;
-  }
-
-  .brand,
-  .brand-sub,
-  .user,
-  .user b,
-  .user small {
-    color: #172033 !important;
-  }
-
-  .logo-mark {
-    background: #ffffff !important;
-    color: #7c3aed !important;
-    box-shadow: 0 12px 28px rgba(124, 58, 237, .14) !important;
-  }
-
-  .sidebar .user {
-    background: #f3e8ff !important;
-    border: 1px solid #e9d5ff !important;
-    border-radius: 20px !important;
-  }
-
-  .sidebar nav a {
-    display: flex !important;
-    align-items: center !important;
-    gap: 11px !important;
-    color: #172033 !important;
-    background: #ffffff !important;
-    border: 1px solid #edf2f7 !important;
-    border-radius: 18px !important;
-    padding: 14px 15px !important;
-    margin: 8px 0 !important;
-    font-weight: 900 !important;
-    text-decoration: none !important;
-    box-shadow: 0 8px 20px rgba(15, 23, 42, .045) !important;
-  }
-
-  .sidebar nav a:hover,
-  .sidebar nav a:focus {
-    background: #f3e8ff !important;
-    color: #6d28d9 !important;
-  }
-
-  .main {
-    margin-left: 0 !important;
-    padding: 20px 18px 28px !important;
-    max-width: none !important;
-  }
-
-  .mobile-bottom-nav,
-  .mobile-modal-backdrop {
-    display: none !important;
-  }
+.subject-room-box {
+  margin: 10px 0 14px;
+  padding: 10px;
+  border: 1px solid rgba(125, 211, 252, .35);
+  border-radius: 14px;
+  background: rgba(240, 253, 250, .55);
 }
-
-/* v34: จัดนักเรียนเข้าวิชา */
-.enrollment-card .actions-row{margin:12px 0 16px}
-.student-check-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin-top:14px}
-.student-check-card{display:flex;gap:12px;align-items:flex-start;background:#f8fafc;border:1px solid #e2e8f0;border-radius:16px;padding:13px;cursor:pointer;transition:.15s ease}
-.student-check-card:hover{background:#ecfeff;border-color:#67e8f9}
-.student-check-card input{width:auto;margin:4px 0 0;transform:scale(1.25)}
-.student-check-card small{display:block;color:#64748b;margin-top:2px}
-@media(max-width:760px){.student-check-grid{grid-template-columns:1fr}.enrollment-card .actions-row button,.enrollment-card .actions-row .btn{width:100%}}
+.room-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0;
+}
+.room-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #e0f2fe, #ccfbf1);
+  color: #134e4a;
+  font-weight: 700;
+  font-size: .92rem;
+}
+.tag-remove {
+  border: 0;
+  background: rgba(255,255,255,.65);
+  color: #b91c1c;
+  border-radius: 999px;
+  width: 20px;
+  height: 20px;
+  line-height: 16px;
+  padding: 0;
+  cursor: pointer;
+  font-weight: 900;
+}
+.mini-add-room {
+  margin-top: 8px;
+  gap: 8px;
+}
+.mini-add-room select {
+  min-width: 170px;
+}

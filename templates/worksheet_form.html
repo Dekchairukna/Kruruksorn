@@ -8,9 +8,6 @@
   <label>ชื่อใบงาน</label>
   <input name="title" value="{{worksheet.title if worksheet else ''}}" required>
 
-  <label>ใบงานนี้ใช้ในคาบที่เท่าไหร่ของหน่วย</label>
-  <input type="number" min="1" name="period_no" value="{{ worksheet.period_no if worksheet else 1 }}">
-
   <label>ประเภทใบงาน</label>
   <select name="worksheet_type" required>
     {% for v,n in [('academic','ใบงานวิชาการ / ตอบคำถามตามข้อ'),('petanque_score','ใบงานเปตอง / ตารางระยะ-สถานี'),('upload','ใบงานให้นักเรียนอัปโหลดไฟล์คำตอบ')] %}

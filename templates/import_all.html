@@ -5,12 +5,19 @@
     <h1>นำเข้า Excel ทั้งระบบ</h1>
     <p>ใช้ไฟล์ตัวอย่างเพื่อเพิ่ม/อัปเดตครู นักเรียน รายวิชา ห้องเรียน บทเรียน ใบงาน แบบทดสอบ ตารางสอน และปฏิทินในครั้งเดียว</p>
   </div>
-  <a class="btn secondary" href="{{ url_for('download_import_template') }}">⬇️ ดาวน์โหลดไฟล์ตัวอย่าง</a>
+  <div class="actions-row">
+    <a class="btn secondary" href="{{ url_for('download_import_template') }}">⬇️ ดาวน์โหลดไฟล์ตัวอย่าง</a>
+    <a class="btn" href="{{ url_for('download_term_import_file') }}">⬇️ ดาวน์โหลดข้อมูลเทอมนี้</a>
+  </div>
 </div>
 <section class="card import-all-card">
   <form method="post" enctype="multipart/form-data">
     <label>เลือกไฟล์ Excel (.xlsx)</label>
     <input type="file" name="file" accept=".xlsx" required>
+    <label class="check-line" style="display:flex;gap:8px;align-items:center;margin:10px 0;">
+      <input type="checkbox" name="replace_schedule" value="1">
+      ลบตารางเรียนเดิมก่อนนำเข้าตารางสอนจากไฟล์นี้
+    </label>
     <button>นำเข้าข้อมูล</button>
   </form>
   <div class="hint-box">
@@ -18,7 +25,7 @@
     <div class="chip-list">
       <span>Teachers</span><span>Students</span><span>Subjects</span><span>Classrooms</span><span>TeacherAssignments</span><span>Units</span><span>Lessons</span><span>Worksheets</span><span>WorksheetQuestions</span><span>Quizzes</span><span>QuizQuestions</span><span>Schedule</span><span>Calendar</span>
     </div>
-    <p class="muted">กรอกเพิ่มในไฟล์ตัวอย่างได้เลย ระบบจะสร้างรายการใหม่ และอัปเดตรายการเดิมบางส่วนจากชื่อ/รหัสที่ตรงกัน</p>
+    <p class="muted">ใช้ไฟล์เดียวได้เลย ระบบจะสร้างครู/ห้อง/วิชา/ตารางสอนให้ครบจากชีต Schedule ถ้าครูยังไม่มีจะสร้างรหัสผ่านเริ่มต้น 1234</p>
   </div>
 </section>
 {% endblock %}

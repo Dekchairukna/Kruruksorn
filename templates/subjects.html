@@ -31,6 +31,38 @@
     <h3>{{s.name}} {% if s.is_active==False %}<span class='tag muted-tag'>ปิดใช้งาน</span>{% endif %}</h3>
     <p>{{s.credit}} หน่วยกิต · {{s.total_periods}} คาบ</p>
     <p class="muted">ครูหลัก: {{s.teacher.full_name if s.teacher else 'ยังไม่กำหนด'}}</p>
+    {% set linked_rooms = [] %}
+    {% for link in classroom_links if link.subject_id == s.id and link.classroom %}
+      {% set _ = linked_rooms.append(link.classroom) %}
+    {% endfor %}
+    <div class="subject-room-box">
+      <div class="muted">ห้องเรียนที่ผูกกับรายวิชา:</div>
+      {% if linked_rooms %}
+        <div class="room-tags">
+          {% for room in linked_rooms %}
+            <span class="room-tag">
+              {{ room.name }}
+              <form method="post" action="{{ url_for('subject_classroom_remove', subject_id=s.id, classroom_id=room.id) }}" class="inline" onsubmit="return confirm('นำห้อง {{ room.name }} ออกจากรายวิชานี้?')">
+                <button type="submit" class="tag-remove" title="นำห้องออก">×</button>
+              </form>
+            </span>
+          {% endfor %}
+        </div>
+      {% else %}
+        <div class="muted">ยังไม่ได้ผูกห้องเรียน</div>
+      {% endif %}
+      <form method="post" action="{{ url_for('subject_classroom_add', subject_id=s.id) }}" class="form-row mini-add-room">
+        <select name="classroom_id" required>
+          <option value="">+ เลือกห้องเรียนเพิ่ม</option>
+          {% for room in classrooms %}
+            {% if room.id not in linked_rooms|map(attribute='id')|list %}
+              <option value="{{ room.id }}">{{ room.name }}</option>
+            {% endif %}
+          {% endfor %}
+        </select>
+        <button type="submit" class="btn small">เพิ่มห้อง</button>
+      </form>
+    </div>
     <a class="btn" href="{{ url_for('subject_detail', subject_id=s.id) }}">จัดการหน่วย/บทเรียน</a>
     <a class="btn secondary" href="{{url_for('subject_edit', subject_id=s.id)}}">แก้ไข</a>
     {% if s.is_active==False and current_user.role=='admin' %}

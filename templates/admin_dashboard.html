@@ -6,5 +6,17 @@
   <div class="stat-card blue"><b>ครู</b><h2>{{teachers}}</h2><small>คน</small></div>
   <div class="stat-card pink"><b>นักเรียน</b><h2>{{students}}</h2><small>คน</small></div>
 </div>
+<div class="grid colorful" style="margin-top:16px;">
+  <a class="stat-card blue" href="{{ url_for('import_all') }}" style="text-decoration:none;color:inherit;">
+    <b>นำเข้า Excel ทั้งระบบ</b>
+    <h2>📦</h2>
+    <small>อัปโหลดไฟล์เดียว สร้างครู ห้อง วิชา ตารางสอน</small>
+  </a>
+  <a class="stat-card green" href="{{ url_for('download_term_import_file') }}" style="text-decoration:none;color:inherit;">
+    <b>ไฟล์ข้อมูลเทอมนี้</b>
+    <h2>⬇️</h2>
+    <small>ดาวน์โหลด Excel สำหรับนำเข้าตารางเรียน</small>
+  </a>
+</div>
 {% include '_calendar_dashboard.html' %}
 {% endblock %}

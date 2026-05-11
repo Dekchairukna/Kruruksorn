@@ -5,7 +5,10 @@
     <h1>นำเข้า Excel แยกหมวด</h1>
     <p>เลือกอัปโหลดเฉพาะข้อมูลที่ต้องการ ไม่ต้องรวมทั้งระบบในไฟล์เดียว</p>
   </div>
-  <a class="btn secondary" href="{{ url_for('download_import_template') }}">⬇️ ไฟล์ตัวอย่างรวมทั้งหมด</a>
+  <div class="actions-row">
+    <a class="btn" href="{{ url_for('import_all') }}">📦 ไปหน้านำเข้า Excel ทั้งระบบ</a>
+    <a class="btn secondary" href="{{ url_for('download_import_template') }}">⬇️ ไฟล์ตัวอย่างรวมทั้งหมด</a>
+  </div>
 </div>
 <div class="import-module-grid">
 {% for kind,m in modules.items() %}

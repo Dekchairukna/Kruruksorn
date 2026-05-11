@@ -12,10 +12,6 @@
   <label>ชื่อบทเรียน</label>
   <input name="title" value="{{ lesson.title if lesson else '' }}" required>
 
-  <label>บทเรียนนี้อยู่คาบที่เท่าไหร่ของหน่วย</label>
-  <input type="number" min="1" name="period_no" value="{{ lesson.period_no if lesson else 1 }}">
-  <p class="hint">เช่น หน่วยที่ 1 เรียน 3 คาบ: บทเรียน/ใบงานของคาบแรกใส่ 1, คาบถัดไปใส่ 2</p>
-
   <label>จุดประสงค์การเรียนรู้</label>
   <textarea name="objective" rows="4" placeholder="เช่น นักเรียนสามารถอธิบาย...">{{ lesson.objective if lesson else '' }}</textarea>
 
