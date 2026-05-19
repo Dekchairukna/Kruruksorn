@@ -3,20 +3,20 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>ครูรักสอน</title>
+  <title></title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
 <body>
 <input type="checkbox" id="nav-toggle" class="nav-toggle">
 <header class="topbar">
   <label for="nav-toggle" class="hamburger">☰</label>
-  <div class="topbrand">ครูรักสอน</div>
+  <div class="topbrand"></div>
   {% if current_user.is_authenticated %}<div class="topuser">{{ current_user.full_name }}</div>{% endif %}
 </header>
 <aside class="sidebar">
   <div class="brand-card">
     <div class="logo-mark">ครู</div>
-    <div class="brand">ครูรักสอน</div>
+    <div class="brand"></div>
     <div class="brand-sub">Teaching Management Dashboard</div>
   </div>
   {% if current_user.is_authenticated %}
