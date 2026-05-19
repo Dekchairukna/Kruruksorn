@@ -2,7 +2,107 @@
 {% block content %}
 <h1>เช็กชื่อและสมุดคะแนน</h1>
 <p class="muted">เลือกคู่รายวิชา/ห้องเรียน เพื่อเช็กเวลาเรียน สรุปขาด-ลา-มาสาย และทำคะแนนตัดเกรดทั้งเทอม</p>
+
+
+<section class="card daily-report-picker">
+  <div class="section-head-row">
+    <div>
+      <h2>สรุปการเช็กชื่อรายวัน</h2>
+      <p class="muted">เลือกดูได้ 2 แบบ: รายวิชา/ห้อง = เรียงวันที่ที่เคยเช็กทั้งหมด, หรือ รายห้องวันนี้ = คาบ 1-8 ดึงทุกวิชาตามตารางเรียนของห้องนั้น</p>
+    </div>
+  </div>
+  <div class="daily-picker-grid">
+    <form id="subjectRoomDailyForm" class="daily-picker-box" onsubmit="return openSubjectRoomDaily(event)">
+      <h3>ดูสรุปตามรายวิชา + ห้อง</h3>
+      <p class="muted">ใช้สำหรับดูประวัติวันที่เช็กชื่อของวิชานั้น ห้องนั้น เรียงตามวันที่/คาบเรียน</p>
+      <select id="subjectRoomPair" required>
+        <option value="">เลือกวิชา/ห้อง</option>
+        {% for p in pairs %}
+        <option value="{{ p.subject_id }}-{{ p.classroom_id }}">{{ p.subject.name }} / {{ p.classroom.name }}</option>
+        {% endfor %}
+      </select>
+      <button class="btn">เปิดสรุปรายวิชา/ห้อง</button>
+    </form>
+
+    <form method="get" action="{{ url_for('classroom_day_report') }}" class="daily-picker-box">
+      <h3>ดูสรุปตามห้องเรียน วันนี้/วันที่เลือก</h3>
+      <p class="muted">ใช้สำหรับดูห้อง ม... คาบ 1-8 ในวันเดียว ดึงทุกวิชาที่ห้องนั้นเรียนตามตาราง</p>
+      <select name="classroom_id" required>
+        <option value="">เลือกห้องเรียน</option>
+        {% for r in classrooms_for_daily %}
+        <option value="{{ r.id }}">{{ r.name }}</option>
+        {% endfor %}
+      </select>
+      <input type="date" name="date" value="{{ today_date }}">
+      <button class="btn secondary">เปิดสรุปรายห้อง</button>
+    </form>
+  </div>
+</section>
+<script>
+function openSubjectRoomDaily(event) {
+  event.preventDefault();
+  const val = document.getElementById('subjectRoomPair').value;
+  if (!val) return false;
+  const [subjectId, classroomId] = val.split('-');
+  window.location.href = `/attendance/${subjectId}/${classroomId}`;
+  return false;
+}
+</script>
+
+<section class="card subject-summary-card">
+  <div class="section-head-row">
+    <div>
+      <h2>ตารางสรุปเป็นรายวิชา</h2>
+      <p class="muted">{{ label if label else 'รายเทอม' }} · นับตามคาบ/ครั้งที่มีการเช็กชื่อจริงในแต่ละรายวิชา</p>
+    </div>
+    <div class="actions-row">
+      <a class="btn secondary small" href="{{ url_for('records_center', range='term') }}">ดูรายเทอม</a>
+      <a class="btn secondary small" href="{{ url_for('records_center', range='month') }}">ดูเดือนนี้</a>
+      <a class="btn small" href="{{ url_for('subject_summary_export', range=range_type, year=start_date.year if start_date else none, month=start_date.month if start_date else none) }}">Export Excel</a>
+      <a class="btn secondary small" target="_blank" href="{{ url_for('subject_summary_print', range=range_type, year=start_date.year if start_date else none, month=start_date.month if start_date else none) }}">พิมพ์รายงาน</a>
+    </div>
+  </div>
+
+  <div class="table-wrap">
+    <table class="subject-summary-table">
+      <tr>
+        <th>รายวิชา</th>
+        <th>ครู</th>
+        <th>ห้องที่เกี่ยวข้อง</th>
+        <th>นักเรียนรวม</th>
+        <th>คาบ/ครั้ง</th>
+        <th>หน่วยเช็กชื่อ</th>
+        <th>มา</th>
+        <th>สาย</th>
+        <th>ขาด</th>
+        <th>ลาป่วย</th>
+        <th>ไปกิจกรรม</th>
+        <th>มาเรียน (%)</th>
+      </tr>
+      {% for r in subject_summaries %}
+      <tr>
+        <td data-label="รายวิชา"><b>{{ r.subject.name }}</b></td>
+        <td data-label="ครู">{{ r.teacher }}</td>
+        <td data-label="ห้องที่เกี่ยวข้อง">{{ r.room_text }}</td>
+        <td data-label="นักเรียนรวม">{{ r.student_count }}</td>
+        <td data-label="คาบ/ครั้ง">{{ r.checked_slots }}</td>
+        <td data-label="หน่วยเช็กชื่อ">{{ r.total_units }}</td>
+        <td data-label="มา">{{ r.totals['มา'] }}</td>
+        <td data-label="สาย">{{ r.totals['สาย'] }}</td>
+        <td data-label="ขาด">{{ r.totals['ขาด'] }}</td>
+        <td data-label="ลาป่วย">{{ r.totals['ลาป่วย'] }}</td>
+        <td data-label="ไปกิจกรรม">{{ r.totals['ไปกิจกรรม'] }}</td>
+        <td data-label="มาเรียน (%)" class="percent-cell {% if r.percent < 80 %}low-percent{% endif %}">{{ r.percent }}%</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="12">ยังไม่มีข้อมูลรายวิชาสำหรับสรุป</td></tr>
+      {% endfor %}
+    </table>
+  </div>
+</section>
+
 <section class="card">
+<h2>รายการรายวิชา/ห้องเรียน</h2>
 <table>
   <tr><th>รายวิชา</th><th>ห้องเรียน</th><th>ครู</th><th>จัดการ</th></tr>
   {% for p in pairs %}

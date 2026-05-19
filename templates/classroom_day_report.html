@@ -1,0 +1,92 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>สรุปเช็กชื่อรายวันตามห้องเรียน</h1>
+    <p class="muted">{{ room.name }} · {{ report_day_label }} · แสดงคาบ 1-8 และดึงทุกวิชาที่ห้องนี้เรียนในวันนั้น</p>
+  </div>
+  <div class="actions-row">
+    <a class="btn secondary" href="{{ url_for('records_center') }}">← กลับศูนย์บันทึก</a>
+    <a class="btn" href="{{ url_for('classroom_day_report_export', classroom_id=room.id, date=report_date.isoformat()) }}">Export Excel</a>
+    <button class="btn secondary" onclick="window.print()">พิมพ์รายงาน</button>
+  </div>
+</div>
+
+<section class="card daily-room-filter">
+  <form method="get" action="{{ url_for('classroom_day_report') }}" class="form-row">
+    <input type="hidden" name="classroom_id" value="{{ room.id }}">
+    <label>เลือกวันที่</label>
+    <input type="date" name="date" value="{{ report_date.isoformat() }}">
+    <button>ดูวันที่นี้</button>
+  </form>
+</section>
+
+<section class="card attendance-report-card classroom-day-card">
+  <div class="section-head-row">
+    <div>
+      <h2>ตารางเช็กชื่อห้อง {{ room.name }} คาบ 1-8</h2>
+      <p class="muted">ช่องว่างคือยังไม่ได้เช็กชื่อ / ช่อง “ว่าง” คือคาบนั้นไม่มีวิชาในตารางเรียน</p>
+    </div>
+    <div class="status-legend">
+      <span><b class="att-mark mark-present">/</b> มา</span>
+      <span><b class="att-mark mark-late">ส</b> สาย</span>
+      <span><b class="att-mark mark-absent">ข</b> ขาด</span>
+      <span><b class="att-mark mark-sick">ลป</b> ลาป่วย</span>
+      <span><b class="att-mark mark-activity">ก</b> ไปกิจกรรม</span>
+    </div>
+  </div>
+
+  <div class="attendance-table-wrap">
+    <table class="attendance-history-table classroom-day-table">
+      <thead>
+        <tr>
+          <th rowspan="2" class="narrow">ที่</th>
+          <th rowspan="2" class="student-col">ชื่อ - นามสกุล</th>
+          <th colspan="8">{{ report_day_label }}</th>
+          <th colspan="5" class="summary-head">สรุปวันนี้</th>
+          <th rowspan="2" class="summary-head">มาเรียน (%)</th>
+        </tr>
+        <tr>
+          {% for h in period_headers %}
+          <th class="period-day-head {% if not h.has_class %}no-class-head{% endif %}">
+            <div>คาบ {{ h.period_no }}</div>
+            <small>{{ h.subject_text }}</small>
+            {% if h.time_text %}<em>{{ h.time_text }}</em>{% endif %}
+          </th>
+          {% endfor %}
+          <th class="sum-present">มา</th>
+          <th class="sum-late">สาย</th>
+          <th class="sum-absent">ขาด</th>
+          <th class="sum-sick">ลาป่วย</th>
+          <th class="sum-activity">ไปกิจกรรม</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for l in links %}
+        {% set srow = summary[loop.index0] %}
+        <tr>
+          <td>{{ loop.index }}</td>
+          <td class="student-name-cell">{{ l.student.full_name }}</td>
+          {% for h in period_headers %}
+            {% if h.has_class %}
+              {% set st = attendance_map.get((l.student_id, h.period_no), '') %}
+              <td class="att-cell status-cell-{{ st|replace(' ', '-') }}">{% if st %}{{ status_symbols.get(st, st) }}{% else %}-{% endif %}</td>
+            {% else %}
+              <td class="att-cell no-class-cell">ว่าง</td>
+            {% endif %}
+          {% endfor %}
+          <td class="summary-cell">{{ srow.totals['มา'] }}</td>
+          <td class="summary-cell">{{ srow.totals['สาย'] }}</td>
+          <td class="summary-cell">{{ srow.totals['ขาด'] }}</td>
+          <td class="summary-cell">{{ srow.totals['ลาป่วย'] }}</td>
+          <td class="summary-cell">{{ srow.totals['ไปกิจกรรม'] }}</td>
+          <td class="summary-cell percent-cell {% if srow.percent < 80 %}low-percent{% endif %}">{{ srow.percent }}%</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="16">ยังไม่มีนักเรียนในห้องนี้</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

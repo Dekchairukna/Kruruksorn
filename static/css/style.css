@@ -970,3 +970,64 @@ input,select,textarea{background:#fff!important;border-color:#d9e8ef!important;c
 
 /* v_activity_attendance: เช็กชื่อเข้าแถวและกิจกรรมพิเศษรายห้อง */
 .activity-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;margin-top:12px}.activity-card{display:flex;gap:14px;align-items:flex-start;background:linear-gradient(135deg,#ffffff,#f8fafc);border:1px solid #e5e7eb;border-radius:20px;padding:16px;box-shadow:0 10px 24px rgba(15,23,42,.06)}.activity-card h3{margin:0 0 4px;font-size:19px}.activity-icon{width:52px;height:52px;border-radius:18px;background:linear-gradient(135deg,#dbeafe,#dcfce7);display:flex;align-items:center;justify-content:center;font-size:24px;flex:0 0 auto}.assembly-card{background:linear-gradient(135deg,#ecfeff,#f0fdf4);border-color:#99f6e4}.special-attendance-card{border-top-color:#14b8a6!important}.activity-info{min-width:0}.activity-info .actions-row{margin-top:8px}.warning.alert,.alert.warning{background:#fff7ed;color:#9a3412;border:1px solid #fed7aa}.date-view-form .date-input{font-weight:800;color:#334155}@media(max-width:640px){.activity-card{flex-direction:column}.activity-card .btn,.activity-card button{width:100%}}
+
+/* v24: ตัวเลือกสรุปเช็กชื่อรายวัน + รายห้องคาบ 1-8 */
+.daily-picker-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+}
+.daily-picker-box {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 18px;
+  padding: 16px;
+}
+.daily-picker-box h3 {
+  margin: 0 0 6px;
+}
+.classroom-day-table .period-day-head {
+  min-width: 72px;
+  vertical-align: top;
+  font-size: 12px;
+  line-height: 1.15;
+}
+.classroom-day-table .period-day-head small {
+  display: block;
+  font-size: 10px;
+  color: #0f766e;
+  margin-top: 3px;
+  max-width: 90px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.classroom-day-table .period-day-head em {
+  display: block;
+  font-style: normal;
+  color: #64748b;
+  font-size: 9px;
+  margin-top: 2px;
+}
+.classroom-day-table .no-class-head,
+.classroom-day-table .no-class-cell {
+  background: #f1f5f9 !important;
+  color: #94a3b8 !important;
+}
+.classroom-day-table .no-class-cell {
+  font-size: 11px;
+}
+@media print {
+  .daily-room-filter,
+  .page-head .actions-row,
+  .sidebar,
+  .topbar {
+    display: none !important;
+  }
+  .main {
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+  .classroom-day-table {
+    font-size: 10px;
+  }
+}

@@ -3260,8 +3260,56 @@ def build_activity_attendance_report(activity_id, classroom_id, links):
 def records_center():
     subject_ids = teacher_subject_ids()
     room_ids = teacher_classroom_ids()
-    pairs = SubjectClassroom.query.filter(SubjectClassroom.subject_id.in_(subject_ids or [-1]), SubjectClassroom.classroom_id.in_(room_ids or [-1])).all()
-    return render_template('records_center.html', pairs=pairs)
+    pairs = SubjectClassroom.query.filter(
+        SubjectClassroom.subject_id.in_(subject_ids or [-1]),
+        SubjectClassroom.classroom_id.in_(room_ids or [-1])
+    ).join(Subject, SubjectClassroom.subject_id == Subject.id).join(Classroom, SubjectClassroom.classroom_id == Classroom.id).order_by(Subject.name.asc(), Classroom.name.asc()).all()
+    if current_user.role == 'admin':
+        classrooms_for_daily = Classroom.query.filter_by(is_active=True).order_by(Classroom.name.asc()).all()
+    else:
+        classrooms_for_daily = Classroom.query.filter(Classroom.id.in_(room_ids or [-1]), Classroom.is_active == True).order_by(Classroom.name.asc()).all()
+    range_type, start_date, end_date, label = attendance_range_from_request()
+    _, subject_summaries = build_subject_attendance_summaries(start_date, end_date)
+    return render_template(
+        'records_center.html',
+        pairs=pairs, subject_summaries=subject_summaries, classrooms_for_daily=classrooms_for_daily,
+        range_type=range_type, start_date=start_date, end_date=end_date, label=label, today_date=date.today().isoformat()
+    )
+
+@app.route('/records/subject-summary/print')
+@login_required
+@role_required('teacher','admin')
+def subject_summary_print():
+    range_type, start_date, end_date, label = attendance_range_from_request()
+    room_rows, subject_rows = build_subject_attendance_summaries(start_date, end_date)
+    return render_template('subject_summary_print.html', room_rows=room_rows, subject_rows=subject_rows, label=label, start_date=start_date, end_date=end_date)
+
+@app.route('/records/subject-summary/export')
+@login_required
+@role_required('teacher','admin')
+def subject_summary_export():
+    range_type, start_date, end_date, label = attendance_range_from_request()
+    room_rows, subject_rows = build_subject_attendance_summaries(start_date, end_date)
+    wb = Workbook()
+    ws = wb.active
+    ws.title = 'summary_by_subject'
+    ws.append([f'ตารางสรุปการเช็กชื่อเป็นรายวิชา - {label}'])
+    ws.append(['รายวิชา', 'ครู', 'ห้องที่เกี่ยวข้อง', 'จำนวนนักเรียนรวม', 'จำนวนคาบ/ครั้งที่เช็ก', 'หน่วยเช็กชื่อรวม', 'มา', 'สาย', 'ขาด', 'ลาป่วย', 'ไปกิจกรรม', 'มาเรียน (%)'])
+    for r in subject_rows:
+        ws.append([r['subject'].name, r['teacher'], r['room_text'], r['student_count'], r['checked_slots'], r['total_units'], r['totals']['มา'], r['totals']['สาย'], r['totals']['ขาด'], r['totals']['ลาป่วย'], r['totals']['ไปกิจกรรม'], r['percent']])
+    ws2 = wb.create_sheet('summary_by_room')
+    ws2.append([f'ตารางสรุปการเช็กชื่อแยกรายวิชา/ห้อง - {label}'])
+    ws2.append(['รายวิชา', 'ห้อง/ขอบเขต', 'ครู', 'จำนวนนักเรียน', 'จำนวนคาบ/ครั้งที่เช็ก', 'หน่วยเช็กชื่อรวม', 'มา', 'สาย', 'ขาด', 'ลาป่วย', 'ไปกิจกรรม', 'มาเรียน (%)'])
+    for r in room_rows:
+        ws2.append([r['subject'].name, r['scope_label'], r['teacher'], r['student_count'], r['checked_slots'], r['total_units'], r['totals']['มา'], r['totals']['สาย'], r['totals']['ขาด'], r['totals']['ลาป่วย'], r['totals']['ไปกิจกรรม'], r['percent']])
+    for sheet in [ws, ws2]:
+        for col in sheet.columns:
+            max_len = max(len(str(c.value or '')) for c in col)
+            sheet.column_dimensions[col[0].column_letter].width = min(max(max_len + 2, 10), 45)
+    filename = f"subject_attendance_summary_{range_type}.xlsx"
+    path = os.path.join(UPLOAD_DIR, filename)
+    wb.save(path)
+    return send_file(path, as_attachment=True, download_name=filename)
 
 
 def schedule_period_block(schedule_id=None, subject_id=None, classroom_id=None, period_no=None):
@@ -3332,6 +3380,70 @@ def build_attendance_summary(subject_id, classroom_id, links, start_date=None, e
         summary.append(row)
     return slot_headers, att_data, summary
 
+
+def build_subject_attendance_summaries(start_date=None, end_date=None):
+    """สรุปภาพรวมการเช็กชื่อ แยกเป็นรายวิชา/ห้องเรียน ใช้ในศูนย์บันทึก รายงานพิมพ์ และ Excel"""
+    subject_ids = teacher_subject_ids()
+    room_ids = teacher_classroom_ids()
+    pairs = SubjectClassroom.query.filter(
+        SubjectClassroom.subject_id.in_(subject_ids or [-1]),
+        SubjectClassroom.classroom_id.in_(room_ids or [-1])
+    ).join(Subject, SubjectClassroom.subject_id == Subject.id).join(Classroom, SubjectClassroom.classroom_id == Classroom.id).order_by(Subject.name.asc(), Classroom.name.asc()).all()
+
+    rows = []
+    grouped = {}
+    for p in pairs:
+        subject = p.subject
+        room = p.classroom
+        links = attendance_student_links(subject, room)
+        date_headers, att_data, summary = build_attendance_summary(subject.id, room.id, links, start_date, end_date)
+        totals = {'มา': 0, 'สาย': 0, 'ขาด': 0, 'ลาป่วย': 0, 'ไปกิจกรรม': 0}
+        for srow in summary:
+            for key in totals:
+                totals[key] += int(srow.get(key, 0) or 0)
+        checked_slots = len(date_headers)
+        student_count = len(links)
+        total_units = checked_slots * student_count
+        attended = totals['มา'] + totals['สาย'] + totals['ไปกิจกรรม']
+        percent = round((attended / total_units * 100), 1) if total_units else 100
+        row = {
+            'subject': subject,
+            'room': room,
+            'teacher': subject.teacher.full_name if getattr(subject, 'teacher', None) else '-',
+            'scope_label': attendance_scope_label(subject, room),
+            'checked_slots': checked_slots,
+            'student_count': student_count,
+            'total_units': total_units,
+            'totals': totals,
+            'percent': percent,
+        }
+        rows.append(row)
+        g = grouped.setdefault(subject.id, {
+            'subject': subject,
+            'teacher': row['teacher'],
+            'rooms': [],
+            'checked_slots': 0,
+            'student_count': 0,
+            'total_units': 0,
+            'totals': {'มา': 0, 'สาย': 0, 'ขาด': 0, 'ลาป่วย': 0, 'ไปกิจกรรม': 0},
+            'percent': 100,
+        })
+        g['rooms'].append(room.name)
+        g['checked_slots'] += checked_slots
+        g['student_count'] += student_count
+        g['total_units'] += total_units
+        for key in g['totals']:
+            g['totals'][key] += totals[key]
+
+    subject_rows = []
+    for g in grouped.values():
+        attended = g['totals']['มา'] + g['totals']['สาย'] + g['totals']['ไปกิจกรรม']
+        g['percent'] = round((attended / g['total_units'] * 100), 1) if g['total_units'] else 100
+        g['room_text'] = ', '.join(sorted(set(g['rooms'])))
+        subject_rows.append(g)
+    subject_rows.sort(key=lambda x: x['subject'].name)
+    return rows, subject_rows
+
 def attendance_range_from_request():
     today = date.today()
     active_sem = Semester.query.filter_by(is_active=True).first()
@@ -3347,6 +3459,98 @@ def attendance_range_from_request():
         end_date = active_sem.end_date if active_sem else today
         label = f"รายเทอม {active_sem.name if active_sem else ''}".strip()
     return range_type, start_date, end_date, label
+
+def classroom_day_schedule_rows(classroom_id, report_date):
+    """คาบ 1-8 ของห้องในวันที่เลือก ดึงวิชาจากตารางสอนตามวันในสัปดาห์"""
+    weekday = report_date.weekday()
+    rows = TeachingSchedule.query.filter_by(classroom_id=classroom_id, weekday=weekday).order_by(TeachingSchedule.period_no.asc()).all()
+    by_period = {}
+    for r in rows:
+        by_period.setdefault(r.period_no, []).append(r)
+    return by_period
+
+def build_classroom_day_attendance_report(classroom, report_date):
+    links = ClassroomStudent.query.filter_by(classroom_id=classroom.id).join(User, ClassroomStudent.student_id == User.id).order_by(User.full_name.asc()).all()
+    schedule_by_period = classroom_day_schedule_rows(classroom.id, report_date)
+    attendance_rows = Attendance.query.filter_by(classroom_id=classroom.id, date=report_date).filter(Attendance.period_no.in_(list(range(1, 9)))).all()
+    attendance_map = {}
+    for a in attendance_rows:
+        # ถ้ามีหลายวิชาในคาบเดียวกัน ให้เอาข้อมูลล่าสุดที่บันทึกไว้
+        attendance_map[(a.student_id, a.period_no or 0)] = normalize_attendance_status(a.status)
+    period_headers = []
+    for pno in range(1, 9):
+        scheds = schedule_by_period.get(pno, [])
+        period_headers.append({
+            'period_no': pno,
+            'schedules': scheds,
+            'subject_text': ' / '.join([r.subject.name for r in scheds]) if scheds else 'ว่าง',
+            'time_text': f"{scheds[0].start_time}-{scheds[0].end_time}" if scheds else '',
+            'has_class': bool(scheds),
+        })
+    summary = []
+    for link in links:
+        totals = {'มา': 0, 'สาย': 0, 'ขาด': 0, 'ลาป่วย': 0, 'ไปกิจกรรม': 0}
+        checked = 0
+        for h in period_headers:
+            if not h['has_class']:
+                continue
+            st = attendance_map.get((link.student_id, h['period_no']), '')
+            if st:
+                checked += 1
+                if st in totals:
+                    totals[st] += 1
+        attended = totals['มา'] + totals['สาย'] + totals['ไปกิจกรรม']
+        percent = round((attended / checked * 100), 1) if checked else 100
+        summary.append({'student': link.student, 'checked': checked, 'totals': totals, 'percent': percent})
+    return links, period_headers, attendance_map, summary
+
+@app.route('/records/classroom-day')
+@login_required
+@role_required('teacher','admin')
+def classroom_day_report():
+    classroom_id = request.args.get('classroom_id', type=int)
+    if not classroom_id:
+        flash('กรุณาเลือกห้องเรียนก่อนดูสรุปรายวัน', 'danger')
+        return redirect(url_for('records_center'))
+    room = Classroom.query.get_or_404(classroom_id)
+    if current_user.role != 'admin' and not owns_classroom(room):
+        return deny_redirect('records_center')
+    report_date = datetime.strptime(request.args.get('date', date.today().isoformat()), '%Y-%m-%d').date()
+    links, period_headers, attendance_map, summary = build_classroom_day_attendance_report(room, report_date)
+    return render_template(
+        'classroom_day_report.html',
+        room=room, report_date=report_date, report_day_label=thai_date_label(report_date),
+        links=links, period_headers=period_headers, attendance_map=attendance_map, summary=summary,
+        status_symbols=ATTENDANCE_SYMBOLS, statuses=ATTENDANCE_STATUSES
+    )
+
+@app.route('/records/classroom-day/export')
+@login_required
+@role_required('teacher','admin')
+def classroom_day_report_export():
+    classroom_id = request.args.get('classroom_id', type=int)
+    room = Classroom.query.get_or_404(classroom_id)
+    if current_user.role != 'admin' and not owns_classroom(room):
+        return deny_redirect('records_center')
+    report_date = datetime.strptime(request.args.get('date', date.today().isoformat()), '%Y-%m-%d').date()
+    links, period_headers, attendance_map, summary = build_classroom_day_attendance_report(room, report_date)
+    wb = Workbook(); ws = wb.active; ws.title = 'classroom_day'
+    ws.append([f'สรุปเช็กชื่อรายวัน ห้อง {room.name} - {thai_date_label(report_date)}'])
+    ws.append(['ที่', 'รหัส/username', 'ชื่อ-สกุล'] + [f"คาบ {h['period_no']} {h['subject_text']}" for h in period_headers] + ['มา','สาย','ขาด','ลาป่วย','ไปกิจกรรม','มาเรียน (%)'])
+    for idx, link in enumerate(links, start=1):
+        srow = summary[idx-1]
+        row = [idx, link.student.username, link.student.full_name]
+        for h in period_headers:
+            st = attendance_map.get((link.student_id, h['period_no']), '') if h['has_class'] else ''
+            row.append(ATTENDANCE_SYMBOLS.get(st, st) if st else ('ว่าง' if not h['has_class'] else ''))
+        row += [srow['totals']['มา'], srow['totals']['สาย'], srow['totals']['ขาด'], srow['totals']['ลาป่วย'], srow['totals']['ไปกิจกรรม'], srow['percent']]
+        ws.append(row)
+    for col in ws.columns:
+        max_len = max(len(str(c.value or '')) for c in col)
+        ws.column_dimensions[col[0].column_letter].width = min(max(max_len + 2, 10), 45)
+    filename = f"classroom_day_attendance_{room.name}_{report_date.isoformat()}.xlsx".replace('/', '-')
+    path = os.path.join(UPLOAD_DIR, filename); wb.save(path)
+    return send_file(path, as_attachment=True, download_name=filename)
 
 @app.route('/attendance/<int:subject_id>/<int:classroom_id>', methods=['GET','POST'])
 @login_required
