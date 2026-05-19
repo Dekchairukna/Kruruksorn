@@ -1,0 +1,23 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>เช็กชื่อและสมุดคะแนน</h1>
+<p class="muted">เลือกคู่รายวิชา/ห้องเรียน เพื่อเช็กเวลาเรียน สรุปขาด-ลา-มาสาย และทำคะแนนตัดเกรดทั้งเทอม</p>
+<section class="card">
+<table>
+  <tr><th>รายวิชา</th><th>ห้องเรียน</th><th>ครู</th><th>จัดการ</th></tr>
+  {% for p in pairs %}
+  <tr>
+    <td>{{ p.subject.name }}</td>
+    <td>{{ p.classroom.name }}</td>
+    <td>{% if p.subject.teacher %}{{ p.subject.teacher.full_name }}{% else %}-{% endif %}</td>
+    <td>
+      <a class="btn small" href="{{ url_for('attendance', subject_id=p.subject_id, classroom_id=p.classroom_id) }}">เช็กชื่อ</a>
+      <a class="btn secondary small" href="{{ url_for('grades', subject_id=p.subject_id, classroom_id=p.classroom_id) }}">สมุดคะแนน/ตัดเกรด</a>
+    </td>
+  </tr>
+  {% else %}
+  <tr><td colspan="4">ยังไม่มีการผูกวิชากับห้องเรียน ให้ไปที่รายวิชา/มอบหมายครูก่อน</td></tr>
+  {% endfor %}
+</table>
+</section>
+{% endblock %}

@@ -1,0 +1,179 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>เช็กชื่อนักเรียน</h1>
+    <p class="muted">{{ subject.name }} / {{ attendance_scope_label if attendance_scope_label else room.name }}{% if selected_period_text %} · เช็กครั้งเดียวครอบคลุมคาบ {{ selected_period_text }}{% elif period_no %} · คาบ {{ period_no }}{% endif %}{% if substitute_mode %} · โหมดสอนแทน{% endif %}</p>
+    <div class="selected-date-badge">วันที่เช็กชื่อ: <b>{{ selected_day_label }}</b></div>
+  </div>
+  <div class="actions-row">
+    <a class="btn secondary" href="{{ url_for('schedule') }}">← กลับตารางสอน</a>
+    <a class="btn secondary" href="{{ url_for('records_center') }}">ศูนย์บันทึก</a>
+    {% if substitute_mode %}<a class="btn secondary" href="{{ url_for('substitute_schedule', teacher_id=sub_teacher_id) }}">← ตารางสอนแทน</a>{% endif %}
+    <a class="btn" href="{{ url_for('export_attendance', subject_id=subject.id, classroom_id=room.id, range='term', substitute='1' if substitute_mode else None) }}">Export รายเทอม</a>
+    <a class="btn secondary" href="{{ url_for('attendance_print', subject_id=subject.id, classroom_id=room.id, range='term', substitute='1' if substitute_mode else None) }}" target="_blank">พิมพ์รายเทอม</a>
+    <a class="btn secondary" href="{{ url_for('attendance_print', subject_id=subject.id, classroom_id=room.id, range='month', year=att_date.year, month=att_date.month, substitute='1' if substitute_mode else None) }}" target="_blank">พิมพ์รายเดือน</a>
+    <a class="btn" href="{{ url_for('export_attendance', subject_id=subject.id, classroom_id=room.id, range='month', year=att_date.year, month=att_date.month, substitute='1' if substitute_mode else None) }}">Excel รายเดือน</a>
+    <a class="btn secondary" href="{{ url_for('grades', subject_id=subject.id, classroom_id=room.id) }}">สมุดคะแนน</a>
+  </div>
+</div>
+
+<section class="card attendance-check-card">
+  <div class="attendance-toolbar view-date-toolbar">
+    <form method="get" class="date-view-form">
+      {% if period_no %}<input type="hidden" name="period_no" value="{{ period_no }}">{% endif %}
+      {% if schedule_id %}<input type="hidden" name="schedule_id" value="{{ schedule_id }}">{% endif %}
+      {% if substitute_mode %}<input type="hidden" name="substitute" value="1"><input type="hidden" name="sub_teacher_id" value="{{ sub_teacher_id or '' }}">{% endif %}
+      <label class="date-input">เลือกวันที่ดู/แก้ไข
+        <input name="date" type="date" value="{{ att_date.isoformat() if att_date else '' }}" required>
+      </label>
+      <button type="submit" class="btn secondary small">ดูวันที่นี้</button>
+    </form>
+  </div>
+
+  <form method="post" id="attendanceForm">
+    <input type="hidden" name="period_no" value="{{ period_no or '' }}">
+    <input type="hidden" name="schedule_id" value="{{ schedule_id or '' }}">
+    {% if substitute_mode %}<input type="hidden" name="substitute" value="1"><input type="hidden" name="sub_teacher_id" value="{{ sub_teacher_id or '' }}">{% endif %}
+    {% for p in period_block %}<input type="hidden" name="periods" value="{{ p }}">{% endfor %}
+    <div class="attendance-toolbar">
+      <input name="date" type="hidden" value="{{ att_date.isoformat() if att_date else '' }}">
+      {% if selected_period_text %}<div class="selected-date-badge">บันทึกครั้งนี้จะลงเวลาเรียน <b>{{ period_block|length }}</b> คาบ: คาบ {{ selected_period_text }}</div>{% endif %}
+      <div class="bulk-buttons">
+        <span class="bulk-label">เลือกทั้งหมด:</span>
+        {% for st in statuses %}
+        <button type="button" class="bulk-status-btn status-{{ loop.index }}" onclick="setAllAttendance('{{ st }}')">{{ st }}</button>
+        {% endfor %}
+      </div>
+      <input type="hidden" name="bulk_status" id="bulk_status" value="">
+      <button class="save-attendance-btn">บันทึกเช็กชื่อ {{ selected_day_label }}</button>
+    </div>
+
+    <div class="attendance-list table-like-checklist">
+      {% for l in links %}
+      {% set cur = old.get(l.student_id, 'มา') %}
+      <div class="student-check-row row-status-{{ cur|replace(' ', '-') }}">
+        <div class="student-main">
+          <div class="student-no">{{ loop.index }}</div>
+          <div>
+            <div class="student-name">{{ l.student.full_name }}</div>
+            <div class="student-code">{{ l.student.username }}{% if show_classroom_column and l.classroom %} · {{ l.classroom.name }}{% endif %}</div>
+          </div>
+        </div>
+        <div class="status-choice-wrap">
+          {% for st in statuses %}
+          <label class="status-choice status-choice-{{ loop.index }}">
+            <input type="radio" name="s_{{ l.student_id }}" value="{{ st }}" {% if cur==st %}checked{% endif %} onchange="paintRow(this)">
+            <span>{{ st }}</span>
+          </label>
+          {% endfor %}
+        </div>
+      </div>
+      {% else %}
+      <div class="empty-state">ยังไม่มีนักเรียนในห้องนี้</div>
+      {% endfor %}
+    </div>
+
+    <div class="sticky-save-bar">
+      <button class="save-attendance-btn">บันทึกเช็กชื่อ {{ selected_day_label }}</button>
+    </div>
+  </form>
+
+  <form method="post" action="{{ url_for('attendance_delete_day', subject_id=subject.id, classroom_id=room.id) }}" onsubmit="return confirm('ลบข้อมูลเช็กชื่อของ {{ selected_day_label }} ?')" class="danger-zone">
+    <input type="hidden" name="date" value="{{ att_date.isoformat() if att_date else '' }}">
+    {% if substitute_mode %}<input type="hidden" name="substitute" value="1">{% endif %}
+    {% for p in period_block %}<input type="hidden" name="periods" value="{{ p }}">{% endfor %}
+    <button class="danger-btn">ลบเช็กชื่อวันที่นี้</button>
+  </form>
+</section>
+
+<section class="card attendance-report-card">
+  <div class="section-head-row">
+    <div>
+      <h2>สรุปการเช็กชื่อรายวัน</h2>
+      <p class="muted">แสดงวัน/วันที่ที่เช็กชื่อ และสถานะของนักเรียนแต่ละคนแบบเดียวกับตัวอย่าง</p>
+    </div>
+    <div class="status-legend">
+      <span><b class="att-mark mark-present">/</b> มา</span>
+      <span><b class="att-mark mark-late">ส</b> สาย</span>
+      <span><b class="att-mark mark-absent">ข</b> ขาด</span>
+      <span><b class="att-mark mark-sick">ลป</b> ลาป่วย</span>
+      <span><b class="att-mark mark-activity">ก</b> ไปกิจกรรม</span>
+    </div>
+  </div>
+
+  <div class="attendance-table-wrap">
+    <table class="attendance-history-table">
+      <thead>
+        <tr>
+          <th rowspan="2" class="narrow">ที่</th>
+          <th rowspan="2" class="student-col">ชื่อ - นามสกุล</th>
+          {% if show_classroom_column %}<th rowspan="2" class="summary-head">ชั้น/ห้อง</th>{% endif %}
+          <th colspan="{{ date_headers|length if date_headers else 1 }}">วันที่เช็กชื่อ / คาบเรียน</th>
+          <th colspan="5" class="summary-head">สรุปครั้ง</th>
+          <th rowspan="2" class="summary-head">มาเรียน (%)</th>
+        </tr>
+        <tr>
+          {% for d in date_headers %}
+          <th class="vertical-date" title="{{ d.label }}">
+            <span>{{ d.short }}</span>
+          </th>
+          {% else %}
+          <th>-</th>
+          {% endfor %}
+          <th class="sum-present">มา</th>
+          <th class="sum-late">สาย</th>
+          <th class="sum-absent">ขาด</th>
+          <th class="sum-sick">ลาป่วย</th>
+          <th class="sum-activity">ไปกิจกรรม</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for l in links %}
+        {% set srow = summary[loop.index0] %}
+        <tr>
+          <td>{{ loop.index }}</td>
+          <td class="student-name-cell">{{ l.student.full_name }}</td>
+          {% if show_classroom_column %}<td class="summary-cell">{{ l.classroom.name if l.classroom else '-' }}</td>{% endif %}
+          {% for d in date_headers %}
+            {% set st = att_data.get(l.student_id, {}).get(d.key, '') %}
+            <td class="att-cell status-cell-{{ st|replace(' ', '-') }}">
+              {% if st %}{{ status_symbols.get(st, st) }}{% else %}-{% endif %}
+            </td>
+          {% else %}
+            <td>-</td>
+          {% endfor %}
+          <td class="summary-cell">{{ srow['มา'] }}</td>
+          <td class="summary-cell">{{ srow['สาย'] }}</td>
+          <td class="summary-cell">{{ srow['ขาด'] }}</td>
+          <td class="summary-cell">{{ srow['ลาป่วย'] }}</td>
+          <td class="summary-cell">{{ srow['ไปกิจกรรม'] }}</td>
+          <td class="summary-cell percent-cell {% if srow['percent'] < 80 %}low-percent{% endif %}">{{ srow['percent'] }}%</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="{{ 11 if show_classroom_column else 10 }}">ยังไม่มีนักเรียนในกลุ่มนี้</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<script>
+function setAllAttendance(status) {
+  document.getElementById('bulk_status').value = status;
+  document.querySelectorAll(`input[type="radio"][value="${status}"]`).forEach((el) => {
+    el.checked = true;
+    paintRow(el);
+  });
+}
+function paintRow(radio) {
+  const row = radio.closest('.student-check-row');
+  if (!row) return;
+  row.classList.remove('row-status-มา','row-status-สาย','row-status-ขาด','row-status-ลาป่วย','row-status-ไปกิจกรรม');
+  row.classList.add('row-status-' + radio.value.replaceAll(' ', '-'));
+}
+document.addEventListener('DOMContentLoaded', () => {
+  document.querySelectorAll('.student-check-row input[type="radio"]:checked').forEach(paintRow);
+});
+</script>
+{% endblock %}

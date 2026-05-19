@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<title>รายงานเช็กชื่อ {{ subject.name }} {{ room.name }}</title>
+<style>
+  @page { size: A4 landscape; margin: 8mm; }
+  body { font-family: Tahoma, Arial, sans-serif; color:#111; }
+  .head { text-align:center; margin-bottom:8px; }
+  h1 { font-size:18px; margin:0 0 4px; }
+  .sub { font-size:13px; }
+  table { width:100%; border-collapse:collapse; font-size:10px; }
+  th,td { border:1px solid #444; padding:3px; text-align:center; }
+  th { background:#f1f5f9; }
+  .student { text-align:left; min-width:150px; }
+  .vertical { writing-mode: vertical-rl; height:86px; min-width:22px; font-size:9px; }
+  .low { background:#fee2e2; color:#991b1b; font-weight:bold; }
+  .legend { margin:6px 0; font-size:11px; }
+  @media print { .no-print { display:none; } }
+</style>
+</head>
+<body>
+<div class="no-print" style="text-align:right;margin-bottom:8px"><button onclick="window.print()">พิมพ์รายงาน</button></div>
+<div class="head">
+  <h1>รายงานเช็กชื่อ {{ label }}</h1>
+  <div class="sub">{{ subject.name }} · {{ attendance_scope_label if attendance_scope_label else room.name }} · {{ start_date.strftime('%d/%m/') }}{{ start_date.year+543 }} - {{ end_date.strftime('%d/%m/') }}{{ end_date.year+543 }}</div>
+  <div class="legend">/ = มา, ส = สาย, ข = ขาด, ลป = ลาป่วย, ก = ไปกิจกรรม</div>
+</div>
+<table>
+  <thead>
+    <tr>
+      <th rowspan="2">ที่</th><th rowspan="2" class="student">ชื่อ - นามสกุล</th>{% if show_classroom_column %}<th rowspan="2">ชั้น/ห้อง</th>{% endif %}
+      <th colspan="{{ date_headers|length if date_headers else 1 }}">วันที่เช็กชื่อ / คาบเรียน</th>
+      <th colspan="5">สรุป</th><th rowspan="2">%</th>
+    </tr>
+    <tr>
+      {% for d in date_headers %}<th class="vertical">{{ d.short }}</th>{% else %}<th>-</th>{% endfor %}
+      <th>มา</th><th>สาย</th><th>ขาด</th><th>ลป</th><th>ก</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for l in links %}
+    {% set srow = summary[loop.index0] %}
+    <tr>
+      <td>{{ loop.index }}</td><td class="student">{{ l.student.full_name }}</td>{% if show_classroom_column %}<td>{{ l.classroom.name if l.classroom else '' }}</td>{% endif %}
+      {% for d in date_headers %}
+        {% set st = att_data.get(l.student_id, {}).get(d.key, '') %}
+        <td>{{ status_symbols.get(st, st) if st else '' }}</td>
+      {% else %}<td>-</td>{% endfor %}
+      <td>{{ srow['มา'] }}</td><td>{{ srow['สาย'] }}</td><td>{{ srow['ขาด'] }}</td><td>{{ srow['ลาป่วย'] }}</td><td>{{ srow['ไปกิจกรรม'] }}</td>
+      <td class="{% if srow['percent'] < 80 %}low{% endif %}">{{ srow['percent'] }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</body>
+</html>

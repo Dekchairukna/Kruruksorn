@@ -1,0 +1,116 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>{{ lesson.title }}</h1>
+    <p>{{ lesson.unit.subject.name }} · {{ lesson.unit.title }}</p>
+  </div>
+  {% if current_user.role in ['teacher','admin'] %}
+  <div class="actions-row">
+    <a class="btn secondary" href="{{ url_for('lesson_edit', lesson_id=lesson.id) }}">แก้ไขบทเรียน/แนบไฟล์</a>
+  </div>
+  {% endif %}
+</div>
+
+<section class="card lesson-reader">
+  <h2>🎯 จุดประสงค์</h2>
+  <div class="lesson-text">{{ lesson.objective|replace('\n','<br>')|safe }}</div>
+
+  <h2>📘 เนื้อหาบทเรียน</h2>
+  <div class="lesson-content-box">{{ lesson.content|replace('\n','<br>')|safe }}</div>
+
+  {% if lesson.media_url %}
+    {% if youtube_embed %}
+      <div class="embedded-media-block">
+        <h3>🎥 วิดีโอประกอบบทเรียน</h3>
+        <div class="video-frame-wrap">
+          <iframe src="{{ youtube_embed }}" title="YouTube video" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>
+        </div>
+      </div>
+    {% else %}
+      <p><a class="btn" href="{{ lesson.media_url }}" target="_blank">เปิดลิงก์สื่อเพิ่มเติม</a></p>
+    {% endif %}
+  {% endif %}
+</section>
+
+{% if files %}
+<section class="card">
+  <h2>📎 ไฟล์และสื่อประกอบบทเรียน</h2>
+  <p class="hint">ไฟล์ที่เปิดในเว็บได้จะแสดงในหน้านี้ทันที เพื่อให้นักเรียนเรียนต่อเนื่องโดยไม่ต้องเปิดหน้าใหม่</p>
+  <div class="lesson-embedded-list">
+    {% for f in files %}
+      {% set file_url = url_for('uploaded_file', filename=f.file_path) %}
+      <article class="lesson-embedded-item">
+        <div class="lesson-file-head">
+          <b>{{ f.original_file_name }}</b>
+          <span class="badge-soft">{{ f.file_type }}</span>
+        </div>
+
+        {% if f.file_type == 'image' %}
+          <img class="lesson-image-full" src="{{ file_url }}" alt="{{ f.original_file_name }}">
+        {% elif f.file_type == 'pdf' %}
+          <iframe class="lesson-pdf-frame" src="{{ file_url }}#toolbar=1&navpanes=0" title="{{ f.original_file_name }}"></iframe>
+        {% elif f.file_type == 'video' %}
+          <video class="lesson-video-player" controls preload="metadata">
+            <source src="{{ file_url }}">
+            เบราว์เซอร์นี้ไม่รองรับการเล่นวิดีโอ
+          </video>
+        {% elif f.file_type == 'document' %}
+          <div class="file-preview-card document-preview">
+            <div class="file-icon">DOC</div>
+            <p>ไฟล์ Word บางเบราว์เซอร์ไม่สามารถแสดงฝังในหน้าได้ ให้ดาวน์โหลดเพื่อเปิดดู</p>
+          </div>
+        {% elif f.file_type == 'presentation' %}
+          <div class="file-preview-card presentation-preview">
+            <div class="file-icon">PPT</div>
+            <p>ไฟล์ PowerPoint ให้ดาวน์โหลดเพื่อเปิดดู หรือบันทึกเป็น PDF แล้วอัปโหลดเพื่อให้แสดงในหน้านี้ได้</p>
+          </div>
+        {% else %}
+          <div class="file-preview-card"><div class="file-icon">FILE</div></div>
+        {% endif %}
+
+        <div class="lesson-file-actions">
+          <a class="btn small secondary" href="{{ file_url }}" target="_blank">เปิดแยก</a>
+          <a class="btn small" href="{{ file_url }}" download>ดาวน์โหลด</a>
+        </div>
+      </article>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+{% if current_user.role in ['teacher','admin'] %}
+<p>
+  <a class="btn" href="{{ url_for('worksheet_create', lesson_id=lesson.id) }}">+ ใบงาน</a>
+  <a class="btn" href="{{ url_for('quiz_create', lesson_id=lesson.id) }}">+ แบบทดสอบ</a>
+  <form method="post" action="{{ url_for('lesson_delete', lesson_id=lesson.id) }}" class="inline" onsubmit="return confirm('ลบบทเรียนนี้?')"><button class="danger-btn">ลบบทเรียน</button></form>
+</p>
+{% endif %}
+
+<h2>ใบงาน</h2>
+<div class="cards">
+{% for w in worksheets %}
+  <div class="card">
+    <h3>{{ w.title }}</h3>
+    <p><b>ประเภท:</b> {% if w.worksheet_type=='petanque_score' %}ใบงานเปตอง{% elif w.worksheet_type=='upload' %}อัปโหลดไฟล์{% else %}ใบงานวิชาการ{% endif %}</p>
+    <p>{{ w.description }}</p>
+    {% if w.file_path %}<p><a class="btn small" href="{{ url_for('uploaded_file', filename=w.file_path) }}" target="_blank">เปิดไฟล์ใบงาน</a></p>{% endif %}
+    {% if current_user.role == 'student' and lesson_status %}
+      <a class="btn" href="{{ url_for('do_worksheet', status_id=lesson_status.id, worksheet_id=w.id) }}">ทำใบงาน</a>
+    {% endif %}
+    {% if current_user.role in ['teacher','admin'] %}
+      <a class="btn" href="{{ url_for('worksheet_review', worksheet_id=w.id) }}">ตรวจใบงาน</a>
+      <a class="btn secondary" href="{{ url_for('worksheet_edit', worksheet_id=w.id) }}">แก้ไข</a>
+      <form method="post" action="{{ url_for('worksheet_delete', worksheet_id=w.id) }}" class="inline" onsubmit="return confirm('ลบใบงานนี้?')"><button class="danger-btn">ลบ</button></form>
+    {% endif %}
+  </div>
+{% else %}<div class="card">ยังไม่มีใบงาน</div>{% endfor %}
+</div>
+
+<h2>แบบทดสอบ</h2>
+<div class="cards">
+{% for q in quizzes %}
+  <div class="card"><h3>{{ q.title }}</h3><p>ผ่าน {{ q.pass_percent }}%</p>{% if current_user.role == 'student' and lesson_status %}<a class="btn" href="{{ url_for('do_quiz', status_id=lesson_status.id, quiz_id=q.id) }}">ทำแบบทดสอบ</a>{% endif %}{% if current_user.role in ['teacher','admin'] %}<a class="btn" href="{{ url_for('quiz_questions', quiz_id=q.id) }}">ข้อสอบ</a> <a class="btn secondary" href="{{ url_for('quiz_edit', quiz_id=q.id) }}">แก้ไข</a><form method="post" action="{{ url_for('quiz_delete', quiz_id=q.id) }}" class="inline" onsubmit="return confirm('ลบแบบทดสอบนี้?')"><button class="danger-btn">ลบ</button></form>{% endif %}</div>
+{% else %}<div class="card">ยังไม่มีแบบทดสอบ</div>{% endfor %}
+</div>
+{% endblock %}

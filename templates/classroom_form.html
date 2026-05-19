@@ -1,0 +1,23 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>แก้ไขห้องเรียน</h1>
+<form method="post" class="card form-stack">
+  <label>ชื่อห้อง</label><input name="name" value="{{room.name}}" required>
+  {% if current_user.role=='admin' %}
+  <label>ครูประจำชั้น</label>
+  <select name="teacher_id">
+    <option value="">ยังไม่เลือกครูประจำชั้น</option>
+    {% for t in teachers %}<option value="{{t.id}}" {% if room.teacher_id==t.id %}selected{% endif %}>{{t.full_name}}</option>{% endfor %}
+  </select>
+
+  <label>ครูที่เช็กชื่อกิจกรรมของห้องนี้ได้</label>
+  <select name="activity_teacher_ids" multiple size="8">
+    {% for t in teachers %}
+      <option value="{{t.id}}" {% if t.id in assigned_activity_teacher_ids %}selected{% endif %}>{{t.full_name}}</option>
+    {% endfor %}
+  </select>
+  <p class="muted">เลือกได้หลายคน กด Command ค้างไว้แล้วคลิกชื่อครู ระบบจะให้ครูเหล่านี้เข้าเมนูเช็กชื่อเข้าแถว/กิจกรรมพิเศษของห้องนี้ได้</p>
+  {% endif %}
+  <button>บันทึก</button><a class="btn secondary" href="{{url_for('classrooms')}}">กลับ</a>
+</form>
+{% endblock %}

@@ -1,0 +1,13 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>แดชบอร์ดครู</h1>
+<div class="grid colorful">
+  <div class="stat-card green"><b>คาบปัจจุบัน</b>{% if cur %}<h3>{{cur.subject.name}}</h3><p>{{cur.classroom.name}} | {{cur.start_time}}-{{cur.end_time}}</p><small>{{cur.topic or (cur.lesson.title if cur.lesson else '')}}</small>{% else %}<h3>ไม่มีคาบสอน</h3><small>ตามเวลาปัจจุบัน</small>{% endif %}</div>
+  <div class="stat-card blue"><b>คาบถัดไป</b>{% if nxt %}<h3>{{nxt.subject.name}}</h3><p>{{nxt.classroom.name}} | {{nxt.start_time}}-{{nxt.end_time}}</p>{% else %}<h3>ไม่มีคาบถัดไปวันนี้</h3>{% endif %}</div>
+  <div class="stat-card orange"><b>รายวิชา</b><h2>{{subjects|length}}</h2><small>วิชา</small></div>
+  <div class="stat-card pink"><b>ห้องเรียน</b><h2>{{classrooms|length}}</h2><small>ห้อง</small></div>
+</div>
+{% include '_calendar_dashboard.html' %}
+<h2>งานล่าสุด</h2>
+<table><tr><th>งาน</th><th>วิชา</th><th>ห้อง</th><th>กำหนดส่ง</th></tr>{% for a in assignments %}<tr><td>{{a.title}}</td><td>{{a.subject.name}}</td><td>{{a.classroom.name}}</td><td>{{a.due_date or '-'}}</td></tr>{% endfor %}</table>
+{% endblock %}

@@ -1,0 +1,37 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>{{'แก้ไขใบงาน' if worksheet else 'เพิ่มใบงาน'}}: {{lesson.title}}</h1>
+<div class="card notice-card">
+  <b>ใบงาน</b> เลือกประเภทใบงานก่อนบันทึก ถ้าเป็นใบงานวิชาการสามารถแนบไฟล์ PDF/PNG/JPG ได้เลย ถ้าเป็นใบงานเปตอง ระบบจะสร้างตารางระยะ 6.5/7.5/8.5/9.5 และสถานี 1-5 ให้อัตโนมัติ
+</div>
+<form method="post" enctype="multipart/form-data" class="stack-form">
+  <label>ชื่อใบงาน</label>
+  <input name="title" value="{{worksheet.title if worksheet else ''}}" required>
+
+  <label>ประเภทใบงาน</label>
+  <select name="worksheet_type" required>
+    {% for v,n in [('academic','ใบงานวิชาการ / ตอบคำถามตามข้อ'),('petanque_score','ใบงานเปตอง / ตารางระยะ-สถานี'),('upload','ใบงานให้นักเรียนอัปโหลดไฟล์คำตอบ')] %}
+      <option value="{{v}}" {% if worksheet and worksheet.worksheet_type==v %}selected{% endif %}>{{n}}</option>
+    {% endfor %}
+  </select>
+
+  <label>แนบไฟล์ใบงานจากครู</label>
+  <input type="file" name="worksheet_file" accept=".pdf,.png,.jpg,.jpeg">
+  {% if worksheet and worksheet.file_path %}
+    <p class="muted">ไฟล์เดิม: <a href="{{ url_for('uploaded_file', filename=worksheet.file_path) }}" target="_blank">{{ worksheet.original_file_name or 'เปิดไฟล์ใบงาน' }}</a></p>
+  {% endif %}
+
+  <label>คำชี้แจง</label>
+  <textarea name="description" rows="4">{{worksheet.description if worksheet else ''}}</textarea>
+
+  {% if not worksheet %}
+    <label>คำถามใบงานวิชาการ ข้อละ 1 บรรทัด</label>
+    <textarea name="questions" rows="8" placeholder="ข้อ 1 ...&#10;ข้อ 2 ...&#10;ข้อ 3 ..."></textarea>
+    <label>คะแนนต่อข้อ</label>
+    <input type="number" step="0.5" name="default_score" value="1">
+  {% endif %}
+
+  <button>บันทึกใบงาน</button>
+  <a class="btn secondary" href="{{ url_for('lesson_detail', lesson_id=lesson.id) }}">กลับ</a>
+</form>
+{% endblock %}

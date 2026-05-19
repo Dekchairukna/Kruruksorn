@@ -1,0 +1,26 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>ตรวจใบงาน: {{ worksheet.title }}</h1>
+<div class="card">
+  <p><b>บทเรียน:</b> {{ worksheet.lesson.title }}</p>
+  <p><b>ประเภท:</b> {% if worksheet.worksheet_type=='petanque_score' %}ใบงานเปตอง{% elif worksheet.worksheet_type=='upload' %}อัปโหลดไฟล์{% else %}ใบงานวิชาการ{% endif %}</p>
+  {% if worksheet.file_path %}<a class="btn small" href="{{ url_for('uploaded_file', filename=worksheet.file_path) }}" target="_blank">เปิดไฟล์ต้นฉบับ</a>{% endif %}
+</div>
+
+<table>
+<tr><th>นักเรียน</th><th>ห้อง</th><th>สถานะ</th><th>คำตอบ/ไฟล์</th><th>คะแนน</th></tr>
+{% for row in rows %}
+<tr>
+  <td>{{ row.student.full_name or row.student.username }}</td>
+  <td>{{ row.classroom.name if row.classroom else '-' }}</td>
+  <td>{% if row.submitted %}<span class="pill ok">ส่งแล้ว</span>{% else %}<span class="pill bad">ยังไม่ส่ง</span>{% endif %}</td>
+  <td>
+    {% for a in row.answers %}
+      <div class="answer-box"><b>ข้อ {{ a.question.number }}:</b> {{ a.answer_text or '-' }}{% if a.file_path %}<br><a href="{{ url_for('uploaded_file', filename=a.file_path) }}" target="_blank">{{ a.original_file_name or 'เปิดไฟล์ที่ส่ง' }}</a>{% endif %}</div>
+    {% else %}-{% endfor %}
+  </td>
+  <td>{{ row.score }}</td>
+</tr>
+{% endfor %}
+</table>
+{% endblock %}

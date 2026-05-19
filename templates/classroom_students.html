@@ -1,0 +1,31 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>นักเรียนในห้อง {{ room.name }}</h1>
+    <p class="muted">จัดการรายชื่อนักเรียน และไปเช็กชื่อเข้าแถว/กิจกรรมพิเศษของห้องนี้</p>
+  </div>
+  <div class="actions-row">
+    <a class="btn" href="{{ url_for('classroom_activities', classroom_id=room.id) }}">เช็กชื่อห้อง/กิจกรรม</a>
+    <a class="btn secondary" href="{{ url_for('classrooms') }}">← กลับห้องเรียน</a>
+  </div>
+</div>
+
+<form method="post" class="form-row card">
+  <select name="student_id">
+    {% for s in students %}<option value="{{s.id}}">{{s.full_name}}</option>{% endfor %}
+  </select>
+  <button>เพิ่มนักเรียน</button>
+</form>
+
+<table>
+  <tr><th>ชื่อ</th><th>username</th><th>จัดการ</th></tr>
+  {% for l in links %}
+  <tr>
+    <td data-label="ชื่อ">{{l.student.full_name}}</td>
+    <td data-label="username">{{l.student.username}}</td>
+    <td data-label="จัดการ"><form method="post" action="{{url_for('classroom_student_delete', link_id=l.id)}}" class="inline" onsubmit="return confirm('นำนักเรียนออกจากห้อง?')"><button class="danger-btn small">ลบ</button></form></td>
+  </tr>
+  {% endfor %}
+</table>
+{% endblock %}

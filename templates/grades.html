@@ -1,0 +1,49 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>สมุดคะแนนและตัดเกรด</h1>
+<p class="muted">{{ subject.name }} / {{ room.name }}</p>
+<div class="action-row">
+  <a class="btn secondary" href="{{ url_for('records_center') }}">← กลับ</a>
+  <a class="btn" href="{{ url_for('export_grades', subject_id=subject.id, classroom_id=room.id) }}">Export Excel</a>
+  <a class="btn secondary" href="{{ url_for('attendance', subject_id=subject.id, classroom_id=room.id) }}">เช็กชื่อ</a>
+</div>
+<section class="card">
+<form method="post">
+<h2>ตั้งค่าน้ำหนักคะแนน</h2>
+<p class="muted">คะแนนอัตโนมัติมาจากงาน/แบบทดสอบ/เวลาเรียน ส่วนกลางภาค-ปลายภาค-จิตพิสัยกรอกเองได้</p>
+<div class="form-grid">
+  <label>ใบงาน/เรียนจบ (%)<input name="worksheet_weight" type="number" step="0.1" value="{{ setting.worksheet_weight }}"></label>
+  <label>แบบทดสอบ (%)<input name="quiz_weight" type="number" step="0.1" value="{{ setting.quiz_weight }}"></label>
+  <label>เวลาเรียน (%)<input name="attendance_weight" type="number" step="0.1" value="{{ setting.attendance_weight }}"></label>
+  <label>กลางภาค (%)<input name="midterm_weight" type="number" step="0.1" value="{{ setting.midterm_weight }}"></label>
+  <label>ปลายภาค (%)<input name="final_weight" type="number" step="0.1" value="{{ setting.final_weight }}"></label>
+</div>
+{% if total_weight != 100 %}<div class="alert warning">น้ำหนักหลักรวม {{ total_weight }}% ถ้าไม่ถึง 100% ส่วนที่เหลือจะเป็นจิตพิสัย/พฤติกรรมอัตโนมัติ</div>{% endif %}
+<h2>คะแนนรายนักเรียน</h2>
+<div class="table-wrap">
+<table>
+<tr>
+  <th>นักเรียน</th><th>แบบทดสอบ</th><th>เรียนจบ</th><th>มา</th><th>ขาด</th><th>ลา</th><th>สาย</th><th>กิจกรรม</th>
+  <th>กลางภาค<br><small>0-100</small></th><th>ปลายภาค<br><small>0-100</small></th><th>จิตพิสัย<br><small>0-100</small></th>
+  <th>รวม</th><th>เกรด</th>
+</tr>
+{% for r in rows %}
+<tr>
+  <td>{{ r.student.full_name }}</td>
+  <td>{{ r.quiz_avg }}%</td>
+  <td>{{ r.complete }}/{{ r.total_assignments }}</td>
+  <td>{{ r.present }}</td><td>{{ r.absent }}</td><td>{{ r.leave }}</td><td>{{ r.late }}</td><td>{{ r.activity }}</td>
+  <td><input class="score-input" name="midterm_{{ r.student.id }}" type="number" step="0.1" min="0" max="100" value="{{ r.manual.midterm }}"></td>
+  <td><input class="score-input" name="final_{{ r.student.id }}" type="number" step="0.1" min="0" max="100" value="{{ r.manual.final }}"></td>
+  <td><input class="score-input" name="behavior_{{ r.student.id }}" type="number" step="0.1" min="0" max="100" value="{{ r.manual.behavior }}"></td>
+  <td><b>{{ r.total }}</b></td><td><b>{{ r.grade }}</b></td>
+</tr>
+{% else %}
+<tr><td colspan="13">ยังไม่มีนักเรียนในห้องนี้</td></tr>
+{% endfor %}
+</table>
+</div>
+<button>บันทึกสมุดคะแนน</button>
+</form>
+</section>
+{% endblock %}

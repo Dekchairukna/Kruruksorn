@@ -1,0 +1,46 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>สอนแทน / เช็กชื่อแทน</h1>
+    <p>เลือกครูเจ้าของตาราง แล้วกดเช็กชื่อแทนในคาบที่ต้องสอนแทนได้เลย</p>
+  </div>
+  <div class="actions-row"><a class="btn secondary" href="{{ url_for('schedule') }}">← กลับตารางสอนของฉัน</a></div>
+</div>
+
+<section class="card">
+  <form method="get" class="form-row">
+    <label>เลือกตารางคุณครู</label>
+    <select name="teacher_id" onchange="this.form.submit()" required>
+      <option value="">-- เลือกครู --</option>
+      {% for t in teachers %}
+        <option value="{{ t.id }}" {% if selected_teacher and selected_teacher.id == t.id %}selected{% endif %}>{{ t.full_name }} ({{ t.username }})</option>
+      {% endfor %}
+    </select>
+    <button class="btn">ดูตาราง</button>
+  </form>
+</section>
+
+{% if selected_teacher %}
+<section class="card">
+  <h2>ตารางสอนของ {{ selected_teacher.full_name }}</h2>
+  <p class="muted">การเช็กชื่อจากหน้านี้จะบันทึกชื่อผู้เช็กว่าเป็นผู้สอนแทน และถ้าคาบติดกันวิชา/ห้องเดียวกัน ระบบจะเช็กครั้งเดียวแต่บันทึกครบทุกคาบ</p>
+  <table>
+    <tr><th>วัน</th><th>คาบ</th><th>เวลา</th><th>วิชา</th><th>ห้อง</th><th>สถานที่</th><th>เช็กชื่อแทน</th></tr>
+    {% for s in schedules %}
+    <tr>
+      <td data-label="วัน">{{ day_names[s.weekday] }}</td>
+      <td data-label="คาบ">{{ s.period_no }}</td>
+      <td data-label="เวลา">{{ s.start_time }}-{{ s.end_time }}</td>
+      <td data-label="วิชา">{{ s.subject.name }}</td>
+      <td data-label="ห้อง">{{ s.classroom.name }}</td>
+      <td data-label="สถานที่">{{ s.room_name or '-' }}</td>
+      <td data-label="เช็กชื่อแทน"><a class="btn small" href="{{ url_for('attendance', subject_id=s.subject_id, classroom_id=s.classroom_id, date=today_date, period_no=s.period_no, schedule_id=s.id, substitute='1', sub_teacher_id=selected_teacher.id) }}">เช็กชื่อแทน</a></td>
+    </tr>
+    {% else %}
+    <tr><td colspan="7">ยังไม่มีตารางสอนของครูคนนี้</td></tr>
+    {% endfor %}
+  </table>
+</section>
+{% endif %}
+{% endblock %}

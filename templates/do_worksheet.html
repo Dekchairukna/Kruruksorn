@@ -1,0 +1,67 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>{{worksheet.title}}</h1>
+<div class="card worksheet-source-card">
+  <p>{{worksheet.description}}</p>
+  {% if worksheet.file_path %}
+    <a class="btn small" href="{{ url_for('uploaded_file', filename=worksheet.file_path) }}" target="_blank">เปิดไฟล์ใบงานจากครู</a>
+    {% set ext = worksheet.file_path.rsplit('.',1)[-1].lower() %}
+    {% if ext in ['png','jpg','jpeg'] %}
+      <div class="worksheet-preview"><img src="{{ url_for('uploaded_file', filename=worksheet.file_path) }}" alt="{{ worksheet.original_file_name }}"></div>
+    {% endif %}
+  {% endif %}
+</div>
+<form method="post" enctype="multipart/form-data" class="stack-form">
+{% if worksheet.worksheet_type=='petanque_score' %}
+  <div class="card notice-card">
+    <b>ใบงานเปตอง</b> กรอกคะแนนให้ตรงกับระยะและสถานีในภาพ/แบบฟอร์ม ระบบจะรวมคะแนนตามช่องที่กรอก
+  </div>
+  <div class="table-scroll">
+    <table class="petanque-worksheet-table">
+      <tr><th>ระยะ</th><th>สถานี 1</th><th>สถานี 2</th><th>สถานี 3</th><th>สถานี 4</th><th>สถานี 5</th><th>รวม</th></tr>
+      {% for dist in ['6.5 m','7.5 m','8.5 m','9.5 m'] %}
+      <tr>
+        <th>{{ dist }}</th>
+        {% set row_total_name = 'total_' ~ loop.index %}
+        {% for q in questions if q.question_text.startswith(dist) %}
+          <td><input class="score-input" name="q_{{q.id}}" value="{{old.get(q.id,'')}}" placeholder="0-5 หรือ / X" data-row="{{ dist }}"></td>
+        {% endfor %}
+        <td><b class="row-total" data-row-total="{{ dist }}">0</b></td>
+      </tr>
+      {% endfor %}
+      <tr><th colspan="6">รวมทั้งหมด</th><td><b id="grand-total">0</b></td></tr>
+    </table>
+  </div>
+{% else %}
+  {% for q in questions %}
+    <label>ข้อ {{q.number}}: {{q.question_text}}</label>
+    {% if worksheet.worksheet_type=='upload' or q.answer_type=='file' %}
+      <input type="file" name="file_{{q.id}}" accept=".pdf,.png,.jpg,.jpeg">
+      {% if old_files.get(q.id) %}<p class="muted">ไฟล์เดิม: <a href="{{ url_for('uploaded_file', filename=old_files.get(q.id).file_path) }}" target="_blank">{{ old_files.get(q.id).original_file_name }}</a></p>{% endif %}
+      <textarea name="q_{{q.id}}" placeholder="หมายเหตุเพิ่มเติม ถ้ามี">{{old.get(q.id,'')}}</textarea>
+    {% else %}
+      <textarea name="q_{{q.id}}">{{old.get(q.id,'')}}</textarea>
+    {% endif %}
+  {% endfor %}
+{% endif %}
+<button>ส่งใบงาน</button>
+</form>
+<script>
+function scoreVal(v){
+  v=(v||'').trim();
+  if(v==='/') return 1;
+  if(v.toLowerCase()==='x') return 0;
+  const n=parseFloat(v); return isNaN(n)?0:n;
+}
+function updatePetanqueTotals(){
+  const totals={}; let grand=0;
+  document.querySelectorAll('.score-input').forEach(inp=>{
+    const r=inp.dataset.row; totals[r]=(totals[r]||0)+scoreVal(inp.value);
+  });
+  document.querySelectorAll('[data-row-total]').forEach(el=>{ const r=el.dataset.rowTotal; el.textContent=(totals[r]||0); grand += (totals[r]||0); });
+  const g=document.getElementById('grand-total'); if(g) g.textContent=grand;
+}
+document.querySelectorAll('.score-input').forEach(i=>i.addEventListener('input', updatePetanqueTotals));
+updatePetanqueTotals();
+</script>
+{% endblock %}

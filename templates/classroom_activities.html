@@ -1,0 +1,100 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>เช็กชื่อประจำห้อง {{ room.name }}</h1>
+    <p class="muted">ใช้สำหรับเข้าแถวทุกวันที่เปิดเรียน และกิจกรรมพิเศษที่เพิ่มเองได้ทั้งวันนี้/วันอนาคต</p>
+    <div class="selected-date-badge">วันนี้: <b>{{ today_label }}</b></div>
+    <p class="muted">ครูประจำชั้น: {{ room.teacher.full_name if room.teacher else 'ยังไม่กำหนด' }}</p>
+    <p class="muted">ครูที่เช็กชื่อกิจกรรมได้:
+      {% if activity_teachers %}
+        {{ activity_teachers|map(attribute='full_name')|join(', ') }}
+      {% else %}
+        ยังไม่กำหนด
+      {% endif %}
+    </p>
+  </div>
+  <div class="actions-row">
+    <a class="btn secondary" href="{{ url_for('classrooms') }}">← กลับห้องเรียน</a>
+    <a class="btn secondary" href="{{ url_for('classroom_students', classroom_id=room.id) }}">รายชื่อนักเรียน</a>
+  </div>
+</div>
+
+{% if is_today_blocked %}
+<div class="alert warning">วันนี้อาจเป็นวันหยุด/วันงดเรียนตามปฏิทินกลาง ถ้าต้องการเช็กชื่อยังสามารถกดเข้าไปบันทึกได้</div>
+{% endif %}
+
+<section class="card special-attendance-card">
+  <h2>เช็กชื่อหลักของห้อง</h2>
+  <div class="activity-grid">
+    {% for a in activities if a.activity_type == 'assembly' %}
+    <div class="activity-card assembly-card">
+      <div class="activity-icon">🇹🇭</div>
+      <div>
+        <h3>{{ a.title }}</h3>
+        <p class="muted">{{ a.note or 'เช็กชื่อเข้าแถวทุกวันที่เปิดเรียน' }}</p>
+        <a class="btn" href="{{ url_for('classroom_activity_attendance', classroom_id=room.id, activity_id=a.id, date=today_iso) }}">เช็กชื่อวันนี้</a>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="card">
+  <h2>เพิ่มกิจกรรมพิเศษ</h2>
+  <form method="post" class="form-row">
+    <label>ชื่อกิจกรรม
+      <input name="title" placeholder="เช่น ซ้อมกีฬา / กิจกรรมวันไหว้ครู / ทัศนศึกษา" required>
+    </label>
+    <label>รูปแบบรายชื่อ
+      <select name="target_scope">
+        <option value="classroom">เฉพาะห้องนี้</option>
+        <option value="all">รวมทั้งหมดทุกห้องเรียน</option>
+        <option value="scout_m1_m3">ลูกเสือ/เนตรนารี ม.1-ม.3</option>
+      </select>
+    </label>
+    <label>วันที่จัดกิจกรรม
+      <input name="event_date" type="date" value="{{ today_iso }}">
+    </label>
+    <label>หมายเหตุ
+      <input name="note" placeholder="รายละเอียดเพิ่มเติม เช่น สถานที่ หรือผู้รับผิดชอบ">
+    </label>
+    <button>เพิ่มกิจกรรม</button>
+  </form>
+</section>
+
+<section class="card">
+  <div class="section-head-row">
+    <div>
+      <h2>กิจกรรมพิเศษของห้อง</h2>
+      <p class="muted">กิจกรรมที่ตั้งไว้แล้วสามารถกดเข้าไปเช็กชื่อได้ทันที และตั้งวันที่ล่วงหน้าได้</p>
+    </div>
+  </div>
+  <div class="activity-grid">
+    {% for a in activities if a.activity_type != 'assembly' %}
+    <div class="activity-card">
+      <div class="activity-icon">⭐</div>
+      <div class="activity-info">
+        <h3>{{ a.title }}</h3>
+        <p class="muted">
+          {% if a.event_date %}{{ thai_date_label(a.event_date) if false else '' }}วันที่ {{ a.event_date.strftime('%d/%m/') }}{{ a.event_date.year + 543 }}{% else %}ไม่จำกัดวันที่{% endif %}
+          <br>กลุ่มเช็กชื่อ:
+          {% if a.target_scope == 'all' or 'รวม' in a.title %}รวมทั้งหมดทุกห้องเรียน
+          {% elif a.target_scope == 'scout_m1_m3' or 'ลูกเสือ' in a.title or 'เนตรนารี' in a.title %}ลูกเสือ/เนตรนารี ม.1-ม.3
+          {% else %}เฉพาะห้องนี้{% endif %}
+          {% if a.note %}<br>{{ a.note }}{% endif %}
+        </p>
+        <div class="actions-row">
+          <a class="btn" href="{{ url_for('classroom_activity_attendance', classroom_id=room.id, activity_id=a.id, date=(a.event_date.isoformat() if a.event_date else today_iso)) }}">เช็กชื่อกิจกรรม</a>
+          <form method="post" action="{{ url_for('classroom_activity_delete', classroom_id=room.id, activity_id=a.id) }}" class="inline" onsubmit="return confirm('ลบกิจกรรมนี้พร้อมข้อมูลเช็กชื่อที่เกี่ยวข้อง?')">
+            <button class="danger-btn small">ลบ</button>
+          </form>
+        </div>
+      </div>
+    </div>
+    {% else %}
+    <div class="empty-state">ยังไม่มีกิจกรรมพิเศษ เพิ่มจากฟอร์มด้านบนได้เลย</div>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}
