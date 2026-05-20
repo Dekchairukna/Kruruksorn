@@ -31,6 +31,7 @@
       <span><b class="att-mark mark-present">/</b> มา</span>
       <span><b class="att-mark mark-late">ส</b> สาย</span>
       <span><b class="att-mark mark-absent">ข</b> ขาด</span>
+      <span><b class="att-mark mark-skip">ด</b> โดดเรียน</span>
       <span><b class="att-mark mark-sick">ลป</b> ลาป่วย</span>
       <span><b class="att-mark mark-activity">ก</b> ไปกิจกรรม</span>
     </div>
@@ -43,7 +44,7 @@
           <th rowspan="2" class="narrow">ที่</th>
           <th rowspan="2" class="student-col">ชื่อ - นามสกุล</th>
           <th colspan="8">{{ report_day_label }}</th>
-          <th colspan="5" class="summary-head">สรุปวันนี้</th>
+          <th colspan="6" class="summary-head">สรุปวันนี้</th>
           <th rowspan="2" class="summary-head">มาเรียน (%)</th>
         </tr>
         <tr>
@@ -52,11 +53,15 @@
             <div>คาบ {{ h.period_no }}</div>
             <small>{{ h.subject_text }}</small>
             {% if h.time_text %}<em>{{ h.time_text }}</em>{% endif %}
+            {% if h.edit_schedule %}
+              <a class="btn tiny edit-attendance-link" href="{{ url_for('attendance', subject_id=h.edit_schedule.subject_id, classroom_id=room.id, date=report_date.isoformat(), period_no=h.period_no, schedule_id=h.edit_schedule.id) }}">แก้ไข</a>
+            {% endif %}
           </th>
           {% endfor %}
           <th class="sum-present">มา</th>
           <th class="sum-late">สาย</th>
           <th class="sum-absent">ขาด</th>
+          <th class="sum-skip">โดดเรียน</th>
           <th class="sum-sick">ลาป่วย</th>
           <th class="sum-activity">ไปกิจกรรม</th>
         </tr>
@@ -78,12 +83,13 @@
           <td class="summary-cell">{{ srow.totals['มา'] }}</td>
           <td class="summary-cell">{{ srow.totals['สาย'] }}</td>
           <td class="summary-cell">{{ srow.totals['ขาด'] }}</td>
+          <td class="summary-cell">{{ srow.totals['โดดเรียน'] }}</td>
           <td class="summary-cell">{{ srow.totals['ลาป่วย'] }}</td>
           <td class="summary-cell">{{ srow.totals['ไปกิจกรรม'] }}</td>
           <td class="summary-cell percent-cell {% if srow.percent < 80 %}low-percent{% endif %}">{{ srow.percent }}%</td>
         </tr>
         {% else %}
-        <tr><td colspan="16">ยังไม่มีนักเรียนในห้องนี้</td></tr>
+        <tr><td colspan="17">ยังไม่มีนักเรียนในห้องนี้</td></tr>
         {% endfor %}
       </tbody>
     </table>

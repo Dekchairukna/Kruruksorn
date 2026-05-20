@@ -75,6 +75,7 @@ function openSubjectRoomDaily(event) {
         <th>มา</th>
         <th>สาย</th>
         <th>ขาด</th>
+        <th>โดดเรียน</th>
         <th>ลาป่วย</th>
         <th>ไปกิจกรรม</th>
         <th>มาเรียน (%)</th>
@@ -90,12 +91,13 @@ function openSubjectRoomDaily(event) {
         <td data-label="มา">{{ r.totals['มา'] }}</td>
         <td data-label="สาย">{{ r.totals['สาย'] }}</td>
         <td data-label="ขาด">{{ r.totals['ขาด'] }}</td>
+        <td data-label="โดดเรียน">{{ r.totals['โดดเรียน'] }}</td>
         <td data-label="ลาป่วย">{{ r.totals['ลาป่วย'] }}</td>
         <td data-label="ไปกิจกรรม">{{ r.totals['ไปกิจกรรม'] }}</td>
         <td data-label="มาเรียน (%)" class="percent-cell {% if r.percent < 80 %}low-percent{% endif %}">{{ r.percent }}%</td>
       </tr>
       {% else %}
-      <tr><td colspan="12">ยังไม่มีข้อมูลรายวิชาสำหรับสรุป</td></tr>
+      <tr><td colspan="13">ยังไม่มีข้อมูลรายวิชาสำหรับสรุป</td></tr>
       {% endfor %}
     </table>
   </div>

@@ -24,18 +24,18 @@
 <div class="head">
   <h1>รายงานเช็กชื่อ {{ label }}</h1>
   <div class="sub">{{ subject.name }} · {{ attendance_scope_label if attendance_scope_label else room.name }} · {{ start_date.strftime('%d/%m/') }}{{ start_date.year+543 }} - {{ end_date.strftime('%d/%m/') }}{{ end_date.year+543 }}</div>
-  <div class="legend">/ = มา, ส = สาย, ข = ขาด, ลป = ลาป่วย, ก = ไปกิจกรรม</div>
+  <div class="legend">/ = มา, ส = สาย, ข = ขาด, ด = โดดเรียน, ลป = ลาป่วย, ก = ไปกิจกรรม</div>
 </div>
 <table>
   <thead>
     <tr>
       <th rowspan="2">ที่</th><th rowspan="2" class="student">ชื่อ - นามสกุล</th>{% if show_classroom_column %}<th rowspan="2">ชั้น/ห้อง</th>{% endif %}
       <th colspan="{{ date_headers|length if date_headers else 1 }}">วันที่เช็กชื่อ / คาบเรียน</th>
-      <th colspan="5">สรุป</th><th rowspan="2">%</th>
+      <th colspan="6">สรุป</th><th rowspan="2">%</th>
     </tr>
     <tr>
       {% for d in date_headers %}<th class="vertical">{{ d.short }}</th>{% else %}<th>-</th>{% endfor %}
-      <th>มา</th><th>สาย</th><th>ขาด</th><th>ลป</th><th>ก</th>
+      <th>มา</th><th>สาย</th><th>ขาด</th><th>ด</th><th>ลป</th><th>ก</th>
     </tr>
   </thead>
   <tbody>
@@ -47,7 +47,7 @@
         {% set st = att_data.get(l.student_id, {}).get(d.key, '') %}
         <td>{{ status_symbols.get(st, st) if st else '' }}</td>
       {% else %}<td>-</td>{% endfor %}
-      <td>{{ srow['มา'] }}</td><td>{{ srow['สาย'] }}</td><td>{{ srow['ขาด'] }}</td><td>{{ srow['ลาป่วย'] }}</td><td>{{ srow['ไปกิจกรรม'] }}</td>
+      <td>{{ srow['มา'] }}</td><td>{{ srow['สาย'] }}</td><td>{{ srow['ขาด'] }}</td><td>{{ srow['โดดเรียน'] }}</td><td>{{ srow['ลาป่วย'] }}</td><td>{{ srow['ไปกิจกรรม'] }}</td>
       <td class="{% if srow['percent'] < 80 %}low{% endif %}">{{ srow['percent'] }}</td>
     </tr>
   {% endfor %}

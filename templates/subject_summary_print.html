@@ -28,13 +28,13 @@
 <div class="section-title">สรุปรวมตามรายวิชา</div>
 <table>
   <tr>
-    <th>ที่</th><th>รายวิชา</th><th>ครู</th><th>ห้องที่เกี่ยวข้อง</th><th>นักเรียนรวม</th><th>คาบ/ครั้ง</th><th>หน่วยเช็กชื่อ</th><th>มา</th><th>สาย</th><th>ขาด</th><th>ลาป่วย</th><th>ไปกิจกรรม</th><th>%</th>
+    <th>ที่</th><th>รายวิชา</th><th>ครู</th><th>ห้องที่เกี่ยวข้อง</th><th>นักเรียนรวม</th><th>คาบ/ครั้ง</th><th>หน่วยเช็กชื่อ</th><th>มา</th><th>สาย</th><th>ขาด</th><th>โดดเรียน</th><th>ลาป่วย</th><th>ไปกิจกรรม</th><th>%</th>
   </tr>
   {% for r in subject_rows %}
   <tr>
     <td>{{ loop.index }}</td><td class="left">{{ r.subject.name }}</td><td class="left">{{ r.teacher }}</td><td class="left">{{ r.room_text }}</td>
     <td>{{ r.student_count }}</td><td>{{ r.checked_slots }}</td><td>{{ r.total_units }}</td>
-    <td>{{ r.totals['มา'] }}</td><td>{{ r.totals['สาย'] }}</td><td>{{ r.totals['ขาด'] }}</td><td>{{ r.totals['ลาป่วย'] }}</td><td>{{ r.totals['ไปกิจกรรม'] }}</td>
+    <td>{{ r.totals['มา'] }}</td><td>{{ r.totals['สาย'] }}</td><td>{{ r.totals['ขาด'] }}</td><td>{{ r.totals['โดดเรียน'] }}</td><td>{{ r.totals['ลาป่วย'] }}</td><td>{{ r.totals['ไปกิจกรรม'] }}</td>
     <td class="{% if r.percent < 80 %}low{% endif %}">{{ r.percent }}</td>
   </tr>
   {% endfor %}
@@ -42,13 +42,13 @@
 <div class="section-title">รายละเอียดแยกตามรายวิชา/ห้อง</div>
 <table>
   <tr>
-    <th>ที่</th><th>รายวิชา</th><th>ห้อง/ขอบเขต</th><th>ครู</th><th>นักเรียน</th><th>คาบ/ครั้ง</th><th>หน่วยเช็กชื่อ</th><th>มา</th><th>สาย</th><th>ขาด</th><th>ลาป่วย</th><th>ไปกิจกรรม</th><th>%</th>
+    <th>ที่</th><th>รายวิชา</th><th>ห้อง/ขอบเขต</th><th>ครู</th><th>นักเรียน</th><th>คาบ/ครั้ง</th><th>หน่วยเช็กชื่อ</th><th>มา</th><th>สาย</th><th>ขาด</th><th>โดดเรียน</th><th>ลาป่วย</th><th>ไปกิจกรรม</th><th>%</th>
   </tr>
   {% for r in room_rows %}
   <tr>
     <td>{{ loop.index }}</td><td class="left">{{ r.subject.name }}</td><td class="left">{{ r.scope_label }}</td><td class="left">{{ r.teacher }}</td>
     <td>{{ r.student_count }}</td><td>{{ r.checked_slots }}</td><td>{{ r.total_units }}</td>
-    <td>{{ r.totals['มา'] }}</td><td>{{ r.totals['สาย'] }}</td><td>{{ r.totals['ขาด'] }}</td><td>{{ r.totals['ลาป่วย'] }}</td><td>{{ r.totals['ไปกิจกรรม'] }}</td>
+    <td>{{ r.totals['มา'] }}</td><td>{{ r.totals['สาย'] }}</td><td>{{ r.totals['ขาด'] }}</td><td>{{ r.totals['โดดเรียน'] }}</td><td>{{ r.totals['ลาป่วย'] }}</td><td>{{ r.totals['ไปกิจกรรม'] }}</td>
     <td class="{% if r.percent < 80 %}low{% endif %}">{{ r.percent }}</td>
   </tr>
   {% endfor %}

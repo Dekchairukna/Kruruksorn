@@ -23,7 +23,7 @@
 <div class="table-wrap">
 <table>
 <tr>
-  <th>นักเรียน</th><th>แบบทดสอบ</th><th>เรียนจบ</th><th>มา</th><th>ขาด</th><th>ลา</th><th>สาย</th><th>กิจกรรม</th>
+  <th>นักเรียน</th><th>แบบทดสอบ</th><th>เรียนจบ</th><th>มา</th><th>ขาด</th><th>โดดเรียน</th><th>ลา</th><th>สาย</th><th>กิจกรรม</th>
   <th>กลางภาค<br><small>0-100</small></th><th>ปลายภาค<br><small>0-100</small></th><th>จิตพิสัย<br><small>0-100</small></th>
   <th>รวม</th><th>เกรด</th>
 </tr>
@@ -32,14 +32,14 @@
   <td>{{ r.student.full_name }}</td>
   <td>{{ r.quiz_avg }}%</td>
   <td>{{ r.complete }}/{{ r.total_assignments }}</td>
-  <td>{{ r.present }}</td><td>{{ r.absent }}</td><td>{{ r.leave }}</td><td>{{ r.late }}</td><td>{{ r.activity }}</td>
+  <td>{{ r.present }}</td><td>{{ r.absent }}</td><td>{{ r.skipped }}</td><td>{{ r.leave }}</td><td>{{ r.late }}</td><td>{{ r.activity }}</td>
   <td><input class="score-input" name="midterm_{{ r.student.id }}" type="number" step="0.1" min="0" max="100" value="{{ r.manual.midterm }}"></td>
   <td><input class="score-input" name="final_{{ r.student.id }}" type="number" step="0.1" min="0" max="100" value="{{ r.manual.final }}"></td>
   <td><input class="score-input" name="behavior_{{ r.student.id }}" type="number" step="0.1" min="0" max="100" value="{{ r.manual.behavior }}"></td>
   <td><b>{{ r.total }}</b></td><td><b>{{ r.grade }}</b></td>
 </tr>
 {% else %}
-<tr><td colspan="13">ยังไม่มีนักเรียนในห้องนี้</td></tr>
+<tr><td colspan="14">ยังไม่มีนักเรียนในห้องนี้</td></tr>
 {% endfor %}
 </table>
 </div>

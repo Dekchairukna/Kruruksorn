@@ -89,6 +89,7 @@
       <span><b class="att-mark mark-present">/</b> มา</span>
       <span><b class="att-mark mark-late">ส</b> สาย</span>
       <span><b class="att-mark mark-absent">ข</b> ขาด</span>
+      <span><b class="att-mark mark-skip">ด</b> โดดเรียน</span>
       <span><b class="att-mark mark-sick">ลป</b> ลาป่วย</span>
       <span><b class="att-mark mark-activity">ก</b> ไปกิจกรรม</span>
     </div>
@@ -102,7 +103,7 @@
           <th rowspan="2" class="student-col">ชื่อ - นามสกุล</th>
           {% if show_classroom_column %}<th rowspan="2" class="summary-head">ชั้น/ห้อง</th>{% endif %}
           <th colspan="{{ date_headers|length if date_headers else 1 }}">วันที่เช็กชื่อ</th>
-          <th colspan="5" class="summary-head">สรุปครั้ง</th>
+          <th colspan="6" class="summary-head">สรุปครั้ง</th>
           <th rowspan="2" class="summary-head">มาเรียน (%)</th>
         </tr>
         <tr>
@@ -114,6 +115,7 @@
           <th class="sum-present">มา</th>
           <th class="sum-late">สาย</th>
           <th class="sum-absent">ขาด</th>
+          <th class="sum-skip">โดดเรียน</th>
           <th class="sum-sick">ลาป่วย</th>
           <th class="sum-activity">ไปกิจกรรม</th>
         </tr>
@@ -134,12 +136,13 @@
           <td class="summary-cell">{{ srow['มา'] }}</td>
           <td class="summary-cell">{{ srow['สาย'] }}</td>
           <td class="summary-cell">{{ srow['ขาด'] }}</td>
+          <td class="summary-cell">{{ srow['โดดเรียน'] }}</td>
           <td class="summary-cell">{{ srow['ลาป่วย'] }}</td>
           <td class="summary-cell">{{ srow['ไปกิจกรรม'] }}</td>
           <td class="summary-cell percent-cell {% if srow['percent'] < 80 %}low-percent{% endif %}">{{ srow['percent'] }}%</td>
         </tr>
         {% else %}
-        <tr><td colspan="{{ 11 if show_classroom_column else 10 }}">ยังไม่มีนักเรียนในกลุ่มนี้</td></tr>
+        <tr><td colspan="{{ 12 if show_classroom_column else 11 }}">ยังไม่มีนักเรียนในกลุ่มนี้</td></tr>
         {% endfor %}
       </tbody>
     </table>
@@ -157,7 +160,7 @@ function setAllAttendance(status) {
 function paintRow(radio) {
   const row = radio.closest('.student-check-row');
   if (!row) return;
-  row.classList.remove('row-status-มา','row-status-สาย','row-status-ขาด','row-status-ลาป่วย','row-status-ไปกิจกรรม');
+  row.classList.remove('row-status-มา','row-status-สาย','row-status-ขาด','row-status-โดดเรียน','row-status-ลาป่วย','row-status-ไปกิจกรรม');
   row.classList.add('row-status-' + radio.value.replaceAll(' ', '-'));
 }
 document.addEventListener('DOMContentLoaded', () => {

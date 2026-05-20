@@ -81,7 +81,7 @@ login_manager = LoginManager(app)
 login_manager.login_view = 'login'
 
 
-ATTENDANCE_STATUSES = ['มา', 'สาย', 'ขาด', 'ลาป่วย', 'ไปกิจกรรม']
+ATTENDANCE_STATUSES = ['มา', 'สาย', 'ขาด', 'โดดเรียน', 'ลาป่วย', 'ไปกิจกรรม']
 ATTENDANCE_STATUS_ALIASES = {
     'มาสาย': 'สาย',
     'ลา': 'ลาป่วย',
@@ -89,6 +89,8 @@ ATTENDANCE_STATUS_ALIASES = {
     'present': 'มา',
     'late': 'สาย',
     'absent': 'ขาด',
+    'skip': 'โดดเรียน',
+    'skipped': 'โดดเรียน',
     'sick': 'ลาป่วย',
     'activity': 'ไปกิจกรรม',
 }
@@ -112,6 +114,7 @@ ATTENDANCE_SYMBOLS = {
     'สาย': 'ส',
     'ขาด': 'ข',
     'ลาป่วย': 'ลป',
+    'โดดเรียน': 'ด',
     'ไปกิจกรรม': 'ก',
 }
 
@@ -382,7 +385,7 @@ class Attendance(db.Model):
     schedule_id = db.Column(db.Integer, db.ForeignKey('teaching_schedule.id'), nullable=True)
     checked_by_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
     substitute_for_teacher_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
-    status = db.Column(db.String(20), default='มา') # มา ขาด ลา มาสาย กิจกรรม
+    status = db.Column(db.String(20), default='มา') # มา สาย ขาด โดดเรียน ลาป่วย ไปกิจกรรม
     subject = db.relationship('Subject')
     classroom = db.relationship('Classroom')
     student = db.relationship('User', foreign_keys=[student_id])
@@ -580,13 +583,15 @@ def calculate_grade_row(subject, room, student):
     complete = sum(1 for x in statuses if x.status=='เรียนจบ')
     completion_percent = (complete / max(1, len(statuses))) * 100
     atts = Attendance.query.filter_by(subject_id=subject.id, classroom_id=room.id, student_id=student.id).all()
-    present = sum(1 for a in atts if a.status=='มา')
-    absent = sum(1 for a in atts if a.status=='ขาด')
-    leave = sum(1 for a in atts if a.status=='ลา')
-    late = sum(1 for a in atts if a.status=='มาสาย')
-    activity = sum(1 for a in atts if a.status=='กิจกรรม')
+    normalized_atts = [normalize_attendance_status(a.status) for a in atts]
+    present = sum(1 for st in normalized_atts if st == 'มา')
+    late = sum(1 for st in normalized_atts if st == 'สาย')
+    absent = sum(1 for st in normalized_atts if st == 'ขาด')
+    skipped = sum(1 for st in normalized_atts if st == 'โดดเรียน')
+    leave = sum(1 for st in normalized_atts if st == 'ลาป่วย')
+    activity = sum(1 for st in normalized_atts if st == 'ไปกิจกรรม')
     total_att = len(atts)
-    bad_units = absent + (late * 0.5)
+    bad_units = absent + skipped + leave + (late * 0.5)
     attendance_percent = max(0, 100 - (bad_units * 5)) if total_att else 100
     manual = get_manual_score(subject.id, student.id)
     worksheet_score = completion_percent * (setting.worksheet_weight / 100)
@@ -599,7 +604,7 @@ def calculate_grade_row(subject, room, student):
     return {
         'student': student, 'quiz_avg': quiz_avg, 'complete': complete, 'total_assignments': len(statuses),
         'present': present, 'absent': absent, 'leave': leave, 'late': late, 'activity': activity,
-        'attendance_percent': round(attendance_percent, 2), 'manual': manual,
+        'attendance_percent': round(attendance_percent, 2), 'manual': manual, 'skipped': skipped,
         'worksheet_score': round(worksheet_score,2), 'quiz_score': round(quiz_score,2), 'attendance_score': round(attendance_score,2),
         'midterm_score': round(midterm_score,2), 'final_score': round(final_score,2), 'behavior_score': round(behavior_score,2),
         'total': round(total,2), 'grade': grade_from_score(total)
@@ -3282,7 +3287,7 @@ def build_activity_attendance_report(activity_id, classroom_id, links):
     summary = []
     for link in links:
         student_map = att_data.get(link.student_id, {})
-        row = {'student': link.student, 'มา': 0, 'สาย': 0, 'ขาด': 0, 'ลาป่วย': 0, 'ไปกิจกรรม': 0}
+        row = {'student': link.student, 'มา': 0, 'สาย': 0, 'ขาด': 0, 'โดดเรียน': 0, 'ลาป่วย': 0, 'ไปกิจกรรม': 0}
         for st in student_map.values():
             st = normalize_attendance_status(st)
             if st in row:
@@ -3310,7 +3315,7 @@ def build_daily_attendance_overview(report_date=None):
         for a in today_att:
             latest_by_student[a.student_id] = normalize_attendance_status(a.status)
         present = sum(1 for st in latest_by_student.values() if st in ['มา', 'สาย', 'ไปกิจกรรม'])
-        absent = sum(1 for st in latest_by_student.values() if st in ['ขาด', 'ลาป่วย'])
+        absent = sum(1 for st in latest_by_student.values() if st in ['ขาด', 'โดดเรียน', 'ลาป่วย'])
         checked = bool(latest_by_student)
         percent = round((present / student_count) * 100, 2) if student_count else 100
         rows.append({
@@ -3375,14 +3380,14 @@ def subject_summary_export():
     ws = wb.active
     ws.title = 'summary_by_subject'
     ws.append([f'ตารางสรุปการเช็กชื่อเป็นรายวิชา - {label}'])
-    ws.append(['รายวิชา', 'ครู', 'ห้องที่เกี่ยวข้อง', 'จำนวนนักเรียนรวม', 'จำนวนคาบ/ครั้งที่เช็ก', 'หน่วยเช็กชื่อรวม', 'มา', 'สาย', 'ขาด', 'ลาป่วย', 'ไปกิจกรรม', 'มาเรียน (%)'])
+    ws.append(['รายวิชา', 'ครู', 'ห้องที่เกี่ยวข้อง', 'จำนวนนักเรียนรวม', 'จำนวนคาบ/ครั้งที่เช็ก', 'หน่วยเช็กชื่อรวม', 'มา', 'สาย', 'ขาด', 'โดดเรียน', 'ลาป่วย', 'ไปกิจกรรม', 'มาเรียน (%)'])
     for r in subject_rows:
-        ws.append([r['subject'].name, r['teacher'], r['room_text'], r['student_count'], r['checked_slots'], r['total_units'], r['totals']['มา'], r['totals']['สาย'], r['totals']['ขาด'], r['totals']['ลาป่วย'], r['totals']['ไปกิจกรรม'], r['percent']])
+        ws.append([r['subject'].name, r['teacher'], r['room_text'], r['student_count'], r['checked_slots'], r['total_units'], r['totals']['มา'], r['totals']['สาย'], r['totals']['ขาด'], r['totals']['โดดเรียน'], r['totals']['ลาป่วย'], r['totals']['ไปกิจกรรม'], r['percent']])
     ws2 = wb.create_sheet('summary_by_room')
     ws2.append([f'ตารางสรุปการเช็กชื่อแยกรายวิชา/ห้อง - {label}'])
-    ws2.append(['รายวิชา', 'ห้อง/ขอบเขต', 'ครู', 'จำนวนนักเรียน', 'จำนวนคาบ/ครั้งที่เช็ก', 'หน่วยเช็กชื่อรวม', 'มา', 'สาย', 'ขาด', 'ลาป่วย', 'ไปกิจกรรม', 'มาเรียน (%)'])
+    ws2.append(['รายวิชา', 'ห้อง/ขอบเขต', 'ครู', 'จำนวนนักเรียน', 'จำนวนคาบ/ครั้งที่เช็ก', 'หน่วยเช็กชื่อรวม', 'มา', 'สาย', 'ขาด', 'โดดเรียน', 'ลาป่วย', 'ไปกิจกรรม', 'มาเรียน (%)'])
     for r in room_rows:
-        ws2.append([r['subject'].name, r['scope_label'], r['teacher'], r['student_count'], r['checked_slots'], r['total_units'], r['totals']['มา'], r['totals']['สาย'], r['totals']['ขาด'], r['totals']['ลาป่วย'], r['totals']['ไปกิจกรรม'], r['percent']])
+        ws2.append([r['subject'].name, r['scope_label'], r['teacher'], r['student_count'], r['checked_slots'], r['total_units'], r['totals']['มา'], r['totals']['สาย'], r['totals']['ขาด'], r['totals']['โดดเรียน'], r['totals']['ลาป่วย'], r['totals']['ไปกิจกรรม'], r['percent']])
     for sheet in [ws, ws2]:
         for col in sheet.columns:
             max_len = max(len(str(c.value or '')) for c in col)
@@ -3448,7 +3453,7 @@ def build_attendance_summary(subject_id, classroom_id, links, start_date=None, e
     summary = []
     for link in links:
         student_map = att_data.get(link.student_id, {})
-        row = {'student': link.student, 'มา': 0, 'สาย': 0, 'ขาด': 0, 'ลาป่วย': 0, 'ไปกิจกรรม': 0}
+        row = {'student': link.student, 'มา': 0, 'สาย': 0, 'ขาด': 0, 'โดดเรียน': 0, 'ลาป่วย': 0, 'ไปกิจกรรม': 0}
         for h in slot_headers:
             st = normalize_attendance_status(student_map.get(h['key'], ''))
             if st in row:
@@ -3478,7 +3483,7 @@ def build_subject_attendance_summaries(start_date=None, end_date=None):
         room = p.classroom
         links = attendance_student_links(subject, room)
         date_headers, att_data, summary = build_attendance_summary(subject.id, room.id, links, start_date, end_date)
-        totals = {'มา': 0, 'สาย': 0, 'ขาด': 0, 'ลาป่วย': 0, 'ไปกิจกรรม': 0}
+        totals = {'มา': 0, 'สาย': 0, 'ขาด': 0, 'โดดเรียน': 0, 'ลาป่วย': 0, 'ไปกิจกรรม': 0}
         for srow in summary:
             for key in totals:
                 totals[key] += int(srow.get(key, 0) or 0)
@@ -3506,7 +3511,7 @@ def build_subject_attendance_summaries(start_date=None, end_date=None):
             'checked_slots': 0,
             'student_count': 0,
             'total_units': 0,
-            'totals': {'มา': 0, 'สาย': 0, 'ขาด': 0, 'ลาป่วย': 0, 'ไปกิจกรรม': 0},
+            'totals': {'มา': 0, 'สาย': 0, 'ขาด': 0, 'โดดเรียน': 0, 'ลาป่วย': 0, 'ไปกิจกรรม': 0},
             'percent': 100,
         })
         g['rooms'].append(room.name)
@@ -3567,10 +3572,11 @@ def build_classroom_day_attendance_report(classroom, report_date):
             'subject_text': ' / '.join([r.subject.name for r in scheds]) if scheds else 'ว่าง',
             'time_text': f"{scheds[0].start_time}-{scheds[0].end_time}" if scheds else '',
             'has_class': bool(scheds),
+            'edit_schedule': scheds[0] if scheds else None,
         })
     summary = []
     for link in links:
-        totals = {'มา': 0, 'สาย': 0, 'ขาด': 0, 'ลาป่วย': 0, 'ไปกิจกรรม': 0}
+        totals = {'มา': 0, 'สาย': 0, 'ขาด': 0, 'โดดเรียน': 0, 'ลาป่วย': 0, 'ไปกิจกรรม': 0}
         checked = 0
         for h in period_headers:
             if not h['has_class']:
@@ -3617,14 +3623,14 @@ def classroom_day_report_export():
     links, period_headers, attendance_map, summary = build_classroom_day_attendance_report(room, report_date)
     wb = Workbook(); ws = wb.active; ws.title = 'classroom_day'
     ws.append([f'สรุปเช็กชื่อรายวัน ห้อง {room.name} - {thai_date_label(report_date)}'])
-    ws.append(['ที่', 'รหัส/username', 'ชื่อ-สกุล'] + [f"คาบ {h['period_no']} {h['subject_text']}" for h in period_headers] + ['มา','สาย','ขาด','ลาป่วย','ไปกิจกรรม','มาเรียน (%)'])
+    ws.append(['ที่', 'รหัส/username', 'ชื่อ-สกุล'] + [f"คาบ {h['period_no']} {h['subject_text']}" for h in period_headers] + ['มา','สาย','ขาด','โดดเรียน','ลาป่วย','ไปกิจกรรม','มาเรียน (%)'])
     for idx, link in enumerate(links, start=1):
         srow = summary[idx-1]
         row = [idx, link.student.username, link.student.full_name]
         for h in period_headers:
             st = attendance_map.get((link.student_id, h['period_no']), '') if h['has_class'] else ''
             row.append(ATTENDANCE_SYMBOLS.get(st, st) if st else ('ว่าง' if not h['has_class'] else ''))
-        row += [srow['totals']['มา'], srow['totals']['สาย'], srow['totals']['ขาด'], srow['totals']['ลาป่วย'], srow['totals']['ไปกิจกรรม'], srow['percent']]
+        row += [srow['totals']['มา'], srow['totals']['สาย'], srow['totals']['ขาด'], srow['totals']['โดดเรียน'], srow['totals']['ลาป่วย'], srow['totals']['ไปกิจกรรม'], srow['percent']]
         ws.append(row)
     for col in ws.columns:
         max_len = max(len(str(c.value or '')) for c in col)
@@ -3728,7 +3734,7 @@ def export_attendance(subject_id, classroom_id):
     base_header = ['เลขที่','รหัส/username','ชื่อ-สกุล']
     if show_classroom_column:
         base_header.append('ชั้น/ห้อง')
-    header = base_header + [h['label'] for h in date_headers] + ['มา','สาย','ขาด','ลาป่วย','ไปกิจกรรม','มาเรียน (%)']
+    header = base_header + [h['label'] for h in date_headers] + ['มา','สาย','ขาด','โดดเรียน','ลาป่วย','ไปกิจกรรม','มาเรียน (%)']
     ws.append([f'{subject.name} / {room.name} / {label}'])
     ws.append(header)
     for idx, link in enumerate(links, start=1):
@@ -3739,7 +3745,7 @@ def export_attendance(subject_id, classroom_id):
         for h in date_headers:
             st = att_data.get(link.student_id, {}).get(h['key'], '')
             row.append(ATTENDANCE_SYMBOLS.get(st, st) if st else '')
-        row += [srow['มา'], srow['สาย'], srow['ขาด'], srow['ลาป่วย'], srow['ไปกิจกรรม'], srow['percent']]
+        row += [srow['มา'], srow['สาย'], srow['ขาด'], srow['โดดเรียน'], srow['ลาป่วย'], srow['ไปกิจกรรม'], srow['percent']]
         ws.append(row)
     for col in ws.columns:
         max_len = max(len(str(c.value or '')) for c in col)
@@ -3808,11 +3814,11 @@ def export_grades(subject_id, classroom_id):
     subject = Subject.query.get_or_404(subject_id); room = Classroom.query.get_or_404(classroom_id)
     if not owns_subject(subject) or not owns_classroom(room): return deny_redirect('records_center')
     wb=Workbook(); ws=wb.active; ws.title='grades'
-    ws.append(['ชื่อ','แบบทดสอบเฉลี่ย','เรียนจบ/งานทั้งหมด','มา','ขาด','ลา','มาสาย','กิจกรรม','กลางภาค','ปลายภาค','จิตพิสัย','คะแนนรวม','เกรด'])
+    ws.append(['ชื่อ','แบบทดสอบเฉลี่ย','เรียนจบ/งานทั้งหมด','มา','ขาด','โดดเรียน','ลา','มาสาย','กิจกรรม','กลางภาค','ปลายภาค','จิตพิสัย','คะแนนรวม','เกรด'])
     links = ClassroomStudent.query.filter_by(classroom_id=room.id).all()
     for link in links:
         r=calculate_grade_row(subject, room, link.student)
-        ws.append([r['student'].full_name, r['quiz_avg'], f"{r['complete']}/{r['total_assignments']}", r['present'], r['absent'], r['leave'], r['late'], r['activity'], r['manual'].midterm, r['manual'].final, r['manual'].behavior, r['total'], r['grade']])
+        ws.append([r['student'].full_name, r['quiz_avg'], f"{r['complete']}/{r['total_assignments']}", r['present'], r['absent'], r['skipped'], r['leave'], r['late'], r['activity'], r['manual'].midterm, r['manual'].final, r['manual'].behavior, r['total'], r['grade']])
     path=os.path.join(UPLOAD_DIR, f'grades_{subject_id}_{classroom_id}.xlsx'); wb.save(path)
     return send_file(path, as_attachment=True)
 
