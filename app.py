@@ -24,6 +24,7 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['UPLOAD_FOLDER'] = UPLOAD_DIR
 app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100MB รองรับวิดีโอบทเรียน
 ALLOWED_WORKSHEET_EXTENSIONS = {'pdf', 'png', 'jpg', 'jpeg', 'doc', 'docx', 'ppt', 'pptx', 'mp4', 'webm', 'mov'}
+ALLOWED_IMAGE_EXTENSIONS = {'png', 'jpg', 'jpeg', 'webp', 'gif'}
 
 def allowed_worksheet_file(filename):
     return filename and '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_WORKSHEET_EXTENSIONS
@@ -41,6 +42,24 @@ def save_uploaded_file(file_obj, subdir='worksheets'):
     filename = f"{stamp}_{safe}"
     file_obj.save(os.path.join(target_dir, filename))
     return f"{subdir}/{filename}", original
+
+
+def allowed_image_file(filename):
+    return filename and '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_IMAGE_EXTENSIONS
+
+
+def save_school_logo(file_obj):
+    if not file_obj or not file_obj.filename:
+        return ''
+    if not allowed_image_file(file_obj.filename):
+        raise ValueError('ตราโรงเรียนรองรับเฉพาะไฟล์รูปภาพ PNG, JPG, JPEG, WEBP, GIF')
+    target_dir = os.path.join(app.config['UPLOAD_FOLDER'], 'school')
+    os.makedirs(target_dir, exist_ok=True)
+    safe = secure_filename(file_obj.filename) or 'school-logo.png'
+    stamp = datetime.utcnow().strftime('%Y%m%d%H%M%S%f')
+    filename = f"{stamp}_{safe}"
+    file_obj.save(os.path.join(target_dir, filename))
+    return f"school/{filename}"
 
 
 def detect_lesson_file_type(file_path):
@@ -141,12 +160,42 @@ class User(db.Model, UserMixin):
     citizen_id = db.Column(db.String(20))
     birth_date = db.Column(db.String(20))
     must_change_password = db.Column(db.Boolean, default=False)
+    position = db.Column(db.String(80), default='ครู')
 
     def set_password(self, password):
         self.password_hash = generate_password_hash(str(password))
 
     def check_password(self, password):
         return check_password_hash(self.password_hash, str(password))
+
+
+class SchoolSetting(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    school_name = db.Column(db.String(255), default='')
+    logo_path = db.Column(db.String(500), default='')
+    director_name = db.Column(db.String(255), default='')
+    deputy_director_name = db.Column(db.String(255), default='')
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+TEACHER_POSITION_CHOICES = ['ครูผู้ช่วย', 'ครู', 'ครู คศ.1', 'ครู คศ.2', 'ครู คศ.3', 'ครูช่วยสอน', 'ครูอัตราจ้าง', 'ผอ.', 'รอง ผอ.', 'ผู้อำนวยการโรงเรียน', 'รองผู้อำนวยการโรงเรียน']
+
+
+def get_school_setting():
+    setting = SchoolSetting.query.first()
+    if not setting:
+        setting = SchoolSetting(school_name='')
+        db.session.add(setting)
+        db.session.commit()
+    return setting
+
+
+@app.context_processor
+def inject_school_setting():
+    try:
+        return {'school_setting': get_school_setting(), 'teacher_position_choices': TEACHER_POSITION_CHOICES}
+    except Exception:
+        return {'school_setting': None, 'teacher_position_choices': TEACHER_POSITION_CHOICES}
 
 
 class Semester(db.Model):
@@ -738,6 +787,30 @@ def uploaded_file(filename):
     return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
 
 
+@app.route('/school-settings', methods=['GET', 'POST'])
+@login_required
+@role_required('teacher', 'admin')
+def school_settings():
+    setting = get_school_setting()
+    if request.method == 'POST':
+        if current_user.role == 'admin':
+            setting.school_name = request.form.get('school_name', '').strip()
+            setting.director_name = request.form.get('director_name', '').strip()
+            setting.deputy_director_name = request.form.get('deputy_director_name', '').strip()
+            logo = request.files.get('logo')
+            if logo and logo.filename:
+                try:
+                    setting.logo_path = save_school_logo(logo)
+                except ValueError as e:
+                    flash(str(e), 'danger')
+                    return redirect(url_for('school_settings'))
+        current_user.position = request.form.get('position', current_user.position or 'ครู').strip() or 'ครู'
+        db.session.commit()
+        flash('บันทึกการตั้งค่าโรงเรียนแล้ว', 'success')
+        return redirect(url_for('school_settings'))
+    return render_template('school_settings.html', setting=setting, position_choices=TEACHER_POSITION_CHOICES)
+
+
 
 def get_active_semester():
     sem = Semester.query.filter_by(is_active=True).first()
@@ -1150,8 +1223,8 @@ def classroom_students(classroom_id):
             db.session.add(ClassroomStudent(classroom_id=room.id, student_id=student_id))
             db.session.commit()
         return redirect(url_for('classroom_students', classroom_id=room.id))
-    links = ClassroomStudent.query.filter_by(classroom_id=room.id).all()
-    students = User.query.filter_by(role='student').order_by(User.full_name).all()
+    links = ClassroomStudent.query.filter_by(classroom_id=room.id).join(User, ClassroomStudent.student_id == User.id).order_by(User.username.asc(), User.full_name.asc()).all()
+    students = User.query.filter_by(role='student').order_by(User.username.asc(), User.full_name.asc()).all()
     return render_template('classroom_students.html', room=room, links=links, students=students)
 
 
@@ -3215,7 +3288,7 @@ def activity_student_links(activity, base_room):
         q = q.filter(Classroom.is_active == True)
     else:
         q = q.filter(ClassroomStudent.classroom_id == base_room.id)
-    links = q.order_by(Classroom.name.asc(), User.full_name.asc()).all()
+    links = q.order_by(Classroom.name.asc(), User.username.asc(), User.full_name.asc()).all()
     if scope == 'scout_m1_m3':
         links = [l for l in links if classroom_grade_no(l.classroom.name) in (1, 2, 3)]
     # กันนักเรียนซ้ำ ถ้ามีชื่อเดียวกันอยู่หลายห้อง ให้เอาห้องแรกตามลำดับชื่อห้อง
@@ -3252,7 +3325,7 @@ def attendance_student_links(subject, room):
         q = q.filter(ClassroomStudent.classroom_id == room.id)
     else:
         q = q.filter(Classroom.is_active == True)
-    links = q.order_by(Classroom.name.asc(), User.full_name.asc()).all()
+    links = q.order_by(Classroom.name.asc(), User.username.asc(), User.full_name.asc()).all()
     if scope == 'scout_m1_m3':
         links = [l for l in links if classroom_grade_no(l.classroom.name) in (1, 2, 3)]
     seen = set()
@@ -3307,7 +3380,7 @@ def build_daily_attendance_overview(report_date=None):
     rows = []
     totals = {'students': 0, 'present': 0, 'absent': 0, 'checked_rooms': 0}
     for room in classrooms:
-        student_links = ClassroomStudent.query.filter_by(classroom_id=room.id).all()
+        student_links = ClassroomStudent.query.filter_by(classroom_id=room.id).join(User, ClassroomStudent.student_id == User.id).order_by(User.username.asc(), User.full_name.asc()).all()
         student_ids = [x.student_id for x in student_links]
         student_count = len(student_ids)
         today_att = Attendance.query.filter_by(classroom_id=room.id, date=report_date).filter(Attendance.student_id.in_(student_ids or [-1])).all()
@@ -3368,7 +3441,7 @@ def records_center():
 def subject_summary_print():
     range_type, start_date, end_date, label = attendance_range_from_request()
     room_rows, subject_rows = build_subject_attendance_summaries(start_date, end_date)
-    return render_template('subject_summary_print.html', room_rows=room_rows, subject_rows=subject_rows, label=label, start_date=start_date, end_date=end_date)
+    return render_template('subject_summary_print.html', room_rows=room_rows, subject_rows=subject_rows, label=label, start_date=start_date, end_date=end_date, setting=get_school_setting(), signer=current_user)
 
 @app.route('/records/subject-summary/export')
 @login_required
@@ -3556,7 +3629,7 @@ def classroom_day_schedule_rows(classroom_id, report_date):
     return by_period
 
 def build_classroom_day_attendance_report(classroom, report_date):
-    links = ClassroomStudent.query.filter_by(classroom_id=classroom.id).join(User, ClassroomStudent.student_id == User.id).order_by(User.full_name.asc()).all()
+    links = ClassroomStudent.query.filter_by(classroom_id=classroom.id).join(User, ClassroomStudent.student_id == User.id).order_by(User.username.asc(), User.full_name.asc()).all()
     schedule_by_period = classroom_day_schedule_rows(classroom.id, report_date)
     attendance_rows = Attendance.query.filter_by(classroom_id=classroom.id, date=report_date).filter(Attendance.period_no.in_(list(range(1, 9)))).all()
     attendance_map = {}
@@ -3765,7 +3838,7 @@ def attendance_print(subject_id, classroom_id):
     range_type, start_date, end_date, label = attendance_range_from_request()
     links = attendance_student_links(subject, room)
     date_headers, att_data, summary = build_attendance_summary(subject.id, room.id, links, start_date, end_date)
-    return render_template('attendance_print.html', subject=subject, room=room, links=links, date_headers=date_headers, att_data=att_data, summary=summary, status_symbols=ATTENDANCE_SYMBOLS, label=label, start_date=start_date, end_date=end_date, show_classroom_column=(attendance_scope_for_subject_room(subject, room) in ('all', 'scout_m1_m3')), attendance_scope_label=attendance_scope_label(subject, room))
+    return render_template('attendance_print.html', subject=subject, room=room, links=links, date_headers=date_headers, att_data=att_data, summary=summary, status_symbols=ATTENDANCE_SYMBOLS, label=label, start_date=start_date, end_date=end_date, show_classroom_column=(attendance_scope_for_subject_room(subject, room) in ('all', 'scout_m1_m3')), attendance_scope_label=attendance_scope_label(subject, room), setting=get_school_setting(), signer=current_user)
 
 @app.route('/substitute')
 @login_required
@@ -3786,7 +3859,7 @@ def substitute_schedule():
 def grades(subject_id, classroom_id):
     subject = Subject.query.get_or_404(subject_id); room = Classroom.query.get_or_404(classroom_id)
     if not owns_subject(subject) or not owns_classroom(room): return deny_redirect('records_center')
-    links = ClassroomStudent.query.filter_by(classroom_id=room.id).all()
+    links = ClassroomStudent.query.filter_by(classroom_id=room.id).join(User, ClassroomStudent.student_id == User.id).order_by(User.username.asc(), User.full_name.asc()).all()
     setting = get_grade_setting(subject.id)
     if request.method == 'POST':
         setting.worksheet_weight = float(request.form.get('worksheet_weight', setting.worksheet_weight))
@@ -3815,7 +3888,7 @@ def export_grades(subject_id, classroom_id):
     if not owns_subject(subject) or not owns_classroom(room): return deny_redirect('records_center')
     wb=Workbook(); ws=wb.active; ws.title='grades'
     ws.append(['ชื่อ','แบบทดสอบเฉลี่ย','เรียนจบ/งานทั้งหมด','มา','ขาด','โดดเรียน','ลา','มาสาย','กิจกรรม','กลางภาค','ปลายภาค','จิตพิสัย','คะแนนรวม','เกรด'])
-    links = ClassroomStudent.query.filter_by(classroom_id=room.id).all()
+    links = ClassroomStudent.query.filter_by(classroom_id=room.id).join(User, ClassroomStudent.student_id == User.id).order_by(User.username.asc(), User.full_name.asc()).all()
     for link in links:
         r=calculate_grade_row(subject, room, link.student)
         ws.append([r['student'].full_name, r['quiz_avg'], f"{r['complete']}/{r['total_assignments']}", r['present'], r['absent'], r['skipped'], r['leave'], r['late'], r['activity'], r['manual'].midterm, r['manual'].final, r['manual'].behavior, r['total'], r['grade']])
@@ -3957,6 +4030,8 @@ def ensure_schema_columns():
             return {row[1] for row in conn.exec_driver_sql(f"PRAGMA table_info({table})").fetchall()}
         if 'is_active' not in cols('subject'):
             conn.exec_driver_sql("ALTER TABLE subject ADD COLUMN is_active BOOLEAN DEFAULT 1")
+        if 'position' not in cols('user'):
+            conn.exec_driver_sql("ALTER TABLE user ADD COLUMN position VARCHAR(80) DEFAULT 'ครู'")
         if 'is_active' not in cols('classroom'):
             conn.exec_driver_sql("ALTER TABLE classroom ADD COLUMN is_active BOOLEAN DEFAULT 1")
         if 'file_path' not in cols('worksheet'):

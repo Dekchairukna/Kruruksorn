@@ -1,0 +1,45 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>ตั้งค่าโรงเรียน</h1>
+<p class="muted">ข้อมูลส่วนนี้จะถูกนำไปใช้กับหัวกระดาษและลายเซ็นในใบรายงาน</p>
+
+<section class="card">
+  <form method="post" enctype="multipart/form-data" class="form-grid">
+    {% if current_user.role == 'admin' %}
+      <label>ชื่อโรงเรียน
+        <input type="text" name="school_name" value="{{ setting.school_name or '' }}" placeholder="เช่น โรงเรียนเปรมติณสูลานนท์">
+      </label>
+      <label>ตราโรงเรียน
+        <input type="file" name="logo" accept="image/*">
+      </label>
+      {% if setting.logo_path %}
+        <div>
+          <small class="muted">ตราปัจจุบัน</small><br>
+          <img src="{{ url_for('uploaded_file', filename=setting.logo_path) }}" alt="ตราโรงเรียน" style="max-width:90px;max-height:90px;border:1px solid #e5e7eb;border-radius:12px;padding:6px;background:#fff">
+        </div>
+      {% endif %}
+      <label>ชื่อ ผอ.
+        <input type="text" name="director_name" value="{{ setting.director_name or '' }}" placeholder="เช่น นาย/นาง/นางสาว...">
+      </label>
+      <label>ชื่อรอง ผอ.
+        <input type="text" name="deputy_director_name" value="{{ setting.deputy_director_name or '' }}" placeholder="เช่น นาย/นาง/นางสาว...">
+      </label>
+    {% else %}
+      <div class="alert info">ครูสามารถแก้ตำแหน่งของตนเองได้ ส่วนชื่อโรงเรียน/ตรา/ชื่อผู้บริหารให้แอดมินเป็นผู้ตั้งค่า</div>
+    {% endif %}
+
+    <label>ตำแหน่งของฉันในรายงาน
+      <select name="position">
+        {% for pos in position_choices %}
+          <option value="{{ pos }}" {% if (current_user.position or 'ครู') == pos %}selected{% endif %}>{{ pos }}</option>
+        {% endfor %}
+      </select>
+    </label>
+
+    <div class="actions-row">
+      <button class="btn" type="submit">บันทึกการตั้งค่า</button>
+      <a class="btn secondary" href="{{ url_for('records_center') }}">กลับไปเช็กชื่อ/รายงาน</a>
+    </div>
+  </form>
+</section>
+{% endblock %}

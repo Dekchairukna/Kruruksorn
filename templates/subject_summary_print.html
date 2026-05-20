@@ -4,54 +4,80 @@
 <meta charset="utf-8">
 <title>ตารางสรุปการเช็กชื่อเป็นรายวิชา</title>
 <style>
-  @page { size: A4 landscape; margin: 8mm; }
-  body { font-family: Tahoma, Arial, sans-serif; color:#111; }
+  @page { size: A4 portrait; margin: 10mm; }
+  * { box-sizing:border-box; }
+  body { font-family: Tahoma, Arial, sans-serif; color:#111; margin:0; }
   .no-print { text-align:right; margin-bottom:8px; }
-  .head { text-align:center; margin-bottom:8px; }
-  h1 { font-size:18px; margin:0 0 4px; }
-  .sub { font-size:13px; }
-  table { width:100%; border-collapse:collapse; font-size:10px; margin-top:8px; }
-  th,td { border:1px solid #444; padding:4px; text-align:center; }
+  .report-page { min-height: calc(297mm - 20mm); display:flex; flex-direction:column; }
+  .head { text-align:center; margin-bottom:8px; position:relative; min-height:60px; }
+  .school-logo { position:absolute; left:0; top:0; width:56px; height:56px; object-fit:contain; }
+  .school { font-size:15px; font-weight:bold; margin-bottom:2px; }
+  h1 { font-size:17px; margin:0 0 4px; }
+  .sub { font-size:12px; }
+  table { width:100%; border-collapse:collapse; font-size:8.7px; margin-top:8px; }
+  th,td { border:1px solid #444; padding:2px; text-align:center; line-height:1.15; }
   th { background:#f1f5f9; }
   .left { text-align:left; }
   .low { background:#fee2e2; color:#991b1b; font-weight:bold; }
-  .section-title { font-weight:bold; margin-top:12px; }
+  .section-title { font-weight:bold; margin-top:10px; font-size:12px; }
+  .signatures { margin-top:auto; padding-top:22px; display:flex; justify-content:space-between; gap:22px; font-size:13px; page-break-inside:avoid; }
+  .sig-box { width:48%; text-align:center; }
+  .sig-line { border-bottom:1px solid #111; height:24px; margin:0 8px 4px; }
+  .sig-name { margin-top:2px; }
+  .sig-role { margin-top:2px; }
   @media print { .no-print { display:none; } }
 </style>
 </head>
 <body>
 <div class="no-print"><button onclick="window.print()">พิมพ์รายงาน</button></div>
-<div class="head">
-  <h1>ตารางสรุปการเช็กชื่อเป็นรายวิชา</h1>
-  <div class="sub">{{ label }} · {{ start_date.strftime('%d/%m/') }}{{ start_date.year+543 }} - {{ end_date.strftime('%d/%m/') }}{{ end_date.year+543 }}</div>
+<div class="report-page">
+  <div class="head">
+    {% if setting and setting.logo_path %}<img class="school-logo" src="{{ url_for('uploaded_file', filename=setting.logo_path) }}" alt="ตราโรงเรียน">{% endif %}
+    {% if setting and setting.school_name %}<div class="school">{{ setting.school_name }}</div>{% endif %}
+    <h1>ตารางสรุปการเช็กชื่อเป็นรายวิชา</h1>
+    <div class="sub">{{ label }} · {{ start_date.strftime('%d/%m/') }}{{ start_date.year+543 }} - {{ end_date.strftime('%d/%m/') }}{{ end_date.year+543 }}</div>
+  </div>
+  <div class="section-title">สรุปรวมตามรายวิชา</div>
+  <table>
+    <tr>
+      <th>ที่</th><th>รายวิชา</th><th>ครู</th><th>ห้อง</th><th>นร.</th><th>คาบ</th><th>หน่วย</th><th>มา</th><th>สาย</th><th>ขาด</th><th>โดด</th><th>ลป</th><th>กิจ</th><th>%</th>
+    </tr>
+    {% for r in subject_rows %}
+    <tr>
+      <td>{{ loop.index }}</td><td class="left">{{ r.subject.name }}</td><td class="left">{{ r.teacher }}</td><td class="left">{{ r.room_text }}</td>
+      <td>{{ r.student_count }}</td><td>{{ r.checked_slots }}</td><td>{{ r.total_units }}</td>
+      <td>{{ r.totals['มา'] }}</td><td>{{ r.totals['สาย'] }}</td><td>{{ r.totals['ขาด'] }}</td><td>{{ r.totals['โดดเรียน'] }}</td><td>{{ r.totals['ลาป่วย'] }}</td><td>{{ r.totals['ไปกิจกรรม'] }}</td>
+      <td class="{% if r.percent < 80 %}low{% endif %}">{{ r.percent }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  <div class="section-title">รายละเอียดแยกตามรายวิชา/ห้อง</div>
+  <table>
+    <tr>
+      <th>ที่</th><th>รายวิชา</th><th>ห้อง/ขอบเขต</th><th>ครู</th><th>นร.</th><th>คาบ</th><th>หน่วย</th><th>มา</th><th>สาย</th><th>ขาด</th><th>โดด</th><th>ลป</th><th>กิจ</th><th>%</th>
+    </tr>
+    {% for r in room_rows %}
+    <tr>
+      <td>{{ loop.index }}</td><td class="left">{{ r.subject.name }}</td><td class="left">{{ r.scope_label }}</td><td class="left">{{ r.teacher }}</td>
+      <td>{{ r.student_count }}</td><td>{{ r.checked_slots }}</td><td>{{ r.total_units }}</td>
+      <td>{{ r.totals['มา'] }}</td><td>{{ r.totals['สาย'] }}</td><td>{{ r.totals['ขาด'] }}</td><td>{{ r.totals['โดดเรียน'] }}</td><td>{{ r.totals['ลาป่วย'] }}</td><td>{{ r.totals['ไปกิจกรรม'] }}</td>
+      <td class="{% if r.percent < 80 %}low{% endif %}">{{ r.percent }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+
+  <div class="signatures">
+    <div class="sig-box">
+      <div class="sig-line"></div>
+      <div class="sig-name">({{ signer.full_name if signer else '___________________' }})</div>
+      <div class="sig-role">{{ signer.position if signer and signer.position else 'ครู' }}</div>
+    </div>
+    <div class="sig-box">
+      <div class="sig-line"></div>
+      <div class="sig-name">({{ setting.director_name if setting and setting.director_name else '___________________' }})</div>
+      <div class="sig-role">ผู้อำนวยการโรงเรียน</div>
+    </div>
+  </div>
 </div>
-<div class="section-title">สรุปรวมตามรายวิชา</div>
-<table>
-  <tr>
-    <th>ที่</th><th>รายวิชา</th><th>ครู</th><th>ห้องที่เกี่ยวข้อง</th><th>นักเรียนรวม</th><th>คาบ/ครั้ง</th><th>หน่วยเช็กชื่อ</th><th>มา</th><th>สาย</th><th>ขาด</th><th>โดดเรียน</th><th>ลาป่วย</th><th>ไปกิจกรรม</th><th>%</th>
-  </tr>
-  {% for r in subject_rows %}
-  <tr>
-    <td>{{ loop.index }}</td><td class="left">{{ r.subject.name }}</td><td class="left">{{ r.teacher }}</td><td class="left">{{ r.room_text }}</td>
-    <td>{{ r.student_count }}</td><td>{{ r.checked_slots }}</td><td>{{ r.total_units }}</td>
-    <td>{{ r.totals['มา'] }}</td><td>{{ r.totals['สาย'] }}</td><td>{{ r.totals['ขาด'] }}</td><td>{{ r.totals['โดดเรียน'] }}</td><td>{{ r.totals['ลาป่วย'] }}</td><td>{{ r.totals['ไปกิจกรรม'] }}</td>
-    <td class="{% if r.percent < 80 %}low{% endif %}">{{ r.percent }}</td>
-  </tr>
-  {% endfor %}
-</table>
-<div class="section-title">รายละเอียดแยกตามรายวิชา/ห้อง</div>
-<table>
-  <tr>
-    <th>ที่</th><th>รายวิชา</th><th>ห้อง/ขอบเขต</th><th>ครู</th><th>นักเรียน</th><th>คาบ/ครั้ง</th><th>หน่วยเช็กชื่อ</th><th>มา</th><th>สาย</th><th>ขาด</th><th>โดดเรียน</th><th>ลาป่วย</th><th>ไปกิจกรรม</th><th>%</th>
-  </tr>
-  {% for r in room_rows %}
-  <tr>
-    <td>{{ loop.index }}</td><td class="left">{{ r.subject.name }}</td><td class="left">{{ r.scope_label }}</td><td class="left">{{ r.teacher }}</td>
-    <td>{{ r.student_count }}</td><td>{{ r.checked_slots }}</td><td>{{ r.total_units }}</td>
-    <td>{{ r.totals['มา'] }}</td><td>{{ r.totals['สาย'] }}</td><td>{{ r.totals['ขาด'] }}</td><td>{{ r.totals['โดดเรียน'] }}</td><td>{{ r.totals['ลาป่วย'] }}</td><td>{{ r.totals['ไปกิจกรรม'] }}</td>
-    <td class="{% if r.percent < 80 %}low{% endif %}">{{ r.percent }}</td>
-  </tr>
-  {% endfor %}
-</table>
 </body>
 </html>
