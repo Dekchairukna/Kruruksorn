@@ -1110,3 +1110,22 @@ input,select,textarea{background:#fff!important;border-color:#d9e8ef!important;c
   .sidebar, .topbar, .head-actions, .dashboard-filter, .period-class-list { display: none !important; }
   .main { margin: 0 !important; padding: 0 !important; }
 }
+
+
+.attendance-day-actions{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  flex-wrap:wrap;
+}
+.attendance-day-actions .attendance-delete-day-form{
+  margin:0;
+}
+.edit-attendance-today-btn{
+  background:#2563eb;
+  color:#fff;
+  border-color:#2563eb;
+}
+.edit-attendance-today-btn:hover{
+  filter:brightness(.95);
+}
