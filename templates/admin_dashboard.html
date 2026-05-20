@@ -1,6 +1,21 @@
 {% extends 'base.html' %}
 {% block content %}
 <h1>แดชบอร์ดผู้ดูแลระบบ</h1>
+{% if period_info %}
+<div class="period-alert">
+  <div>
+    <b>⏰ เวลาไทยตอนนี้ {{ period_info.now_text }} น.</b>
+    {% if period_info.status == 'current' %}
+      <span>กำลังอยู่คาบ {{ period_info.period_no }} เวลา {{ period_info.start_time }}-{{ period_info.end_time }}</span>
+    {% elif period_info.status == 'before_next' %}
+      <span>คาบถัดไปคือคาบ {{ period_info.period_no }} เวลา {{ period_info.start_time }}-{{ period_info.end_time }}</span>
+    {% else %}
+      <span>หมดคาบเรียนตามตารางวันนี้แล้ว</span>
+    {% endif %}
+  </div>
+  <a class="btn small" href="{{ url_for('attendance_dashboard') }}">เปิดภาพรวมวันนี้</a>
+</div>
+{% endif %}
 <div class="grid colorful">
   <div class="stat-card green"><b>ผู้ใช้ทั้งหมด</b><h2>{{users}}</h2><small>บัญชี</small></div>
   <div class="stat-card blue"><b>ครู</b><h2>{{teachers}}</h2><small>คน</small></div>

@@ -1031,3 +1031,82 @@ input,select,textarea{background:#fff!important;border-color:#d9e8ef!important;c
     font-size: 10px;
   }
 }
+
+/* Attendance dashboard / current period alert */
+.attendance-dashboard-head,
+.section-head-row,
+.head-actions,
+.period-alert,
+.dashboard-filter,
+.period-class-list {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.attendance-dashboard-head,
+.section-head-row,
+.period-alert {
+  justify-content: space-between;
+}
+.period-alert {
+  margin: 12px 0 16px;
+  padding: 14px 18px;
+  border-radius: 18px;
+  background: linear-gradient(135deg, #fff7e6, #e8f7ff);
+  border: 1px solid rgba(31, 41, 55, .08);
+  box-shadow: 0 10px 24px rgba(15, 23, 42, .08);
+  flex-wrap: wrap;
+}
+.period-alert b { color: #1f2937; }
+.period-alert span { display: block; margin-top: 4px; color: #475569; }
+.period-class-list { flex-wrap: wrap; justify-content: flex-end; }
+.dashboard-filter { justify-content: flex-start; flex-wrap: wrap; margin-bottom: 16px; }
+.dashboard-filter input[type="date"] { max-width: 220px; }
+.daily-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(160px, 1fr));
+  gap: 16px;
+  margin: 14px 0 20px;
+}
+.daily-stat-card {
+  color: #fff;
+  border-radius: 18px;
+  padding: 18px;
+  box-shadow: 0 12px 24px rgba(15, 23, 42, .15);
+  overflow: hidden;
+  position: relative;
+}
+.daily-stat-card h2 { margin: 12px 0 4px; font-size: 34px; }
+.daily-stat-card small { opacity: .9; }
+.daily-stat-card.blue { background: linear-gradient(135deg, #315bdc, #2ea7df); }
+.daily-stat-card.green { background: linear-gradient(135deg, #14936a, #31e37a); }
+.daily-stat-card.red { background: linear-gradient(135deg, #fb4165, #ff3b21); }
+.daily-stat-card.cyan { background: linear-gradient(135deg, #00bcd4, #12d6f3); }
+.attendance-overview-table th { text-align: center; }
+.attendance-overview-table td { text-align: center; }
+.attendance-overview-table td:first-child { text-align: left; }
+.ok-text { color: #16845b; font-weight: 800; }
+.bad-text { color: #d7263d; font-weight: 800; }
+.done-badge,
+.wait-badge {
+  display: inline-block;
+  padding: 5px 12px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 800;
+}
+.done-badge { color: #fff; background: #16845b; }
+.wait-badge { color: #7c2d12; background: #fed7aa; }
+@media (max-width: 900px) {
+  .daily-stat-grid { grid-template-columns: repeat(2, minmax(150px, 1fr)); }
+  .attendance-dashboard-head,
+  .period-alert { align-items: stretch; }
+}
+@media (max-width: 560px) {
+  .daily-stat-grid { grid-template-columns: 1fr; }
+  .head-actions { flex-wrap: wrap; }
+}
+@media print {
+  .sidebar, .topbar, .head-actions, .dashboard-filter, .period-class-list { display: none !important; }
+  .main { margin: 0 !important; padding: 0 !important; }
+}

@@ -1,0 +1,99 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="attendance-dashboard-head">
+  <div>
+    <h1>📊 Dashboard ภาพรวมการมาเรียน</h1>
+    <p class="muted">{{ report_day_label }} · ใช้เวลาไทย Asia/Bangkok ในการคำนวณคาบเรียน</p>
+  </div>
+  <div class="head-actions">
+    <a class="btn secondary" href="{{ url_for('attendance_dashboard', date=today_date) }}">วันนี้</a>
+    <button class="btn" onclick="window.print()">🖨️ พิมพ์รายงาน</button>
+  </div>
+</div>
+
+<section class="period-alert">
+  <div>
+    <b>⏰ เวลาไทยตอนนี้ {{ period_info.now_text }} น.</b>
+    {% if period_info.status == 'current' %}
+      <span>ระบบตรวจพบว่าอยู่ <b>คาบ {{ period_info.period_no }}</b> เวลา {{ period_info.start_time }}-{{ period_info.end_time }}</span>
+    {% elif period_info.status == 'before_next' %}
+      <span>คาบถัดไปคือ <b>คาบ {{ period_info.period_no }}</b> เวลา {{ period_info.start_time }}-{{ period_info.end_time }}</span>
+    {% else %}
+      <span>หมดคาบตามตารางวันนี้แล้ว</span>
+    {% endif %}
+  </div>
+  {% if period_info.rows %}
+  <div class="period-class-list">
+    {% for r in period_info.rows[:4] %}
+      <a class="btn small" href="{{ url_for('attendance', subject_id=r.subject_id, classroom_id=r.classroom_id, date=report_date.isoformat(), period_no=r.period_no, schedule_id=r.id) }}">เช็ก {{ r.classroom.name }} / {{ r.subject.name }}</a>
+    {% endfor %}
+  </div>
+  {% endif %}
+</section>
+
+<form method="get" class="card dashboard-filter">
+  <label>รายงานวันที่</label>
+  <input type="date" name="date" value="{{ report_date.isoformat() }}">
+  <button class="btn secondary">ดูรายงาน</button>
+</form>
+
+<section class="daily-stat-grid">
+  <div class="daily-stat-card blue">
+    <b>ทั้งหมด (คน)</b>
+    <h2>{{ totals.students }}</h2>
+    <small>จำนวนนักเรียนตามห้องที่อยู่ในสิทธิ์</small>
+  </div>
+  <div class="daily-stat-card green">
+    <b>มาเรียน (คน)</b>
+    <h2>{{ totals.present }}</h2>
+    <small>นับ มา + สาย + ไปกิจกรรม</small>
+  </div>
+  <div class="daily-stat-card red">
+    <b>ไม่มาเรียน (คน)</b>
+    <h2>{{ totals.absent }}</h2>
+    <small>นับ ขาด + ลาป่วย</small>
+  </div>
+  <div class="daily-stat-card cyan">
+    <b>ร้อยละการมาเรียน</b>
+    <h2>{{ totals.percent }}%</h2>
+    <small>ห้องที่เช็กแล้ว {{ totals.checked_rooms }} ห้อง / ยังไม่เช็ก {{ totals.unchecked_rooms }} ห้อง</small>
+  </div>
+</section>
+
+<section class="card">
+  <div class="section-head-row">
+    <div>
+      <h2>สรุปตามห้องเรียน</h2>
+      <p class="muted">สถานะ “ครบแล้ว” หมายถึงมีบันทึกเช็กชื่อของวันที่เลือกแล้วอย่างน้อย 1 รายการ</p>
+    </div>
+  </div>
+  <div class="table-wrap">
+    <table class="attendance-overview-table">
+      <tr>
+        <th>ห้องเรียน</th>
+        <th>ทั้งหมด (คน)</th>
+        <th>มาเรียน (คน)</th>
+        <th>ไม่มา (คน)</th>
+        <th>ยังไม่บันทึก</th>
+        <th>ร้อยละการมาเรียน</th>
+        <th>สถานะการเช็กชื่อ</th>
+        <th>เปิดรายงาน</th>
+      </tr>
+      {% for r in rows %}
+      <tr>
+        <td data-label="ห้องเรียน"><b>{{ r.room.name }}</b></td>
+        <td data-label="ทั้งหมด">{{ r.student_count }}</td>
+        <td data-label="มาเรียน" class="ok-text">{{ r.present }}</td>
+        <td data-label="ไม่มา" class="bad-text">{{ r.absent }}</td>
+        <td data-label="ยังไม่บันทึก">{{ r.unchecked }}</td>
+        <td data-label="ร้อยละ" class="percent-cell {% if r.percent < 80 %}low-percent{% endif %}">{{ r.percent }}%</td>
+        <td data-label="สถานะ">{% if r.checked %}<span class="done-badge">ครบแล้ว</span>{% else %}<span class="wait-badge">ยังไม่เช็ก</span>{% endif %}</td>
+        <td data-label="เปิดรายงาน"><a class="btn small secondary" href="{{ url_for('classroom_day_report', classroom_id=r.room.id, date=report_date.isoformat()) }}">ดูคาบ 1-8</a></td>
+      </tr>
+      {% else %}
+      <tr><td colspan="8">ยังไม่มีห้องเรียนในระบบหรือยังไม่มีสิทธิ์ดูห้องเรียน</td></tr>
+      {% endfor %}
+    </table>
+  </div>
+</section>
+{% endblock %}

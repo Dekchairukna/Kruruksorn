@@ -9,6 +9,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 from openpyxl import load_workbook, Workbook
 from types import SimpleNamespace
+from zoneinfo import ZoneInfo
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 INSTANCE_DIR = os.path.join(BASE_DIR, 'instance')
@@ -91,6 +92,17 @@ ATTENDANCE_STATUS_ALIASES = {
     'sick': 'ลาป่วย',
     'activity': 'ไปกิจกรรม',
 }
+
+# Railway / Render / VPS หลายเจ้ารันเวลาเครื่องเป็น UTC ทำให้แดชบอร์ดคาบเรียนคลาดเคลื่อน
+# จึงล็อกเวลาที่ใช้คำนวณคาบเรียนเป็นเวลาไทยเสมอ เว้นแต่กำหนด APP_TIMEZONE เอง
+APP_TIMEZONE = os.environ.get('APP_TIMEZONE', 'Asia/Bangkok')
+LOCAL_TZ = ZoneInfo(APP_TIMEZONE)
+
+def local_now():
+    return datetime.now(LOCAL_TZ)
+
+def local_today():
+    return local_now().date()
 
 
 THAI_WEEKDAYS = ['จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์', 'อาทิตย์']
@@ -485,7 +497,7 @@ def deny_redirect(endpoint='index'):
 def get_current_schedule():
     if not current_user.is_authenticated or current_user.role != 'teacher':
         return None, None
-    now = datetime.now()
+    now = local_now()
     weekday = now.weekday()
     schedules = TeachingSchedule.query.filter_by(teacher_id=current_user.id, weekday=weekday).order_by(TeachingSchedule.start_time).all()
     cur = None
@@ -497,6 +509,34 @@ def get_current_schedule():
         if s.start_time > now_str and not nxt:
             nxt = s
     return cur, nxt
+
+
+def current_period_info(target_date=None, teacher_id=None):
+    """คืนคาบปัจจุบัน/คาบถัดไปตามเวลาไทย เพื่อใช้แจ้งเตือนหน้าแดชบอร์ด"""
+    now = local_now()
+    target_date = target_date or now.date()
+    now_str = now.strftime('%H:%M')
+    weekday = target_date.weekday()
+    q = TeachingSchedule.query.filter_by(weekday=weekday)
+    if teacher_id:
+        q = q.filter_by(teacher_id=teacher_id)
+    rows = q.order_by(TeachingSchedule.start_time.asc(), TeachingSchedule.period_no.asc()).all()
+    current_rows = [r for r in rows if r.start_time <= now_str <= r.end_time]
+    next_row = next((r for r in rows if r.start_time > now_str), None)
+    if current_rows:
+        first = current_rows[0]
+        return {
+            'status': 'current', 'period_no': first.period_no, 'start_time': first.start_time,
+            'end_time': first.end_time, 'rows': current_rows, 'next': next_row,
+            'now_text': now.strftime('%H:%M'), 'date': target_date,
+        }
+    if next_row:
+        return {
+            'status': 'before_next', 'period_no': next_row.period_no, 'start_time': next_row.start_time,
+            'end_time': next_row.end_time, 'rows': [], 'next': next_row,
+            'now_text': now.strftime('%H:%M'), 'date': target_date,
+        }
+    return {'status': 'finished', 'period_no': None, 'rows': [], 'next': None, 'now_text': now.strftime('%H:%M'), 'date': target_date}
 
 
 
@@ -735,7 +775,7 @@ def build_calendar_dashboard(year=2026, months=(5,6,7,8,9,10), teacher_id=None, 
 
     # ใช้วันที่จริงของเครื่อง ไม่บังคับให้กระโดดไปวันเปิดเทอม
     # ถ้าวันจริงอยู่นอกช่วงเดือนที่แสดง จะไม่ไฮไลต์ผิดวัน
-    real_today = date.today()
+    real_today = local_today()
     today = real_today
     blocks = []
     today_position = None
@@ -773,7 +813,7 @@ def build_calendar_dashboard(year=2026, months=(5,6,7,8,9,10), teacher_id=None, 
 def admin_dashboard():
     active_semester = get_active_semester()
     cal_months, upcoming, today_position = build_calendar_dashboard(semester=active_semester)
-    return render_template('admin_dashboard.html', users=User.query.count(), teachers=User.query.filter_by(role='teacher').count(), students=User.query.filter_by(role='student').count(), cal_months=cal_months, upcoming=upcoming, today_position=today_position, active_semester=active_semester)
+    return render_template('admin_dashboard.html', users=User.query.count(), teachers=User.query.filter_by(role='teacher').count(), students=User.query.filter_by(role='student').count(), cal_months=cal_months, upcoming=upcoming, today_position=today_position, active_semester=active_semester, period_info=current_period_info(local_today()))
 
 @app.route('/teacher')
 @login_required
@@ -785,7 +825,7 @@ def teacher_dashboard():
     assignments = Assignment.query.filter_by(teacher_id=current_user.id).order_by(Assignment.created_at.desc()).limit(5).all() if current_user.role=='teacher' else Assignment.query.order_by(Assignment.created_at.desc()).limit(5).all()
     active_semester = get_active_semester()
     cal_months, upcoming, today_position = build_calendar_dashboard(teacher_id=current_user.id if current_user.role=='teacher' else None, semester=active_semester)
-    return render_template('teacher_dashboard.html', cur=cur, nxt=nxt, subjects=subjects, classrooms=classrooms, assignments=assignments, cal_months=cal_months, upcoming=upcoming, today_position=today_position, active_semester=active_semester)
+    return render_template('teacher_dashboard.html', cur=cur, nxt=nxt, subjects=subjects, classrooms=classrooms, assignments=assignments, cal_months=cal_months, upcoming=upcoming, today_position=today_position, active_semester=active_semester, period_info=current_period_info(local_today(), current_user.id))
 
 @app.route('/student')
 @login_required
@@ -794,7 +834,7 @@ def student_dashboard():
     statuses = AssignmentStatus.query.filter_by(student_id=current_user.id).join(Assignment).filter(Assignment.assignment_type=='special').order_by(Assignment.created_at.desc()).all()
     room_ids = [x.classroom_id for x in ClassroomStudent.query.filter_by(student_id=current_user.id).all()]
     schedules = TeachingSchedule.query.filter(TeachingSchedule.classroom_id.in_(room_ids or [-1])).order_by(TeachingSchedule.weekday, TeachingSchedule.period_no).all()
-    today = date.today()
+    today = local_today()
     today_idx = today.weekday()
     today_schedules = [x for x in schedules if x.weekday == today_idx and not is_school_blocked_day(today, x.teacher_id)]
     for row in schedules:
@@ -1193,7 +1233,7 @@ def classroom_activity_attendance(classroom_id, activity_id):
     activity_scope = get_activity_scope(activity)
     show_classroom_column = activity_scope in ('all', 'scout_m1_m3')
 
-    default_date = activity.event_date or date.today()
+    default_date = activity.event_date or local_today()
     selected_date = datetime.strptime(request.args.get('date', default_date.isoformat()), '%Y-%m-%d').date()
     if activity.event_date:
         selected_date = activity.event_date
@@ -2634,7 +2674,7 @@ def schedule():
         all_rows = TeachingSchedule.query.order_by(TeachingSchedule.teacher_id, TeachingSchedule.weekday, TeachingSchedule.period_no).all()
         for row in all_rows:
             schedules_by_teacher.setdefault(row.teacher_id, []).append(row)
-    return render_template('schedule.html', schedules=schedules, subjects=subjects, rooms=rooms, lessons=lessons, edit_row=edit_row, day_names=day_names, periods=periods, schedule_grid=schedule_grid, day_pairs=day_pairs, teachers=teachers, selected_teacher_id=selected_teacher_id, active_teacher_id=active_teacher_id, teacher_title=teacher_title, schedules_by_teacher=schedules_by_teacher, today_date=date.today().isoformat(), schedule_slots=schedule_slots)
+    return render_template('schedule.html', schedules=schedules, subjects=subjects, rooms=rooms, lessons=lessons, edit_row=edit_row, day_names=day_names, periods=periods, schedule_grid=schedule_grid, day_pairs=day_pairs, teachers=teachers, selected_teacher_id=selected_teacher_id, active_teacher_id=active_teacher_id, teacher_title=teacher_title, schedules_by_teacher=schedules_by_teacher, today_date=local_today().isoformat(), schedule_slots=schedule_slots)
 
 @app.route('/schedule/import', methods=['POST'])
 @login_required
@@ -2804,7 +2844,7 @@ def schedule_edit(schedule_id):
         {'type':'period','no':5,'time':'13:00-13:50'}, {'type':'period','no':6,'time':'13:51-14:40'},
         {'type':'break','label':'พัก 10 นาที','time':'14:41-14:50'}, {'type':'period','no':7,'time':'14:41-15:30'}, {'type':'period','no':8,'time':'15:41-16:00'}]
     day_pairs = list(enumerate(day_names[:5]))
-    return render_template('schedule.html', schedules=schedules, subjects=subjects, rooms=rooms, lessons=lessons, edit_row=row, day_names=day_names, periods=periods, period_times=period_times, schedule_grid=schedule_grid, day_pairs=day_pairs, today_date=date.today().isoformat(), teachers=[], selected_teacher_id=None, active_teacher_id=None, teacher_title=current_user.full_name, schedules_by_teacher={}, schedule_slots=schedule_slots)
+    return render_template('schedule.html', schedules=schedules, subjects=subjects, rooms=rooms, lessons=lessons, edit_row=row, day_names=day_names, periods=periods, period_times=period_times, schedule_grid=schedule_grid, day_pairs=day_pairs, today_date=local_today().isoformat(), teachers=[], selected_teacher_id=None, active_teacher_id=None, teacher_title=current_user.full_name, schedules_by_teacher={}, schedule_slots=schedule_slots)
 
 @app.route('/schedule/<int:schedule_id>/delete', methods=['POST'])
 @login_required
@@ -3254,6 +3294,47 @@ def build_activity_attendance_report(activity_id, classroom_id, links):
         summary.append(row)
     return date_headers, att_data, summary
 
+def build_daily_attendance_overview(report_date=None):
+    report_date = report_date or local_today()
+    allowed_room_ids = teacher_classroom_ids()
+    q = Classroom.query.filter(Classroom.is_active == True, Classroom.id.in_(allowed_room_ids or [-1]))
+    classrooms = q.order_by(Classroom.name.asc()).all()
+    rows = []
+    totals = {'students': 0, 'present': 0, 'absent': 0, 'checked_rooms': 0}
+    for room in classrooms:
+        student_links = ClassroomStudent.query.filter_by(classroom_id=room.id).all()
+        student_ids = [x.student_id for x in student_links]
+        student_count = len(student_ids)
+        today_att = Attendance.query.filter_by(classroom_id=room.id, date=report_date).filter(Attendance.student_id.in_(student_ids or [-1])).all()
+        latest_by_student = {}
+        for a in today_att:
+            latest_by_student[a.student_id] = normalize_attendance_status(a.status)
+        present = sum(1 for st in latest_by_student.values() if st in ['มา', 'สาย', 'ไปกิจกรรม'])
+        absent = sum(1 for st in latest_by_student.values() if st in ['ขาด', 'ลาป่วย'])
+        checked = bool(latest_by_student)
+        percent = round((present / student_count) * 100, 2) if student_count else 100
+        rows.append({
+            'room': room, 'student_count': student_count, 'present': present, 'absent': absent,
+            'unchecked': max(0, student_count - len(latest_by_student)), 'percent': percent, 'checked': checked
+        })
+        totals['students'] += student_count
+        totals['present'] += present
+        totals['absent'] += absent
+        if checked:
+            totals['checked_rooms'] += 1
+    totals['percent'] = round((totals['present'] / totals['students']) * 100, 2) if totals['students'] else 100
+    totals['unchecked_rooms'] = max(0, len(classrooms) - totals['checked_rooms'])
+    return rows, totals
+
+@app.route('/attendance-dashboard')
+@login_required
+@role_required('teacher','admin')
+def attendance_dashboard():
+    report_date = datetime.strptime(request.args.get('date', local_today().isoformat()), '%Y-%m-%d').date()
+    rows, totals = build_daily_attendance_overview(report_date)
+    period_info = current_period_info(report_date, current_user.id if current_user.role == 'teacher' else None)
+    return render_template('attendance_dashboard.html', rows=rows, totals=totals, report_date=report_date, report_day_label=thai_date_label(report_date), today_date=local_today().isoformat(), period_info=period_info)
+
 @app.route('/records')
 @login_required
 @role_required('teacher','admin')
@@ -3273,7 +3354,7 @@ def records_center():
     return render_template(
         'records_center.html',
         pairs=pairs, subject_summaries=subject_summaries, classrooms_for_daily=classrooms_for_daily,
-        range_type=range_type, start_date=start_date, end_date=end_date, label=label, today_date=date.today().isoformat()
+        range_type=range_type, start_date=start_date, end_date=end_date, label=label, today_date=local_today().isoformat()
     )
 
 @app.route('/records/subject-summary/print')
@@ -3445,7 +3526,7 @@ def build_subject_attendance_summaries(start_date=None, end_date=None):
     return rows, subject_rows
 
 def attendance_range_from_request():
-    today = date.today()
+    today = local_today()
     active_sem = Semester.query.filter_by(is_active=True).first()
     range_type = request.args.get('range', 'term')
     if range_type == 'month':
@@ -3515,7 +3596,7 @@ def classroom_day_report():
     room = Classroom.query.get_or_404(classroom_id)
     if current_user.role != 'admin' and not owns_classroom(room):
         return deny_redirect('records_center')
-    report_date = datetime.strptime(request.args.get('date', date.today().isoformat()), '%Y-%m-%d').date()
+    report_date = datetime.strptime(request.args.get('date', local_today().isoformat()), '%Y-%m-%d').date()
     links, period_headers, attendance_map, summary = build_classroom_day_attendance_report(room, report_date)
     return render_template(
         'classroom_day_report.html',
@@ -3532,7 +3613,7 @@ def classroom_day_report_export():
     room = Classroom.query.get_or_404(classroom_id)
     if current_user.role != 'admin' and not owns_classroom(room):
         return deny_redirect('records_center')
-    report_date = datetime.strptime(request.args.get('date', date.today().isoformat()), '%Y-%m-%d').date()
+    report_date = datetime.strptime(request.args.get('date', local_today().isoformat()), '%Y-%m-%d').date()
     links, period_headers, attendance_map, summary = build_classroom_day_attendance_report(room, report_date)
     wb = Workbook(); ws = wb.active; ws.title = 'classroom_day'
     ws.append([f'สรุปเช็กชื่อรายวัน ห้อง {room.name} - {thai_date_label(report_date)}'])
@@ -3564,7 +3645,7 @@ def attendance(subject_id, classroom_id):
     links = attendance_student_links(subject, room)
     attendance_scope = attendance_scope_for_subject_room(subject, room)
     show_classroom_column = attendance_scope in ('all', 'scout_m1_m3')
-    att_date = datetime.strptime(request.args.get('date', date.today().isoformat()), '%Y-%m-%d').date()
+    att_date = datetime.strptime(request.args.get('date', local_today().isoformat()), '%Y-%m-%d').date()
     period_no = request.args.get('period_no', type=int)
     from_schedule_id = request.args.get('schedule_id', type=int)
     period_block = schedule_period_block(from_schedule_id, subject.id, room.id, period_no)
@@ -3691,7 +3772,7 @@ def substitute_schedule():
     schedules = []
     if selected_teacher:
         schedules = TeachingSchedule.query.filter_by(teacher_id=selected_teacher.id).order_by(TeachingSchedule.weekday, TeachingSchedule.period_no).all()
-    return render_template('substitute.html', teachers=teachers, selected_teacher=selected_teacher, schedules=schedules, day_names=day_names, today_date=date.today().isoformat())
+    return render_template('substitute.html', teachers=teachers, selected_teacher=selected_teacher, schedules=schedules, day_names=day_names, today_date=local_today().isoformat())
 
 @app.route('/grades/<int:subject_id>/<int:classroom_id>', methods=['GET','POST'])
 @login_required

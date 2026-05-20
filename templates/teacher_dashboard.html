@@ -1,6 +1,21 @@
 {% extends 'base.html' %}
 {% block content %}
 <h1>แดชบอร์ดครู</h1>
+{% if period_info %}
+<div class="period-alert">
+  <div>
+    <b>⏰ เวลาไทยตอนนี้ {{ period_info.now_text }} น.</b>
+    {% if period_info.status == 'current' %}
+      <span>กำลังอยู่คาบ {{ period_info.period_no }} เวลา {{ period_info.start_time }}-{{ period_info.end_time }}</span>
+    {% elif period_info.status == 'before_next' %}
+      <span>ยังไม่ถึงคาบถัดไป: คาบ {{ period_info.period_no }} เวลา {{ period_info.start_time }}-{{ period_info.end_time }}</span>
+    {% else %}
+      <span>หมดคาบสอนของวันนี้แล้ว</span>
+    {% endif %}
+  </div>
+  <a class="btn small" href="{{ url_for('attendance_dashboard') }}">เปิดภาพรวมวันนี้</a>
+</div>
+{% endif %}
 <div class="grid colorful">
   <div class="stat-card green"><b>คาบปัจจุบัน</b>{% if cur %}<h3>{{cur.subject.name}}</h3><p>{{cur.classroom.name}} | {{cur.start_time}}-{{cur.end_time}}</p><small>{{cur.topic or (cur.lesson.title if cur.lesson else '')}}</small>{% else %}<h3>ไม่มีคาบสอน</h3><small>ตามเวลาปัจจุบัน</small>{% endif %}</div>
   <div class="stat-card blue"><b>คาบถัดไป</b>{% if nxt %}<h3>{{nxt.subject.name}}</h3><p>{{nxt.classroom.name}} | {{nxt.start_time}}-{{nxt.end_time}}</p>{% else %}<h3>ไม่มีคาบถัดไปวันนี้</h3>{% endif %}</div>

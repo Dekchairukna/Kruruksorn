@@ -34,6 +34,7 @@
       <a href="{{ url_for('assignments') }}">📝 งานที่สั่งแล้ว</a>
       <a href="{{ url_for('schedule') }}">📅 ตารางสอน</a>
       <a href="{{ url_for('substitute_schedule') }}">👨‍🏫 สอนแทน</a>
+      <a href="{{ url_for('attendance_dashboard') }}">📊 ภาพรวมวันนี้</a>
       <a href="{{ url_for('records_center') }}">✅ เช็กชื่อ/คะแนน</a>
       <a href="{{ url_for('calendar_events') }}">🌤️ ปฏิทิน</a>
       {% if current_user.role=='admin' %}<a href="{{ url_for('semesters') }}">🗓️ ภาคเรียน</a>{% endif %}
