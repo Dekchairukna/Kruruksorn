@@ -1,29 +1,39 @@
 # Railway PostgreSQL Fix
 
-ไฟล์นี้ปรับให้ระบบใช้ฐานข้อมูล PostgreSQL บน Railway ผ่าน `DATABASE_URL` และกันไม่ให้ Production เผลอเปิด SQLite ใหม่
-จนดูเหมือนข้อมูลเช็กชื่อหาย
+ระบบนี้ต้องต่อฐานข้อมูล PostgreSQL ผ่านตัวแปร `DATABASE_URL` ใน service `web`
 
-## ต้องตั้งค่าใน Railway
+## วิธีใส่ที่ถูกต้อง
 
-ที่ service `web` > Variables ต้องมี:
+ไปที่ `web -> Variables`
+
+ช่องซ้าย:
 
 ```env
-DATABASE_URL=${{Postgres.DATABASE_URL}}
+DATABASE_URL
 ```
 
-หรือ copy ค่า `DATABASE_URL` จาก service PostgreSQL มาใส่ใน web โดยตรง
+ช่องขวาต้องเป็น URL จริง เช่น:
+
+```env
+postgresql://postgres:password@host:5432/railway
+```
+
+หรือใช้ปุ่ม `Add Reference` แล้วเลือก `PostgreSQL -> DATABASE_URL` เท่านั้น
+
+ห้ามใส่ค่าเหล่านี้ในช่องขวา:
+
+```env
+Postgres
+PostgreSQL
+DATABASE_URL
+${{Postgres}}
+```
+
+ถ้าใช้ `${{Postgres.DATABASE_URL}}` แล้ว error แปลว่า Railway ไม่ได้ resolve reference ให้ ให้ copy URL จริงจาก service PostgreSQL มาใส่แทน
 
 ## สิ่งที่แก้ในโค้ด
 
-- อ่าน `DATABASE_URL` / `POSTGRES_URL` / `POSTGRESQL_URL`
-- แปลง `postgres://` เป็น `postgresql://`
-- ถ้ารันบน Railway แล้วไม่มี `DATABASE_URL` จะหยุดทันที ไม่ fallback ไป SQLite
-- เพิ่ม `psycopg2-binary` ใน requirements.txt
-- ปรับ `ensure_schema_columns()` ให้รองรับ PostgreSQL ไม่ใช้ `PRAGMA` เฉพาะ SQLite
-- เพิ่ม `.gitignore` กันไฟล์ `.db` ไม่ให้ติด GitHub อีก
-
-## ห้ามทำ
-
-- ห้าม `drop_all()` กับฐานข้อมูลใช้งานจริง
-- ห้าม commit ไฟล์ `.db` ขึ้น GitHub
-- ก่อน import ข้อมูลจำนวนมากควร export/backup PostgreSQL ก่อน
+- รองรับ `DATABASE_URL`, `DATABASE_PRIVATE_URL`, `DATABASE_PUBLIC_URL`, `POSTGRES_URL`, `POSTGRESQL_URL`
+- รองรับกรณี Railway ส่ง `postgres://` โดยแปลงเป็น `postgresql://`
+- ถ้าใส่ reference ผิด ระบบจะแจ้ง error ชัดเจน
+- ถ้าไม่มี PostgreSQL บน Railway ระบบจะหยุด ไม่ fallback ไป SQLite

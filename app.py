@@ -24,20 +24,61 @@ app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'krurakson-dev')
 def get_database_uri():
     """เลือกฐานข้อมูลให้ปลอดภัยสำหรับ Railway PostgreSQL
 
-    - Production/Railway ต้องใช้ DATABASE_URL เท่านั้น เพื่อกันเว็บเผลอไปเปิด SQLite ใหม่
-      แล้วดูเหมือนข้อมูลเช็กชื่อหาย
-    - Local dev ถ้าไม่มี DATABASE_URL จะใช้ instance/krurakson.db ได้ตามเดิม
+    - Production/Railway ต้องใช้ PostgreSQL เท่านั้น เพื่อกันเว็บเผลอไปเปิด SQLite ใหม่
+    - รองรับหลายชื่อตัวแปรของ Railway/Postgres
+    - ถ้าค่า DATABASE_URL ถูกใส่เป็น reference ผิด เช่น ${{Postgres.DATABASE_URL}}
+      ระบบจะแจ้ง error ชัดเจนแทนการปล่อยให้ SQLAlchemy ขึ้นข้อความอ่านยาก
     """
-    database_url = (
-        os.environ.get('DATABASE_URL')
-        or os.environ.get('POSTGRES_URL')
-        or os.environ.get('POSTGRESQL_URL')
-    )
-    if database_url:
-        # Railway/Heroku บางตัวปล่อย postgres:// แต่ SQLAlchemy รุ่นใหม่ต้องการ postgresql://
-        if database_url.startswith('postgres://'):
-            database_url = database_url.replace('postgres://', 'postgresql://', 1)
-        return database_url
+    def clean_url(value):
+        if not value:
+            return None
+        value = str(value).strip().strip('"').strip("'")
+        # กันกรณีเผลอใส่ทั้งบรรทัดในช่อง VALUE เช่น DATABASE_URL=postgresql://...
+        if value.startswith('DATABASE_URL='):
+            value = value.split('=', 1)[1].strip().strip('"').strip("'")
+        if value.startswith('POSTGRES_URL='):
+            value = value.split('=', 1)[1].strip().strip('"').strip("'")
+        if value.startswith('POSTGRESQL_URL='):
+            value = value.split('=', 1)[1].strip().strip('"').strip("'")
+        if value.startswith('postgres://'):
+            value = value.replace('postgres://', 'postgresql://', 1)
+        return value
+
+    # Railway/Postgres อาจใช้ชื่อ variable ต่างกันตามวิธี attach/reference
+    candidate_names = [
+        'DATABASE_URL',
+        'DATABASE_PRIVATE_URL',
+        'DATABASE_PUBLIC_URL',
+        'POSTGRES_URL',
+        'POSTGRESQL_URL',
+        'PGDATABASE_URL',
+    ]
+    for name in candidate_names:
+        database_url = clean_url(os.environ.get(name))
+        if not database_url:
+            continue
+        if database_url.startswith('${{') or database_url.endswith('}}'):
+            raise RuntimeError(
+                f'{name} ยังเป็นค่า Reference ที่ Railway ไม่ได้ resolve: {database_url} | '
+                'ให้ลบตัวแปรนี้ แล้วกด Add Reference จากช่อง VALUE เลือก PostgreSQL -> DATABASE_URL '
+                'หรือ copy ค่า postgresql://... จาก service PostgreSQL มาใส่โดยตรง'
+            )
+        if database_url.startswith('postgresql://'):
+            return database_url
+        raise RuntimeError(
+            f'{name} ไม่ใช่ PostgreSQL URL ที่ถูกต้อง: {database_url[:80]} | '
+            'ค่าที่ถูกต้องต้องขึ้นต้นด้วย postgresql:// หรือ postgres://'
+        )
+
+    # ถ้ามีตัวแปร PG* แยกกัน ให้ประกอบ connection string ให้เอง
+    pg_host = os.environ.get('PGHOST') or os.environ.get('POSTGRES_HOST')
+    pg_user = os.environ.get('PGUSER') or os.environ.get('POSTGRES_USER')
+    pg_password = os.environ.get('PGPASSWORD') or os.environ.get('POSTGRES_PASSWORD')
+    pg_database = os.environ.get('PGDATABASE') or os.environ.get('POSTGRES_DB') or os.environ.get('POSTGRES_DATABASE')
+    pg_port = os.environ.get('PGPORT') or os.environ.get('POSTGRES_PORT') or '5432'
+    if pg_host and pg_user and pg_password and pg_database:
+        from urllib.parse import quote_plus
+        return f"postgresql://{quote_plus(pg_user)}:{quote_plus(pg_password)}@{pg_host}:{pg_port}/{pg_database}"
 
     running_on_railway = bool(
         os.environ.get('RAILWAY_ENVIRONMENT')
@@ -45,9 +86,11 @@ def get_database_uri():
         or os.environ.get('RAILWAY_SERVICE_ID')
     )
     if running_on_railway:
+        visible_db_vars = ', '.join([k for k in os.environ.keys() if 'DATABASE' in k or 'POSTGRES' in k or k.startswith('PG')]) or 'ไม่มี'
         raise RuntimeError(
-            'ไม่พบ DATABASE_URL ใน Railway web service: กรุณาผูก PostgreSQL DATABASE_URL ให้ web ก่อน deploy ' 
-            'เพื่อป้องกันระบบเปิดฐานข้อมูล SQLite ใหม่และทำให้ข้อมูลเช็กชื่อเดิมไม่ขึ้น'
+            'ไม่พบ DATABASE_URL/PostgreSQL variables ใน Railway web service: '
+            f'ตัวแปรเกี่ยวกับฐานข้อมูลที่เห็นตอนนี้ = {visible_db_vars}. '
+            'ให้ผูก PostgreSQL DATABASE_URL ให้ web ก่อน deploy เพื่อป้องกันระบบเปิดฐานข้อมูล SQLite ใหม่'
         )
 
     return f"sqlite:///{os.path.join(INSTANCE_DIR, 'krurakson.db')}"
