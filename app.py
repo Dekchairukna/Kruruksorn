@@ -478,24 +478,29 @@ def role_required(*roles):
 def teacher_subject_ids():
     if current_user.role == 'admin':
         return [x.id for x in Subject.query.filter_by(is_active=True).all()]
+    # ใช้ทั้งตารางมอบหมายครู + เจ้าของวิชา + ตารางสอนจริง
+    # เพื่อกันกรณีนำเข้าตารางสอนแล้ว teacher_subject ยังไม่ถูกสร้าง/ซิงก์ในฐานข้อมูลบนเซิร์ฟเวอร์
     ids = {x.subject_id for x in TeacherSubject.query.filter_by(teacher_id=current_user.id).all()}
     ids.update(x.id for x in Subject.query.filter_by(teacher_id=current_user.id, is_active=True).all())
+    ids.update(x.subject_id for x in TeachingSchedule.query.filter_by(teacher_id=current_user.id).all())
     return list(ids)
 
 def teacher_classroom_ids():
     if current_user.role == 'admin':
         return [x.id for x in Classroom.query.filter_by(is_active=True).all()]
+    # ใช้ทั้งตารางมอบหมายห้อง + ครูประจำชั้น + ตารางสอนจริง
     ids = {x.classroom_id for x in TeacherClassroom.query.filter_by(teacher_id=current_user.id).all()}
     ids.update(x.id for x in Classroom.query.filter_by(teacher_id=current_user.id, is_active=True).all())
+    ids.update(x.classroom_id for x in TeachingSchedule.query.filter_by(teacher_id=current_user.id).all())
     return list(ids)
 
 def teacher_filter(model):
     if current_user.role == 'admin':
         return model.query
     if model.__name__ == 'Subject':
-        return model.query.filter(model.is_active==True, model.id.in_(teacher_subject_ids() or [-1]))
+        return model.query.filter(db.or_(model.is_active == True, model.is_active.is_(None)), model.id.in_(teacher_subject_ids() or [-1]))
     if model.__name__ == 'Classroom':
-        return model.query.filter(model.is_active==True, model.id.in_(teacher_classroom_ids() or [-1]))
+        return model.query.filter(db.or_(model.is_active == True, model.is_active.is_(None)), model.id.in_(teacher_classroom_ids() or [-1]))
     return model.query.filter_by(teacher_id=current_user.id)
 
 
@@ -4059,10 +4064,38 @@ def ensure_schema_columns():
                 conn.exec_driver_sql("ALTER TABLE classroom_activity ADD COLUMN target_scope VARCHAR(30) DEFAULT 'classroom'")
         conn.commit()
 
-def init_db():
-    db.create_all(); ensure_schema_columns(); seed()
+def sync_schedule_teacher_links():
+    """ซ่อมลิงก์มอบหมายครูจากตารางสอนจริง
 
-if __name__ == '__main__':
+    ปัญหาที่เจอบ่อย: นำเข้า teaching_schedule แล้วมี teacher_id/subject_id/classroom_id ครบ
+    แต่ teacher_subject, teacher_classroom หรือ subject_classroom ไม่มีแถวตามมา
+    ทำให้ครูเข้าระบบแล้วหน้า “รายวิชา” หรือ dropdown ห้อง/วิชาไม่ขึ้น
+    """
+    changed = False
+    for row in TeachingSchedule.query.all():
+        if not TeacherSubject.query.filter_by(teacher_id=row.teacher_id, subject_id=row.subject_id).first():
+            db.session.add(TeacherSubject(teacher_id=row.teacher_id, subject_id=row.subject_id))
+            changed = True
+        if not TeacherClassroom.query.filter_by(teacher_id=row.teacher_id, classroom_id=row.classroom_id).first():
+            db.session.add(TeacherClassroom(teacher_id=row.teacher_id, classroom_id=row.classroom_id))
+            changed = True
+        if not SubjectClassroom.query.filter_by(subject_id=row.subject_id, classroom_id=row.classroom_id).first():
+            db.session.add(SubjectClassroom(subject_id=row.subject_id, classroom_id=row.classroom_id))
+            changed = True
+        if row.subject and not row.subject.teacher_id:
+            row.subject.teacher_id = row.teacher_id
+            changed = True
+    if changed:
+        db.session.commit()
+
+def init_db():
+    db.create_all(); ensure_schema_columns(); seed(); sync_schedule_teacher_links()
+
+# ให้ Railway/Gunicorn อัปเกรด schema และซ่อมลิงก์ตารางสอนอัตโนมัติเมื่อแอปเริ่มทำงาน
+# ปิดได้ด้วย RUN_STARTUP_INIT=0 ถ้าต้องการจัดการฐานข้อมูลเอง
+if os.environ.get('RUN_STARTUP_INIT', '1') == '1':
     with app.app_context():
         init_db()
+
+if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=int(os.environ.get('PORT', 8000)))
