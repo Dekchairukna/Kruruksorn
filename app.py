@@ -1,4 +1,5 @@
 import os
+import uuid
 from datetime import datetime, date, time, timedelta
 import calendar as py_calendar
 from functools import wraps
@@ -237,6 +238,7 @@ class User(db.Model, UserMixin):
     birth_date = db.Column(db.String(20))
     must_change_password = db.Column(db.Boolean, default=False)
     position = db.Column(db.String(80), default='ครู')
+    is_active = db.Column(db.Boolean, default=True)
 
     def set_password(self, password):
         self.password_hash = generate_password_hash(str(password))
@@ -524,6 +526,7 @@ class GradeSetting(db.Model):
     worksheet_weight = db.Column(db.Float, default=30)
     quiz_weight = db.Column(db.Float, default=20)
     attendance_weight = db.Column(db.Float, default=10)
+    classwork_weight = db.Column(db.Float, default=10)
     midterm_weight = db.Column(db.Float, default=20)
     final_weight = db.Column(db.Float, default=20)
     subject = db.relationship('Subject')
@@ -535,6 +538,39 @@ class ManualScore(db.Model):
     midterm = db.Column(db.Float, default=0)
     final = db.Column(db.Float, default=0)
     behavior = db.Column(db.Float, default=0)
+
+class ClassworkScoreItem(db.Model):
+    """หัวข้อคะแนนรายคาบ เช่น แบบฝึกในคาบ/ทักษะปฏิบัติ/ตรวจงานระหว่างเรียน
+
+    ผูกกับรายวิชา ห้อง วันที่ และคาบเรียน เพื่อให้ครูกรอกคะแนนในหน้าเช็กชื่อ
+    แล้วนำคะแนนรวมไปคำนวณในสมุดคะแนนและตัดเกรดได้
+    """
+    id = db.Column(db.Integer, primary_key=True)
+    subject_id = db.Column(db.Integer, db.ForeignKey('subject.id'), nullable=False)
+    classroom_id = db.Column(db.Integer, db.ForeignKey('classroom.id'), nullable=False)
+    schedule_id = db.Column(db.Integer, db.ForeignKey('teaching_schedule.id'), nullable=True)
+    lesson_id = db.Column(db.Integer, db.ForeignKey('lesson.id'), nullable=True)
+    date = db.Column(db.Date, nullable=False)
+    period_no = db.Column(db.Integer, nullable=True)
+    title = db.Column(db.String(255), nullable=False)
+    max_score = db.Column(db.Float, default=10)
+    score_type = db.Column(db.String(50), default='classwork')
+    created_by_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    subject = db.relationship('Subject')
+    classroom = db.relationship('Classroom')
+    schedule = db.relationship('TeachingSchedule')
+    lesson = db.relationship('Lesson')
+    created_by = db.relationship('User')
+
+class ClassworkScore(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    item_id = db.Column(db.Integer, db.ForeignKey('classwork_score_item.id'), nullable=False)
+    student_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    score = db.Column(db.Float, default=0)
+    note = db.Column(db.String(255), default='')
+    item = db.relationship('ClassworkScoreItem')
+    student = db.relationship('User')
 
 @login_manager.user_loader
 def load_user(user_id):
@@ -702,6 +738,24 @@ def get_manual_score(subject_id, student_id):
         db.session.flush()
     return row
 
+def calculate_classwork_percent(subject_id, classroom_id, student_id):
+    items = ClassworkScoreItem.query.filter_by(subject_id=subject_id, classroom_id=classroom_id).all()
+    if not items:
+        return 100, 0, 0
+    item_ids = [x.id for x in items]
+    scores = {x.item_id: x for x in ClassworkScore.query.filter(
+        ClassworkScore.item_id.in_(item_ids),
+        ClassworkScore.student_id == student_id
+    ).all()}
+    max_total = sum(max(0, float(x.max_score or 0)) for x in items)
+    if max_total <= 0:
+        return 100, 0, 0
+    raw_total = 0
+    for item in items:
+        row = scores.get(item.id)
+        raw_total += min(max(float(row.score or 0), 0), float(item.max_score or 0)) if row else 0
+    return (raw_total / max_total) * 100, raw_total, max_total
+
 def calculate_grade_row(subject, room, student):
     setting = get_grade_setting(subject.id)
     statuses = AssignmentStatus.query.join(Assignment).filter(
@@ -724,19 +778,24 @@ def calculate_grade_row(subject, room, student):
     bad_units = absent + skipped + leave + (late * 0.5)
     attendance_percent = max(0, 100 - (bad_units * 5)) if total_att else 100
     manual = get_manual_score(subject.id, student.id)
+    classwork_percent, classwork_raw, classwork_max = calculate_classwork_percent(subject.id, room.id, student.id)
+    classwork_weight = float(getattr(setting, 'classwork_weight', 0) or 0)
     worksheet_score = completion_percent * (setting.worksheet_weight / 100)
     quiz_score = quiz_avg * (setting.quiz_weight / 100)
     attendance_score = attendance_percent * (setting.attendance_weight / 100)
+    classwork_score = classwork_percent * (classwork_weight / 100)
     midterm_score = min(100, manual.midterm or 0) * (setting.midterm_weight / 100)
     final_score = min(100, manual.final or 0) * (setting.final_weight / 100)
-    behavior_score = min(100, manual.behavior or 0) * (max(0, 100 - (setting.worksheet_weight+setting.quiz_weight+setting.attendance_weight+setting.midterm_weight+setting.final_weight)) / 100)
-    total = min(100, worksheet_score + quiz_score + attendance_score + midterm_score + final_score + behavior_score)
+    used_weight = setting.worksheet_weight + setting.quiz_weight + setting.attendance_weight + classwork_weight + setting.midterm_weight + setting.final_weight
+    behavior_score = min(100, manual.behavior or 0) * (max(0, 100 - used_weight) / 100)
+    total = min(100, worksheet_score + quiz_score + attendance_score + classwork_score + midterm_score + final_score + behavior_score)
     return {
         'student': student, 'quiz_avg': quiz_avg, 'complete': complete, 'total_assignments': len(statuses),
         'present': present, 'absent': absent, 'leave': leave, 'late': late, 'activity': activity,
         'attendance_percent': round(attendance_percent, 2), 'manual': manual, 'skipped': skipped,
+        'classwork_percent': round(classwork_percent, 2), 'classwork_raw': round(classwork_raw, 2), 'classwork_max': round(classwork_max, 2),
         'worksheet_score': round(worksheet_score,2), 'quiz_score': round(quiz_score,2), 'attendance_score': round(attendance_score,2),
-        'midterm_score': round(midterm_score,2), 'final_score': round(final_score,2), 'behavior_score': round(behavior_score,2),
+        'classwork_score': round(classwork_score,2), 'midterm_score': round(midterm_score,2), 'final_score': round(final_score,2), 'behavior_score': round(behavior_score,2),
         'total': round(total,2), 'grade': grade_from_score(total)
     }
 
@@ -850,10 +909,13 @@ def login():
         username = request.form.get('username','').strip()
         password = request.form.get('password','')
         user = User.query.filter_by(username=username).first()
-        if user and user.check_password(password):
+        if user and (not getattr(user, 'is_active', True)):
+            flash('บัญชีนี้ถูกปิดใช้งานแล้ว กรุณาติดต่อผู้ดูแลระบบ', 'danger')
+        elif user and user.check_password(password):
             login_user(user)
             return redirect(url_for('index'))
-        flash('ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง', 'danger')
+        else:
+            flash('ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง', 'danger')
     return render_template('login.html')
 
 @app.route('/logout')
@@ -972,7 +1034,7 @@ def build_calendar_dashboard(year=2026, months=(5,6,7,8,9,10), teacher_id=None, 
 def admin_dashboard():
     active_semester = get_active_semester()
     cal_months, upcoming, today_position = build_calendar_dashboard(semester=active_semester)
-    return render_template('admin_dashboard.html', users=User.query.count(), teachers=User.query.filter_by(role='teacher').count(), students=User.query.filter_by(role='student').count(), cal_months=cal_months, upcoming=upcoming, today_position=today_position, active_semester=active_semester, period_info=current_period_info(local_today()))
+    return render_template('admin_dashboard.html', users=active_users_query().count(), teachers=active_teachers_query().count(), students=active_students_query().count(), cal_months=cal_months, upcoming=upcoming, today_position=today_position, active_semester=active_semester, period_info=current_period_info(local_today()))
 
 @app.route('/teacher')
 @login_required
@@ -1028,7 +1090,7 @@ def users():
         db.session.commit()
         flash('เพิ่มผู้ใช้แล้ว', 'success')
         return redirect(url_for('users'))
-    return render_template('users.html', users=User.query.order_by(User.role, User.full_name).all())
+    return render_template('users.html', users=User.query.order_by(User.is_active.desc(), User.role, User.full_name).all())
 
 @app.route('/users/<int:user_id>/edit', methods=['GET','POST'])
 @login_required
@@ -1059,14 +1121,106 @@ def user_edit(user_id):
         return redirect(url_for('users'))
     return render_template('user_form.html', u=u)
 
+def user_has_related_data(user_id):
+    checks = [
+        ('ห้องประจำชั้น', Classroom.query.filter_by(teacher_id=user_id).first()),
+        ('การผูกครูกับห้อง', TeacherClassroom.query.filter_by(teacher_id=user_id).first()),
+        ('นักเรียนในห้อง', ClassroomStudent.query.filter_by(student_id=user_id).first()),
+        ('รายวิชาที่รับผิดชอบ', Subject.query.filter_by(teacher_id=user_id).first()),
+        ('การผูกครูกับรายวิชา', TeacherSubject.query.filter_by(teacher_id=user_id).first()),
+        ('งานที่สั่ง', Assignment.query.filter_by(teacher_id=user_id).first()),
+        ('สถานะงานนักเรียน', AssignmentStatus.query.filter_by(student_id=user_id).first()),
+        ('คำตอบใบงาน', WorksheetAnswer.query.filter_by(student_id=user_id).first()),
+        ('คำตอบแบบทดสอบ', QuizAnswer.query.filter_by(student_id=user_id).first()),
+        ('ตารางสอน', TeachingSchedule.query.filter_by(teacher_id=user_id).first()),
+        ('ปฏิทินครู', CalendarEvent.query.filter_by(teacher_id=user_id).first()),
+        ('เช็กชื่อกิจกรรม', ActivityAttendance.query.filter_by(student_id=user_id).first()),
+        ('เช็กชื่อรายวิชา', Attendance.query.filter_by(student_id=user_id).first()),
+        ('ประวัติผู้เช็กชื่อ', Attendance.query.filter_by(checked_by_id=user_id).first()),
+        ('ประวัติสอนแทน', Attendance.query.filter_by(substitute_for_teacher_id=user_id).first()),
+        ('คะแนนรายวิชา', ManualScore.query.filter_by(student_id=user_id).first()),
+    ]
+    return [name for name, found in checks if found is not None]
+
+def detach_teacher_before_delete(user_id):
+    """ปลด FK ของครูออกก่อนลบ User โดยไม่ล้างประวัติการเช็กชื่อ/คะแนน
+
+    แนวคิด: ครูเป็นบัญชีล็อกอิน จึงลบได้ แต่ข้อมูลประวัติยังอยู่กับรายวิชา/ห้อง/นักเรียน
+    - ตารางผูกครู-วิชา/ครู-ห้อง: ลบเฉพาะแถวผูก
+    - ห้อง/รายวิชาประจำ: ตั้ง teacher_id = NULL
+    - เช็กชื่อที่อ้างคนเช็ก/สอนแทน: ตั้งเป็น NULL
+    - ตารางสอนของครูที่ถูกลบ: ปลด attendance.schedule_id ก่อน แล้วลบตารางสอน
+    - งานที่เคยสั่ง: โอนไปให้ admin คนแรก เพื่อไม่ให้ข้อมูลการส่งงานหาย
+    """
+    fallback_admin = User.query.filter(User.role == 'admin', User.id != user_id).order_by(User.id).first()
+    fallback_id = fallback_admin.id if fallback_admin else current_user.id
+
+    TeacherSubject.query.filter_by(teacher_id=user_id).delete(synchronize_session=False)
+    TeacherClassroom.query.filter_by(teacher_id=user_id).delete(synchronize_session=False)
+
+    Subject.query.filter_by(teacher_id=user_id).update({Subject.teacher_id: None}, synchronize_session=False)
+    Classroom.query.filter_by(teacher_id=user_id).update({Classroom.teacher_id: None}, synchronize_session=False)
+    CalendarEvent.query.filter_by(teacher_id=user_id).update({CalendarEvent.teacher_id: None}, synchronize_session=False)
+
+    Attendance.query.filter_by(checked_by_id=user_id).update({Attendance.checked_by_id: None}, synchronize_session=False)
+    Attendance.query.filter_by(substitute_for_teacher_id=user_id).update({Attendance.substitute_for_teacher_id: None}, synchronize_session=False)
+
+    # Assignment.teacher_id ยังเป็น NOT NULL ในฐานข้อมูลเดิม จึงโอนไป admin แทนการตั้ง NULL
+    Assignment.query.filter_by(teacher_id=user_id).update({Assignment.teacher_id: fallback_id}, synchronize_session=False)
+
+    schedule_ids = [x.id for x in TeachingSchedule.query.with_entities(TeachingSchedule.id).filter_by(teacher_id=user_id).all()]
+    if schedule_ids:
+        Attendance.query.filter(Attendance.schedule_id.in_(schedule_ids)).update({Attendance.schedule_id: None}, synchronize_session=False)
+        TeachingSchedule.query.filter(TeachingSchedule.id.in_(schedule_ids)).delete(synchronize_session=False)
+
+
 @app.route('/users/<int:user_id>/delete', methods=['POST'])
 @login_required
 @role_required('admin')
 def user_delete(user_id):
     if user_id == current_user.id:
-        flash('ไม่สามารถลบบัญชีที่กำลังใช้งานได้', 'danger'); return redirect(url_for('users'))
+        flash('ไม่สามารถลบบัญชีที่กำลังใช้งานได้', 'danger')
+        return redirect(url_for('users'))
     u = User.query.get_or_404(user_id)
-    db.session.delete(u); db.session.commit(); flash('ลบผู้ใช้แล้ว', 'success')
+
+    # ถ้าเป็นครู ให้ปลดการผูกออกก่อน แล้วลบบัญชีได้จริง
+    # ประวัติการเช็กชื่อยังอยู่ เพราะอยู่กับ subject/classroom/student/date ไม่ได้ลบ attendance
+    if u.role == 'teacher':
+        old_username = u.username
+        detach_teacher_before_delete(user_id)
+        db.session.delete(u)
+        db.session.commit()
+        flash(f'ลบไอดีครู {old_username} แล้ว และปลดการผูกกับรายวิชา/ห้อง/ตารางสอนเรียบร้อย โดยไม่ลบประวัติเช็กชื่อเดิม', 'success')
+        return redirect(url_for('users'))
+
+    related = user_has_related_data(user_id)
+    if related:
+        # นักเรียน/แอดมินที่มีประวัติส่งงาน คะแนน หรือเช็กชื่อ ให้ปิดใช้งานแทน เพื่อกันข้อมูลนักเรียนหาย
+        old_username = u.username
+        u.is_active = False
+        if not u.username.startswith('deleted_'):
+            u.username = f'deleted_{u.id}_{u.username}'[:100]
+        u.set_password(uuid.uuid4().hex)
+        db.session.commit()
+        flash(f'บัญชี {old_username} มีข้อมูลผูกอยู่ ({", ".join(related[:3])}{"..." if len(related) > 3 else ""}) จึงปิดใช้งานแทนการลบถาวร และสามารถสร้าง username เดิมใหม่ได้แล้ว', 'warning')
+    else:
+        db.session.delete(u)
+        db.session.commit()
+        flash('ลบผู้ใช้แล้ว', 'success')
+    return redirect(url_for('users'))
+
+@app.route('/users/<int:user_id>/restore', methods=['POST'])
+@login_required
+@role_required('admin')
+def user_restore(user_id):
+    u = User.query.get_or_404(user_id)
+    u.is_active = True
+    if u.username.startswith(f'deleted_{u.id}_'):
+        original = u.username.replace(f'deleted_{u.id}_', '', 1)
+        if not User.query.filter(User.username == original, User.id != u.id).first():
+            u.username = original
+    db.session.commit()
+    flash('เปิดใช้งานบัญชีแล้ว', 'success')
     return redirect(url_for('users'))
 
 
@@ -1090,7 +1244,7 @@ def classrooms():
         return redirect(url_for('classrooms'))
     rooms = teacher_filter(Classroom).order_by(Classroom.name).all()
     teacher_room_map = build_classroom_teacher_map([r.id for r in rooms])
-    return render_template('classrooms.html', rooms=rooms, teachers=User.query.filter_by(role='teacher').order_by(User.full_name).all(), teacher_room_links=TeacherClassroom.query.all(), teacher_room_map=teacher_room_map)
+    return render_template('classrooms.html', rooms=rooms, teachers=active_teachers_query().order_by(User.full_name).all(), teacher_room_links=TeacherClassroom.query.all(), teacher_room_map=teacher_room_map)
 
 @app.route('/classrooms/<int:classroom_id>/edit', methods=['GET','POST'])
 @login_required
@@ -1107,7 +1261,7 @@ def classroom_edit(classroom_id):
         db.session.commit(); flash('แก้ไขห้องเรียนแล้ว', 'success')
         return redirect(url_for('classrooms'))
     assigned_activity_teacher_ids = {x.teacher_id for x in TeacherClassroom.query.filter_by(classroom_id=room.id).all()}
-    return render_template('classroom_form.html', room=room, teachers=User.query.filter_by(role='teacher').order_by(User.full_name).all(), assigned_activity_teacher_ids=assigned_activity_teacher_ids)
+    return render_template('classroom_form.html', room=room, teachers=active_teachers_query().order_by(User.full_name).all(), assigned_activity_teacher_ids=assigned_activity_teacher_ids)
 
 def classroom_has_history(classroom_id):
     return any([
@@ -1250,7 +1404,7 @@ def teacher_assignments():
         db.session.commit(); flash('บันทึกการมอบหมายแล้ว ครูจะเห็นเฉพาะวิชา/ห้องที่ได้รับมอบหมาย', 'success')
         return redirect(url_for('teacher_assignments', teacher_id=teacher_id))
     selected_teacher_id = request.args.get('teacher_id', type=int)
-    teachers = User.query.filter_by(role='teacher').order_by(User.full_name).all()
+    teachers = active_teachers_query().order_by(User.full_name).all()
     subjects = Subject.query.filter_by(is_active=True).order_by(Subject.name).all()
     classrooms = Classroom.query.filter_by(is_active=True).order_by(Classroom.name).all()
     assigned_subject_ids = set()
@@ -2102,7 +2256,7 @@ def subjects():
         db.session.commit()
         flash('สร้างรายวิชาแล้ว', 'success')
         return redirect(url_for('subjects'))
-    return render_template('subjects.html', subjects=teacher_filter(Subject).all(), teachers=User.query.filter_by(role='teacher').all(), classrooms=teacher_filter(Classroom).order_by(Classroom.name).all(), subject_links=TeacherSubject.query.all(), classroom_links=SubjectClassroom.query.all())
+    return render_template('subjects.html', subjects=teacher_filter(Subject).all(), teachers=active_teachers_query().all(), classrooms=teacher_filter(Classroom).order_by(Classroom.name).all(), subject_links=TeacherSubject.query.all(), classroom_links=SubjectClassroom.query.all())
 
 
 @app.route('/subjects/<int:subject_id>/classrooms/add', methods=['POST'])
@@ -2159,7 +2313,7 @@ def subject_edit(subject_id):
             subject.teacher_id = int(teacher_id_raw) if teacher_id_raw else None
         db.session.commit(); flash('แก้ไขรายวิชาแล้ว', 'success')
         return redirect(url_for('subjects'))
-    return render_template('subject_form.html', subject=subject, teachers=User.query.filter_by(role='teacher').all())
+    return render_template('subject_form.html', subject=subject, teachers=active_teachers_query().all())
 
 def subject_has_history(subject_id):
     return any([
@@ -2881,7 +3035,7 @@ def build_schedule_grid(rows):
 @login_required
 @role_required('teacher','admin','student')
 def schedule():
-    teachers = User.query.filter_by(role='teacher').order_by(User.full_name).all()
+    teachers = active_teachers_query().order_by(User.full_name).all()
     day_names = ['จันทร์','อังคาร','พุธ','พฤหัสบดี','ศุกร์','เสาร์','อาทิตย์']
     selected_teacher_id = request.args.get('teacher_id', type=int)
 
@@ -3975,6 +4129,15 @@ def attendance(subject_id, classroom_id):
 
     date_headers, att_data, summary = build_attendance_summary(subject.id, room.id, links)
     selected_period_text = ', '.join(str(x) for x in period_block if x) if period_block else ''
+    score_q = ClassworkScoreItem.query.filter_by(subject_id=subject.id, classroom_id=room.id, date=att_date)
+    if period_block:
+        score_q = score_q.filter(ClassworkScoreItem.period_no.in_(period_block))
+    classwork_items = score_q.order_by(ClassworkScoreItem.period_no.asc(), ClassworkScoreItem.id.asc()).all()
+    classwork_scores = {}
+    if classwork_items:
+        rows = ClassworkScore.query.filter(ClassworkScore.item_id.in_([x.id for x in classwork_items])).all()
+        for row in rows:
+            classwork_scores.setdefault(row.item_id, {})[row.student_id] = row
     return render_template(
         'attendance.html',
         subject=subject, room=room, links=links, old=old, att_date=att_date,
@@ -3982,9 +4145,95 @@ def attendance(subject_id, classroom_id):
         summary=summary, statuses=ATTENDANCE_STATUSES, period_no=period_no, schedule_id=from_schedule_id,
         period_block=period_block, substitute_mode=substitute_mode, sub_teacher_id=sub_teacher_id,
         date_headers=date_headers, att_data=att_data, status_symbols=ATTENDANCE_SYMBOLS,
+        classwork_items=classwork_items, classwork_scores=classwork_scores,
         attendance_scope=attendance_scope, attendance_scope_label=attendance_scope_label(subject, room),
         show_classroom_column=show_classroom_column
     )
+
+
+@app.route('/attendance/<int:subject_id>/<int:classroom_id>/class-score', methods=['POST'])
+@login_required
+@role_required('teacher','admin')
+def attendance_class_score(subject_id, classroom_id):
+    subject = Subject.query.get_or_404(subject_id); room = Classroom.query.get_or_404(classroom_id)
+    substitute_mode = request.form.get('substitute') == '1'
+    sub_teacher_id = request.form.get('sub_teacher_id', type=int)
+    if not substitute_mode and (not owns_subject(subject) or not owns_classroom(room)):
+        return deny_redirect('records_center')
+    score_date = datetime.strptime(request.form.get('date', local_today().isoformat()), '%Y-%m-%d').date()
+    period_no = request.form.get('period_no', type=int)
+    schedule_id = request.form.get('schedule_id', type=int)
+    item_id = request.form.get('item_id', type=int)
+    title = (request.form.get('title') or '').strip() or f'คะแนนในคาบ {period_no or ""}'.strip()
+    try:
+        max_score = float(request.form.get('max_score') or 10)
+    except Exception:
+        max_score = 10
+    max_score = max(0.1, max_score)
+
+    if item_id:
+        item = ClassworkScoreItem.query.filter_by(id=item_id, subject_id=subject.id, classroom_id=room.id).first_or_404()
+        item.title = title
+        item.max_score = max_score
+        item.period_no = period_no
+        item.schedule_id = schedule_id
+    else:
+        lesson_id = None
+        if schedule_id:
+            sched = TeachingSchedule.query.get(schedule_id)
+            lesson_id = sched.lesson_id if sched else None
+        item = ClassworkScoreItem(
+            subject_id=subject.id,
+            classroom_id=room.id,
+            schedule_id=schedule_id,
+            lesson_id=lesson_id,
+            date=score_date,
+            period_no=period_no,
+            title=title,
+            max_score=max_score,
+            created_by_id=current_user.id,
+        )
+        db.session.add(item)
+        db.session.flush()
+
+    links = attendance_student_links(subject, room)
+    for link in links:
+        raw = request.form.get(f'score_{link.student_id}', '').strip()
+        note = request.form.get(f'note_{link.student_id}', '').strip()
+        row = ClassworkScore.query.filter_by(item_id=item.id, student_id=link.student_id).first()
+        if raw == '' and not note:
+            # ว่างไว้ = ยังไม่ให้คะแนน ไม่ลบคะแนนเดิมเพื่อกันพลาด
+            continue
+        try:
+            score = float(raw or 0)
+        except Exception:
+            score = 0
+        score = max(0, min(score, max_score))
+        if not row:
+            row = ClassworkScore(item_id=item.id, student_id=link.student_id)
+            db.session.add(row)
+        row.score = score
+        row.note = note
+    db.session.commit()
+    flash('บันทึกคะแนนในคาบแล้ว คะแนนนี้จะถูกรวมในสมุดคะแนนตามน้ำหนัก “คะแนนในคาบ”', 'success')
+    return redirect(url_for('attendance', subject_id=subject.id, classroom_id=room.id, date=score_date.isoformat(), period_no=period_no, schedule_id=schedule_id, substitute='1' if substitute_mode else None, sub_teacher_id=sub_teacher_id))
+
+@app.route('/attendance/<int:subject_id>/<int:classroom_id>/class-score/<int:item_id>/delete', methods=['POST'])
+@login_required
+@role_required('teacher','admin')
+def attendance_class_score_delete(subject_id, classroom_id, item_id):
+    subject = Subject.query.get_or_404(subject_id); room = Classroom.query.get_or_404(classroom_id)
+    if not owns_subject(subject) or not owns_classroom(room):
+        return deny_redirect('records_center')
+    item = ClassworkScoreItem.query.filter_by(id=item_id, subject_id=subject.id, classroom_id=room.id).first_or_404()
+    back_date = item.date
+    period_no = item.period_no
+    schedule_id = item.schedule_id
+    ClassworkScore.query.filter_by(item_id=item.id).delete(synchronize_session=False)
+    db.session.delete(item)
+    db.session.commit()
+    flash('ลบหัวข้อคะแนนในคาบแล้ว', 'success')
+    return redirect(url_for('attendance', subject_id=subject.id, classroom_id=room.id, date=back_date.isoformat(), period_no=period_no, schedule_id=schedule_id))
 
 @app.route('/attendance/<int:subject_id>/<int:classroom_id>/delete-day', methods=['POST'])
 @login_required
@@ -4056,7 +4305,7 @@ def attendance_print(subject_id, classroom_id):
 @login_required
 @role_required('teacher','admin')
 def substitute_schedule():
-    teachers = User.query.filter_by(role='teacher').order_by(User.full_name).all()
+    teachers = active_teachers_query().order_by(User.full_name).all()
     teacher_id = request.args.get('teacher_id', type=int)
     selected_teacher = User.query.get(teacher_id) if teacher_id else None
     day_names = ['จันทร์','อังคาร','พุธ','พฤหัสบดี','ศุกร์','เสาร์','อาทิตย์']
@@ -4077,6 +4326,7 @@ def grades(subject_id, classroom_id):
         setting.worksheet_weight = float(request.form.get('worksheet_weight', setting.worksheet_weight))
         setting.quiz_weight = float(request.form.get('quiz_weight', setting.quiz_weight))
         setting.attendance_weight = float(request.form.get('attendance_weight', setting.attendance_weight))
+        setting.classwork_weight = float(request.form.get('classwork_weight', getattr(setting, 'classwork_weight', 0) or 0))
         setting.midterm_weight = float(request.form.get('midterm_weight', setting.midterm_weight))
         setting.final_weight = float(request.form.get('final_weight', setting.final_weight))
         for link in links:
@@ -4089,7 +4339,7 @@ def grades(subject_id, classroom_id):
     rows=[]
     for link in links:
         rows.append(calculate_grade_row(subject, room, link.student))
-    total_weight = setting.worksheet_weight + setting.quiz_weight + setting.attendance_weight + setting.midterm_weight + setting.final_weight
+    total_weight = setting.worksheet_weight + setting.quiz_weight + setting.attendance_weight + (getattr(setting, 'classwork_weight', 0) or 0) + setting.midterm_weight + setting.final_weight
     return render_template('grades.html', subject=subject, room=room, rows=rows, setting=setting, total_weight=total_weight)
 
 @app.route('/export_grades/<int:subject_id>/<int:classroom_id>')
@@ -4099,11 +4349,11 @@ def export_grades(subject_id, classroom_id):
     subject = Subject.query.get_or_404(subject_id); room = Classroom.query.get_or_404(classroom_id)
     if not owns_subject(subject) or not owns_classroom(room): return deny_redirect('records_center')
     wb=Workbook(); ws=wb.active; ws.title='grades'
-    ws.append(['ชื่อ','แบบทดสอบเฉลี่ย','เรียนจบ/งานทั้งหมด','มา','ขาด','โดดเรียน','ลา','มาสาย','กิจกรรม','กลางภาค','ปลายภาค','จิตพิสัย','คะแนนรวม','เกรด'])
+    ws.append(['ชื่อ','แบบทดสอบเฉลี่ย','เรียนจบ/งานทั้งหมด','คะแนนในคาบ','มา','ขาด','โดดเรียน','ลา','มาสาย','กิจกรรม','กลางภาค','ปลายภาค','จิตพิสัย','คะแนนรวม','เกรด'])
     links = ClassroomStudent.query.filter_by(classroom_id=room.id).join(User, ClassroomStudent.student_id == User.id).order_by(User.username.asc(), User.full_name.asc()).all()
     for link in links:
         r=calculate_grade_row(subject, room, link.student)
-        ws.append([r['student'].full_name, r['quiz_avg'], f"{r['complete']}/{r['total_assignments']}", r['present'], r['absent'], r['skipped'], r['leave'], r['late'], r['activity'], r['manual'].midterm, r['manual'].final, r['manual'].behavior, r['total'], r['grade']])
+        ws.append([r['student'].full_name, r['quiz_avg'], f"{r['complete']}/{r['total_assignments']}", f"{r['classwork_raw']}/{r['classwork_max']} ({r['classwork_percent']}%)", r['present'], r['absent'], r['skipped'], r['leave'], r['late'], r['activity'], r['manual'].midterm, r['manual'].final, r['manual'].behavior, r['total'], r['grade']])
     path=os.path.join(UPLOAD_DIR, f'grades_{subject_id}_{classroom_id}.xlsx'); wb.save(path)
     return send_file(path, as_attachment=True)
 
@@ -4257,6 +4507,7 @@ def ensure_schema_columns():
 
             add_column('subject', 'is_active', 'BOOLEAN DEFAULT 1')
             add_column('user', 'position', "VARCHAR(80) DEFAULT 'ครู'")
+            add_column('user', 'is_active', 'BOOLEAN DEFAULT 1')
             add_column('classroom', 'is_active', 'BOOLEAN DEFAULT 1')
             add_column('worksheet', 'file_path', "VARCHAR(500) DEFAULT ''")
             add_column('worksheet', 'original_file_name', "VARCHAR(255) DEFAULT ''")
@@ -4267,6 +4518,7 @@ def ensure_schema_columns():
             add_column('attendance', 'schedule_id', 'INTEGER')
             add_column('attendance', 'checked_by_id', 'INTEGER')
             add_column('attendance', 'substitute_for_teacher_id', 'INTEGER')
+            add_column('grade_setting', 'classwork_weight', 'FLOAT DEFAULT 10')
             add_column('classroom_activity', 'target_scope', "VARCHAR(30) DEFAULT 'classroom'")
             conn.commit()
             return
@@ -4292,6 +4544,7 @@ def ensure_schema_columns():
 
         add_column('subject', 'is_active', 'BOOLEAN DEFAULT 1', 'BOOLEAN DEFAULT TRUE')
         add_column('user', 'position', "VARCHAR(80) DEFAULT 'ครู'", "VARCHAR(80) DEFAULT 'ครู'")
+        add_column('user', 'is_active', 'BOOLEAN DEFAULT 1', 'BOOLEAN DEFAULT TRUE')
         add_column('classroom', 'is_active', 'BOOLEAN DEFAULT 1', 'BOOLEAN DEFAULT TRUE')
         add_column('worksheet', 'file_path', "VARCHAR(500) DEFAULT ''", "VARCHAR(500) DEFAULT ''")
         add_column('worksheet', 'original_file_name', "VARCHAR(255) DEFAULT ''", "VARCHAR(255) DEFAULT ''")
@@ -4302,6 +4555,7 @@ def ensure_schema_columns():
         add_column('attendance', 'schedule_id', 'INTEGER', 'INTEGER')
         add_column('attendance', 'checked_by_id', 'INTEGER', 'INTEGER')
         add_column('attendance', 'substitute_for_teacher_id', 'INTEGER', 'INTEGER')
+        add_column('grade_setting', 'classwork_weight', 'FLOAT DEFAULT 10', 'DOUBLE PRECISION DEFAULT 10')
         add_column('classroom_activity', 'target_scope', "VARCHAR(30) DEFAULT 'classroom'", "VARCHAR(30) DEFAULT 'classroom'")
         conn.commit()
 

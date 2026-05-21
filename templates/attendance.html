@@ -21,13 +21,18 @@
 <section class="card attendance-check-card">
   <div class="attendance-toolbar view-date-toolbar">
     <form method="get" class="date-view-form">
-      {% if period_no %}<input type="hidden" name="period_no" value="{{ period_no }}">{% endif %}
       {% if schedule_id %}<input type="hidden" name="schedule_id" value="{{ schedule_id }}">{% endif %}
       {% if substitute_mode %}<input type="hidden" name="substitute" value="1"><input type="hidden" name="sub_teacher_id" value="{{ sub_teacher_id or '' }}">{% endif %}
-      <label class="date-input">เลือกวันที่ดู/แก้ไข
+      <label class="date-input">เลือกวันที่เช็กย้อนหลัง/แก้ไข
         <input name="date" type="date" value="{{ att_date.isoformat() if att_date else '' }}" required>
       </label>
-      <button type="submit" class="btn secondary small">ดูวันที่นี้</button>
+      <label class="date-input">คาบเรียน
+        <select name="period_no">
+          <option value="">ทุกคาบ/ไม่ระบุ</option>
+          {% for p in range(1,9) %}<option value="{{ p }}" {% if period_no == p %}selected{% endif %}>คาบ {{ p }}</option>{% endfor %}
+        </select>
+      </label>
+      <button type="submit" class="btn secondary small">เปิดเช็กย้อนหลัง/แก้ไข</button>
     </form>
   </div>
 
@@ -88,6 +93,86 @@
       <button class="danger-btn">ลบเช็กชื่อวันที่นี้</button>
     </form>
   </div>
+</section>
+
+<section class="card classwork-score-card">
+  <div class="section-head-row">
+    <div>
+      <h2>คะแนนในคาบเรียน</h2>
+      <p class="muted">กรอกคะแนนแบบฝึก/ทักษะ/การปฏิบัติในวันที่และคาบนี้ คะแนนจะไปรวมในหน้าสมุดคะแนนตามน้ำหนัก “คะแนนในคาบ”</p>
+    </div>
+    <a class="btn secondary" href="{{ url_for('grades', subject_id=subject.id, classroom_id=room.id) }}">ไปตั้งค่าน้ำหนักคะแนน</a>
+  </div>
+
+  <form method="post" action="{{ url_for('attendance_class_score', subject_id=subject.id, classroom_id=room.id) }}" class="classwork-score-form">
+    <input type="hidden" name="date" value="{{ att_date.isoformat() if att_date else '' }}">
+    <input type="hidden" name="period_no" value="{{ period_no or (period_block[0] if period_block else '') }}">
+    <input type="hidden" name="schedule_id" value="{{ schedule_id or '' }}">
+    {% if substitute_mode %}<input type="hidden" name="substitute" value="1"><input type="hidden" name="sub_teacher_id" value="{{ sub_teacher_id or '' }}">{% endif %}
+    <div class="form-grid">
+      <label>ชื่อหัวข้อคะแนน
+        <input name="title" value="คะแนนปฏิบัติในคาบ{% if period_no %} คาบ {{ period_no }}{% endif %}" required>
+      </label>
+      <label>คะแนนเต็ม
+        <input name="max_score" type="number" step="0.1" min="0.1" value="10" required>
+      </label>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <tr><th>ที่</th><th>นักเรียน</th><th>คะแนน</th><th>หมายเหตุ</th></tr>
+        {% for l in links %}
+        <tr>
+          <td>{{ loop.index }}</td>
+          <td>{{ l.student.full_name }}<br><small class="muted">{{ l.student.username }}{% if show_classroom_column and l.classroom %} · {{ l.classroom.name }}{% endif %}</small></td>
+          <td><input class="score-input" name="score_{{ l.student_id }}" type="number" step="0.1" min="0"></td>
+          <td><input name="note_{{ l.student_id }}" placeholder="เช่น ส่งช้า/ทักษะดี"></td>
+        </tr>
+        {% else %}
+        <tr><td colspan="4">ยังไม่มีนักเรียนในกลุ่มนี้</td></tr>
+        {% endfor %}
+      </table>
+    </div>
+    <button class="btn">บันทึกคะแนนในคาบ</button>
+  </form>
+
+  {% if classwork_items %}
+  <h3>คะแนนที่บันทึกไว้ของวันที่นี้</h3>
+  {% for item in classwork_items %}
+  <form method="post" action="{{ url_for('attendance_class_score', subject_id=subject.id, classroom_id=room.id) }}" class="classwork-score-form saved-score-item">
+    <input type="hidden" name="item_id" value="{{ item.id }}">
+    <input type="hidden" name="date" value="{{ item.date.isoformat() }}">
+    <input type="hidden" name="period_no" value="{{ item.period_no or '' }}">
+    <input type="hidden" name="schedule_id" value="{{ item.schedule_id or '' }}">
+    <div class="form-grid">
+      <label>หัวข้อ
+        <input name="title" value="{{ item.title }}" required>
+      </label>
+      <label>คะแนนเต็ม
+        <input name="max_score" type="number" step="0.1" min="0.1" value="{{ item.max_score }}" required>
+      </label>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <tr><th>ที่</th><th>นักเรียน</th><th>คะแนน / {{ item.max_score }}</th><th>หมายเหตุ</th></tr>
+        {% set item_scores = classwork_scores.get(item.id, {}) %}
+        {% for l in links %}
+        {% set sc = item_scores.get(l.student_id) %}
+        <tr>
+          <td>{{ loop.index }}</td>
+          <td>{{ l.student.full_name }}</td>
+          <td><input class="score-input" name="score_{{ l.student_id }}" type="number" step="0.1" min="0" max="{{ item.max_score }}" value="{{ sc.score if sc else '' }}"></td>
+          <td><input name="note_{{ l.student_id }}" value="{{ sc.note if sc else '' }}"></td>
+        </tr>
+        {% endfor %}
+      </table>
+    </div>
+    <div class="actions-row">
+      <button class="btn">อัปเดตคะแนนหัวข้อนี้</button>
+      <button type="submit" class="danger-btn" formaction="{{ url_for('attendance_class_score_delete', subject_id=subject.id, classroom_id=room.id, item_id=item.id) }}" onclick="return confirm('ลบหัวข้อคะแนนนี้?')">ลบหัวข้อคะแนน</button>
+    </div>
+  </form>
+  {% endfor %}
+  {% endif %}
 </section>
 
 <section class="card attendance-report-card">
