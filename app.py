@@ -616,6 +616,21 @@ def teacher_filter(model):
     return model.query.filter_by(teacher_id=current_user.id)
 
 
+def active_users_query():
+    """คืน query ผู้ใช้ที่ยังใช้งานอยู่เท่านั้น ใช้กับ PostgreSQL/SQLite ได้"""
+    return User.query.filter(db.or_(User.is_active == True, User.is_active.is_(None)))
+
+
+def active_teachers_query():
+    """คืน query ครูที่ยังใช้งานอยู่ สำหรับ dropdown ครู/ตารางสอน/รายวิชา"""
+    return active_users_query().filter(User.role == 'teacher')
+
+
+def active_students_query():
+    """คืน query นักเรียนที่ยังใช้งานอยู่ สำหรับนับ/เลือกนักเรียน"""
+    return active_users_query().filter(User.role == 'student')
+
+
 def owns_subject(subject):
     return current_user.role == 'admin' or subject.teacher_id == current_user.id or TeacherSubject.query.filter_by(teacher_id=current_user.id, subject_id=subject.id).first() is not None
 
