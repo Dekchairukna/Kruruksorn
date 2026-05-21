@@ -2129,6 +2129,120 @@ def subject_delete(subject_id):
     return redirect(url_for('subjects'))
 
 
+@app.route('/subject/<int:subject_id>/download_lesson_import_template')
+@login_required
+@role_required('teacher','admin')
+def download_subject_lesson_import_template(subject_id):
+    subject = Subject.query.get_or_404(subject_id)
+    if not owns_subject(subject):
+        return deny_redirect('subjects')
+    path = os.path.join(BASE_DIR, 'import_templates', 'subject_lessons.xlsx')
+    return send_file(path, as_attachment=True)
+
+
+@app.route('/subject/<int:subject_id>/import_lessons_excel', methods=['POST'])
+@login_required
+@role_required('teacher','admin')
+def subject_import_lessons_excel(subject_id):
+    subject = Subject.query.get_or_404(subject_id)
+    if not owns_subject(subject):
+        return deny_redirect('subjects')
+    file = request.files.get('file')
+    if not file or not file.filename:
+        flash('กรุณาเลือกไฟล์ Excel สำหรับนำเข้าหน่วย/บทเรียน', 'danger')
+        return redirect(url_for('subject_detail', subject_id=subject.id))
+    try:
+        wb = load_workbook(file)
+    except Exception:
+        flash('เปิดไฟล์ Excel ไม่สำเร็จ กรุณาใช้ไฟล์ .xlsx', 'danger')
+        return redirect(url_for('subject_detail', subject_id=subject.id))
+
+    # รองรับทั้งชีตเดียว LessonImport และไฟล์เดิมที่แยก Units / Lessons
+    rows, h = sheet_rows(wb, ['LessonImport','บทเรียนรายวิชา','Lessons','บทเรียน'])
+    imported_units = 0
+    imported_lessons = 0
+    skipped = 0
+
+    for r in rows:
+        unit_title = cell(r,h,'unit_title','unit','หน่วย','ชื่อหน่วย')
+        lesson_title = cell(r,h,'lesson_title','lesson','บทเรียน','ชื่อบทเรียน')
+        if not unit_title and not lesson_title:
+            continue
+        if not unit_title:
+            skipped += 1
+            continue
+
+        unit_title = str(unit_title).strip()
+        unit = Unit.query.filter_by(subject_id=subject.id, title=unit_title).first()
+        if not unit:
+            unit = Unit(subject_id=subject.id, title=unit_title)
+            db.session.add(unit)
+            db.session.flush()
+            imported_units += 1
+
+        indicators = cell(r,h,'indicators','indicator','ตัวชี้วัด','ผลการเรียนรู้')
+        if indicators not in (None, ''):
+            unit.indicators = str(indicators)
+        rp = cell(r,h,'required_periods','periods','จำนวนคาบ','ชั่วโมง')
+        if rp not in (None, ''):
+            try:
+                unit.required_periods = int(float(rp))
+            except Exception:
+                pass
+
+        if lesson_title:
+            lesson_title = str(lesson_title).strip()
+            lesson = Lesson.query.filter_by(unit_id=unit.id, title=lesson_title).first()
+            if not lesson:
+                lesson = Lesson(unit_id=unit.id, title=lesson_title)
+                db.session.add(lesson)
+                imported_lessons += 1
+            objective = cell(r,h,'objective','จุดประสงค์')
+            content = cell(r,h,'content','เนื้อหา','รายละเอียด')
+            media_url = cell(r,h,'media_url','สื่อ','ลิงก์สื่อ')
+            required_minutes = cell(r,h,'required_minutes','minutes','นาที')
+            if objective not in (None, ''):
+                lesson.objective = str(objective)
+            if content not in (None, ''):
+                lesson.content = str(content)
+            if media_url not in (None, ''):
+                lesson.media_url = str(media_url)
+            if required_minutes not in (None, ''):
+                try:
+                    lesson.required_minutes = int(float(required_minutes))
+                except Exception:
+                    pass
+
+    # ถ้าไฟล์เป็นรูปแบบแยก Units ให้เก็บหน่วยจากชีต Units เพิ่มเติมด้วย
+    rows_u, h_u = sheet_rows(wb, ['Units','หน่วยการเรียนรู้','หน่วย'])
+    for r in rows_u:
+        unit_title = cell(r,h_u,'unit_title','unit','หน่วย','ชื่อหน่วย')
+        if not unit_title:
+            continue
+        unit_title = str(unit_title).strip()
+        unit = Unit.query.filter_by(subject_id=subject.id, title=unit_title).first()
+        if not unit:
+            unit = Unit(subject_id=subject.id, title=unit_title)
+            db.session.add(unit)
+            imported_units += 1
+        indicators = cell(r,h_u,'indicators','indicator','ตัวชี้วัด','ผลการเรียนรู้')
+        if indicators not in (None, ''):
+            unit.indicators = str(indicators)
+        rp = cell(r,h_u,'required_periods','periods','จำนวนคาบ','ชั่วโมง')
+        if rp not in (None, ''):
+            try:
+                unit.required_periods = int(float(rp))
+            except Exception:
+                pass
+
+    db.session.commit()
+    msg = f'นำเข้าหน่วย/บทเรียนให้รายวิชา {subject.name} สำเร็จ: หน่วยใหม่ {imported_units} / บทเรียนใหม่ {imported_lessons}'
+    if skipped:
+        msg += f' / ข้าม {skipped} แถว'
+    flash(msg, 'success')
+    return redirect(url_for('subject_detail', subject_id=subject.id))
+
+
 @app.route('/subject/<int:subject_id>', methods=['GET','POST'])
 @login_required
 @role_required('teacher','admin')

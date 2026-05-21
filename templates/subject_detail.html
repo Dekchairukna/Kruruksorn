@@ -1,12 +1,14 @@
-{% extends 'base.html' %}{% block content %}<h1>{{subject.name}}</h1><div class="card"><b>ตรวจความพร้อมตามหน่วยกิต/คาบ</b><p>จำนวนคาบรายวิชา: {{subject.total_periods}}</p></div>{% if current_user.role=='admin' %}
-<section class="card import-card">
-<h2>นำเข้าข้อมูลของรายวิชานี้จาก Excel</h2>
+{% extends 'base.html' %}{% block content %}<h1>{{subject.name}}</h1><div class="card"><b>ตรวจความพร้อมตามหน่วยกิต/คาบ</b><p>จำนวนคาบรายวิชา: {{subject.total_periods}}</p></div><section class="card import-card">
+<h2>นำเข้าหน่วย/บทเรียนของรายวิชานี้จาก Excel</h2>
+<p class="muted">ใช้ไฟล์เดียวเพิ่มได้ทั้งหน่วยการเรียนและบทเรียน โดยระบบจะผูกเข้ากับรายวิชานี้ให้อัตโนมัติ ไม่ต้องพิมพ์ชื่อรายวิชาใน Excel</p>
 <div class="form-row">
-  <form method="post" action="{{ url_for('import_all') }}" enctype="multipart/form-data" class="inline"><input type="hidden" name="kind" value="units"><input type="file" name="file" accept=".xlsx,.xls" required><button>นำเข้าหน่วย</button><a class="btn secondary" href="{{ url_for('download_import_template_kind', kind='units') }}">ตัวอย่าง</a></form>
-  <form method="post" action="{{ url_for('import_all') }}" enctype="multipart/form-data" class="inline"><input type="hidden" name="kind" value="lessons"><input type="file" name="file" accept=".xlsx,.xls" required><button>นำเข้าบทเรียน</button><a class="btn secondary" href="{{ url_for('download_import_template_kind', kind='lessons') }}">ตัวอย่าง</a></form>
+  <form method="post" action="{{ url_for('subject_import_lessons_excel', subject_id=subject.id) }}" enctype="multipart/form-data" class="inline">
+    <input type="file" name="file" accept=".xlsx,.xls" required>
+    <button>นำเข้าหน่วย/บทเรียน</button>
+    <a class="btn secondary" href="{{ url_for('download_subject_lesson_import_template', subject_id=subject.id) }}">ไฟล์ตัวอย่าง</a>
+  </form>
 </div>
 </section>
-{% endif %}
 <div class="quick-actions card">
   <a class="btn" href="{{ url_for('subject_worksheets', subject_id=subject.id) }}">ดู/ตรวจใบงานทั้งหมด</a>
   <span class="muted">กดเข้ารายวิชาแล้วจัดการเช็กชื่อ ใบงาน และคะแนนได้จากหน้านี้</span>
