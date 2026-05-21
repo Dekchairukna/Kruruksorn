@@ -7,7 +7,7 @@
   </div>
   {% if current_user.role in ['teacher','admin'] %}
   <div class="actions-row">
-    <a class="btn secondary" href="{{ url_for('lesson_edit', lesson_id=lesson.id) }}">แก้ไขบทเรียน/แนบไฟล์</a>
+    <a class="btn secondary" href="{{ url_for('unit_lessons', unit_id=lesson.unit_id) }}">กลับไปรายการบทเรียน</a><a class="btn secondary" href="{{ url_for('lesson_edit', lesson_id=lesson.id) }}">แก้ไขบทเรียน/แนบไฟล์</a>
   </div>
   {% endif %}
 </div>

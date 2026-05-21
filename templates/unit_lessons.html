@@ -1,0 +1,52 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>บทเรียนในหน่วย</h1>
+    <p>{{ unit.subject.name }} · {{ unit.title }}</p>
+  </div>
+  <div class="actions-row">
+    <a class="btn secondary" href="{{ url_for('subject_detail', subject_id=unit.subject_id) }}">กลับไปรายวิชา</a>
+    <a class="btn" href="{{ url_for('lesson_create', unit_id=unit.id) }}">+ เพิ่มบทเรียนใหม่</a>
+  </div>
+</div>
+
+<section class="card">
+  <h2>รายการบทเรียนที่มีอยู่แล้ว</h2>
+  <p class="hint">หน้านี้ใช้สำหรับดู เปิด แก้ไข ลบ และต่อยอดใบงาน/แบบทดสอบของบทเรียนเดิมที่นำเข้าจาก Excel หรือเพิ่มเอง</p>
+  <table>
+    <tr>
+      <th style="width:50px;">ลำดับ</th>
+      <th>บทเรียน</th>
+      <th>จุดประสงค์/เนื้อหา</th>
+      <th>ใบงาน</th>
+      <th>แบบทดสอบ</th>
+      <th>ไฟล์</th>
+      <th>จัดการ</th>
+    </tr>
+    {% for lesson, worksheet_count, quiz_count, file_count in lesson_rows %}
+    <tr>
+      <td>{{ loop.index }}</td>
+      <td><b>{{ lesson.title }}</b></td>
+      <td>
+        {% if lesson.objective %}<div><small><b>จุดประสงค์:</b> {{ lesson.objective[:120] }}{% if lesson.objective|length > 120 %}...{% endif %}</small></div>{% endif %}
+        {% if lesson.content %}<div><small><b>เนื้อหา:</b> {{ lesson.content[:120] }}{% if lesson.content|length > 120 %}...{% endif %}</small></div>{% endif %}
+        {% if not lesson.objective and not lesson.content %}<small class="muted">ยังไม่มีรายละเอียด</small>{% endif %}
+      </td>
+      <td>{{ worksheet_count }}</td>
+      <td>{{ quiz_count }}</td>
+      <td>{{ file_count }}</td>
+      <td>
+        <a class="btn small" href="{{ url_for('lesson_detail', lesson_id=lesson.id) }}">เปิดดู</a>
+        <a class="btn secondary small" href="{{ url_for('lesson_edit', lesson_id=lesson.id) }}">แก้ไข</a>
+        <a class="btn small" href="{{ url_for('worksheet_create', lesson_id=lesson.id) }}">+ ใบงาน</a>
+        <a class="btn small" href="{{ url_for('quiz_create', lesson_id=lesson.id) }}">+ แบบทดสอบ</a>
+        <form method="post" action="{{ url_for('lesson_delete', lesson_id=lesson.id) }}" class="inline" onsubmit="return confirm('ลบบทเรียนนี้?')"><button class="danger-btn small">ลบ</button></form>
+      </td>
+    </tr>
+    {% else %}
+    <tr><td colspan="7">ยังไม่มีบทเรียนในหน่วยนี้ กด “+ เพิ่มบทเรียนใหม่” หรือกลับไปรายวิชาเพื่อนำเข้า Excel</td></tr>
+    {% endfor %}
+  </table>
+</section>
+{% endblock %}

@@ -2305,6 +2305,23 @@ def add_lesson_uploads(lesson):
             added += 1
     return added
 
+
+@app.route('/unit/<int:unit_id>/lessons')
+@login_required
+@role_required('teacher','admin')
+def unit_lessons(unit_id):
+    unit = Unit.query.get_or_404(unit_id)
+    if not owns_unit(unit):
+        return deny_redirect('subjects')
+    lessons = Lesson.query.filter_by(unit_id=unit.id).order_by(Lesson.id.asc()).all()
+    lesson_rows = []
+    for lesson in lessons:
+        worksheet_count = Worksheet.query.filter_by(lesson_id=lesson.id).count()
+        quiz_count = Quiz.query.filter_by(lesson_id=lesson.id).count()
+        file_count = LessonFile.query.filter_by(lesson_id=lesson.id).count()
+        lesson_rows.append((lesson, worksheet_count, quiz_count, file_count))
+    return render_template('unit_lessons.html', unit=unit, lesson_rows=lesson_rows)
+
 @app.route('/unit/<int:unit_id>/lesson', methods=['GET','POST'])
 @login_required
 @role_required('teacher','admin')
