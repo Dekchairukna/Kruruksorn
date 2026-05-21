@@ -10,6 +10,7 @@ from werkzeug.utils import secure_filename
 from openpyxl import load_workbook, Workbook
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
+from sqlalchemy import inspect as sa_inspect
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 INSTANCE_DIR = os.path.join(BASE_DIR, 'instance')
@@ -19,7 +20,39 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'krurakson-dev')
-app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', f"sqlite:///{os.path.join(INSTANCE_DIR, 'krurakson.db')}")
+
+def get_database_uri():
+    """เลือกฐานข้อมูลให้ปลอดภัยสำหรับ Railway PostgreSQL
+
+    - Production/Railway ต้องใช้ DATABASE_URL เท่านั้น เพื่อกันเว็บเผลอไปเปิด SQLite ใหม่
+      แล้วดูเหมือนข้อมูลเช็กชื่อหาย
+    - Local dev ถ้าไม่มี DATABASE_URL จะใช้ instance/krurakson.db ได้ตามเดิม
+    """
+    database_url = (
+        os.environ.get('DATABASE_URL')
+        or os.environ.get('POSTGRES_URL')
+        or os.environ.get('POSTGRESQL_URL')
+    )
+    if database_url:
+        # Railway/Heroku บางตัวปล่อย postgres:// แต่ SQLAlchemy รุ่นใหม่ต้องการ postgresql://
+        if database_url.startswith('postgres://'):
+            database_url = database_url.replace('postgres://', 'postgresql://', 1)
+        return database_url
+
+    running_on_railway = bool(
+        os.environ.get('RAILWAY_ENVIRONMENT')
+        or os.environ.get('RAILWAY_PROJECT_ID')
+        or os.environ.get('RAILWAY_SERVICE_ID')
+    )
+    if running_on_railway:
+        raise RuntimeError(
+            'ไม่พบ DATABASE_URL ใน Railway web service: กรุณาผูก PostgreSQL DATABASE_URL ให้ web ก่อน deploy ' 
+            'เพื่อป้องกันระบบเปิดฐานข้อมูล SQLite ใหม่และทำให้ข้อมูลเช็กชื่อเดิมไม่ขึ้น'
+        )
+
+    return f"sqlite:///{os.path.join(INSTANCE_DIR, 'krurakson.db')}"
+
+app.config['SQLALCHEMY_DATABASE_URI'] = get_database_uri()
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['UPLOAD_FOLDER'] = UPLOAD_DIR
 app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100MB รองรับวิดีโอบทเรียน
@@ -4160,39 +4193,73 @@ def seed():
 
 
 def ensure_schema_columns():
-    # รองรับการอัปเกรดจากเวอร์ชันเก่าที่มีฐานข้อมูลเดิมอยู่แล้ว
+    """อัปเกรด schema โดยไม่ล้างข้อมูลเดิม รองรับทั้ง SQLite และ PostgreSQL"""
+    dialect = db.engine.dialect.name
+
     with db.engine.connect() as conn:
+        if dialect == 'sqlite':
+            def table_exists(table):
+                return bool(conn.exec_driver_sql(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name=?", (table,)
+                ).fetchone())
+
+            def cols(table):
+                if not table_exists(table):
+                    return set()
+                return {row[1] for row in conn.exec_driver_sql(f"PRAGMA table_info({table})").fetchall()}
+
+            def add_column(table, column, ddl_sqlite, ddl_postgres=None):
+                if table_exists(table) and column not in cols(table):
+                    conn.exec_driver_sql(f"ALTER TABLE {table} ADD COLUMN {column} {ddl_sqlite}")
+
+            add_column('subject', 'is_active', 'BOOLEAN DEFAULT 1')
+            add_column('user', 'position', "VARCHAR(80) DEFAULT 'ครู'")
+            add_column('classroom', 'is_active', 'BOOLEAN DEFAULT 1')
+            add_column('worksheet', 'file_path', "VARCHAR(500) DEFAULT ''")
+            add_column('worksheet', 'original_file_name', "VARCHAR(255) DEFAULT ''")
+            add_column('worksheet_answer', 'file_path', "VARCHAR(500) DEFAULT ''")
+            add_column('worksheet_answer', 'original_file_name', "VARCHAR(255) DEFAULT ''")
+            add_column('assignment', 'assignment_type', "VARCHAR(30) DEFAULT 'special'")
+            add_column('attendance', 'period_no', 'INTEGER')
+            add_column('attendance', 'schedule_id', 'INTEGER')
+            add_column('attendance', 'checked_by_id', 'INTEGER')
+            add_column('attendance', 'substitute_for_teacher_id', 'INTEGER')
+            add_column('classroom_activity', 'target_scope', "VARCHAR(30) DEFAULT 'classroom'")
+            conn.commit()
+            return
+
+        # PostgreSQL / อื่น ๆ: ใช้ SQLAlchemy inspector แทน PRAGMA
+        inspector = sa_inspect(db.engine)
+
+        def table_exists(table):
+            return inspector.has_table(table)
+
         def cols(table):
-            return {row[1] for row in conn.exec_driver_sql(f"PRAGMA table_info({table})").fetchall()}
-        if 'is_active' not in cols('subject'):
-            conn.exec_driver_sql("ALTER TABLE subject ADD COLUMN is_active BOOLEAN DEFAULT 1")
-        if 'position' not in cols('user'):
-            conn.exec_driver_sql("ALTER TABLE user ADD COLUMN position VARCHAR(80) DEFAULT 'ครู'")
-        if 'is_active' not in cols('classroom'):
-            conn.exec_driver_sql("ALTER TABLE classroom ADD COLUMN is_active BOOLEAN DEFAULT 1")
-        if 'file_path' not in cols('worksheet'):
-            conn.exec_driver_sql("ALTER TABLE worksheet ADD COLUMN file_path VARCHAR(500) DEFAULT ''")
-        if 'original_file_name' not in cols('worksheet'):
-            conn.exec_driver_sql("ALTER TABLE worksheet ADD COLUMN original_file_name VARCHAR(255) DEFAULT ''")
-        if 'file_path' not in cols('worksheet_answer'):
-            conn.exec_driver_sql("ALTER TABLE worksheet_answer ADD COLUMN file_path VARCHAR(500) DEFAULT ''")
-        if 'original_file_name' not in cols('worksheet_answer'):
-            conn.exec_driver_sql("ALTER TABLE worksheet_answer ADD COLUMN original_file_name VARCHAR(255) DEFAULT ''")
-        if 'assignment_type' not in cols('assignment'):
-            conn.exec_driver_sql("ALTER TABLE assignment ADD COLUMN assignment_type VARCHAR(30) DEFAULT 'special'")
-        att_cols = cols('attendance')
-        if 'period_no' not in att_cols:
-            conn.exec_driver_sql("ALTER TABLE attendance ADD COLUMN period_no INTEGER")
-        if 'schedule_id' not in att_cols:
-            conn.exec_driver_sql("ALTER TABLE attendance ADD COLUMN schedule_id INTEGER")
-        if 'checked_by_id' not in att_cols:
-            conn.exec_driver_sql("ALTER TABLE attendance ADD COLUMN checked_by_id INTEGER")
-        if 'substitute_for_teacher_id' not in att_cols:
-            conn.exec_driver_sql("ALTER TABLE attendance ADD COLUMN substitute_for_teacher_id INTEGER")
-        if 'classroom_activity' in {r[0] for r in conn.exec_driver_sql("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}:
-            ca_cols = cols('classroom_activity')
-            if 'target_scope' not in ca_cols:
-                conn.exec_driver_sql("ALTER TABLE classroom_activity ADD COLUMN target_scope VARCHAR(30) DEFAULT 'classroom'")
+            if not table_exists(table):
+                return set()
+            return {c['name'] for c in inspector.get_columns(table)}
+
+        def q(table):
+            # user เป็น reserved/พิเศษใน PostgreSQL ต้อง quote เสมอ
+            return f'"{table}"'
+
+        def add_column(table, column, ddl_sqlite, ddl_postgres):
+            if table_exists(table) and column not in cols(table):
+                conn.exec_driver_sql(f'ALTER TABLE {q(table)} ADD COLUMN {column} {ddl_postgres}')
+
+        add_column('subject', 'is_active', 'BOOLEAN DEFAULT 1', 'BOOLEAN DEFAULT TRUE')
+        add_column('user', 'position', "VARCHAR(80) DEFAULT 'ครู'", "VARCHAR(80) DEFAULT 'ครู'")
+        add_column('classroom', 'is_active', 'BOOLEAN DEFAULT 1', 'BOOLEAN DEFAULT TRUE')
+        add_column('worksheet', 'file_path', "VARCHAR(500) DEFAULT ''", "VARCHAR(500) DEFAULT ''")
+        add_column('worksheet', 'original_file_name', "VARCHAR(255) DEFAULT ''", "VARCHAR(255) DEFAULT ''")
+        add_column('worksheet_answer', 'file_path', "VARCHAR(500) DEFAULT ''", "VARCHAR(500) DEFAULT ''")
+        add_column('worksheet_answer', 'original_file_name', "VARCHAR(255) DEFAULT ''", "VARCHAR(255) DEFAULT ''")
+        add_column('assignment', 'assignment_type', "VARCHAR(30) DEFAULT 'special'", "VARCHAR(30) DEFAULT 'special'")
+        add_column('attendance', 'period_no', 'INTEGER', 'INTEGER')
+        add_column('attendance', 'schedule_id', 'INTEGER', 'INTEGER')
+        add_column('attendance', 'checked_by_id', 'INTEGER', 'INTEGER')
+        add_column('attendance', 'substitute_for_teacher_id', 'INTEGER', 'INTEGER')
+        add_column('classroom_activity', 'target_scope', "VARCHAR(30) DEFAULT 'classroom'", "VARCHAR(30) DEFAULT 'classroom'")
         conn.commit()
 
 def sync_schedule_teacher_links():
