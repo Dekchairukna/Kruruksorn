@@ -1,1 +1,97 @@
-{% extends 'base.html' %}{% block content %}<h1>แก้ไขผู้ใช้</h1><form method="post"><label>ชื่อ-สกุล</label><input name="full_name" value="{{u.full_name}}" required><label>Username</label><input name="username" value="{{u.username}}" required><label>รหัสผ่านใหม่ (เว้นว่างถ้าไม่เปลี่ยน)</label><input name="password"><label>บทบาท</label><select name="role">{% for r in ['admin','teacher','student'] %}<option value="{{r}}" {% if u.role==r %}selected{% endif %}>{{r}}</option>{% endfor %}</select><button>บันทึก</button><a class="btn secondary" href="{{url_for('users')}}">กลับ</a></form>{% endblock %}
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>แก้ไขผู้ใช้</h1>
+    <p class="muted">แก้ไขบัญชีและข้อมูลพื้นฐานบุคคล โดยไม่กระทบประวัติเช็กชื่อ/คะแนน</p>
+  </div>
+  <a class="btn secondary" href="{{url_for('users')}}">← กลับผู้ใช้</a>
+</div>
+
+<form method="post" class="card student-profile-form">
+  <h2>ข้อมูลบัญชี</h2>
+  <div class="form-grid">
+    <label>ชื่อ-สกุล
+      <input name="full_name" value="{{u.full_name}}" required>
+    </label>
+    <label>Username / รหัสนักเรียน
+      <input name="username" value="{{u.username}}" required>
+    </label>
+    <label>รหัสผ่านใหม่ <small class="muted">เว้นว่างถ้าไม่เปลี่ยน</small>
+      <input name="password">
+    </label>
+    <label>บทบาท
+      <select name="role" id="roleSelect" onchange="toggleStudentFields()">
+        {% for r in ['admin','teacher','student'] %}<option value="{{r}}" {% if u.role==r %}selected{% endif %}>{{r}}</option>{% endfor %}
+      </select>
+    </label>
+  </div>
+
+  <div id="studentFields" class="student-extra-box">
+    <h2>ข้อมูลพื้นฐานนักเรียน/บุคคล</h2>
+    <div class="reader-box">
+      <label>วางข้อมูลจากเครื่องอ่านบัตรประชาชน/Smart Card Reader
+        <textarea id="cardRaw" rows="3" placeholder="เสียบบัตรแล้วให้โปรแกรมอ่านบัตรส่งข้อความมา หรือ copy ข้อมูลที่อ่านได้มาวางตรงนี้"></textarea>
+      </label>
+      <button type="button" class="btn secondary small" onclick="parseThaiCardRaw()">ดึงข้อมูลลงฟอร์ม</button>
+      <small class="muted">รองรับข้อมูลที่คั่นด้วย # หรือขึ้นบรรทัดใหม่ เช่น เลขบัตร, ชื่อ, วันเกิด, เพศ, ที่อยู่</small>
+    </div>
+    <div class="form-grid">
+      <label>เลขบัตรประชาชน <input name="citizen_id" id="citizen_id" value="{{u.citizen_id or ''}}"></label>
+      <label>วันเกิด <input name="birth_date" id="birth_date" value="{{u.birth_date or ''}}" placeholder="เช่น 28/02/2535"></label>
+      <label>เลขที่/รหัสนักเรียน <input name="student_no" id="student_no" value="{{u.student_no or ''}}"></label>
+      <label>คำนำหน้า <input name="prefix" id="prefix" value="{{u.prefix or ''}}"></label>
+      <label>ชื่อ <input name="first_name" id="first_name" value="{{u.first_name or ''}}"></label>
+      <label>นามสกุล <input name="last_name" id="last_name" value="{{u.last_name or ''}}"></label>
+      <label>เพศ <input name="gender" id="gender" value="{{u.gender or ''}}"></label>
+      <label>สัญชาติ <input name="nationality" id="nationality" value="{{u.nationality or ''}}"></label>
+      <label>เชื้อชาติ <input name="ethnicity" value="{{u.ethnicity or ''}}"></label>
+      <label>ศาสนา <input name="religion" value="{{u.religion or ''}}"></label>
+      <label>หมู่เลือด <input name="blood_type" value="{{u.blood_type or ''}}"></label>
+      <label>เบอร์โทร <input name="phone" value="{{u.phone or ''}}"></label>
+      <label>ผู้ปกครอง <input name="guardian_name" value="{{u.guardian_name or ''}}"></label>
+      <label>เบอร์ผู้ปกครอง <input name="guardian_phone" value="{{u.guardian_phone or ''}}"></label>
+    </div>
+    <label>ที่อยู่
+      <textarea name="address" id="address" rows="3">{{u.address or ''}}</textarea>
+    </label>
+  </div>
+
+  <button class="btn">บันทึก</button>
+</form>
+
+<script>
+function toggleStudentFields(){
+  const box=document.getElementById('studentFields');
+  const role=document.getElementById('roleSelect').value;
+  box.style.display = role === 'student' ? 'block' : 'none';
+}
+function parseThaiCardRaw(){
+  const raw=(document.getElementById('cardRaw').value||'').trim();
+  if(!raw){ alert('วางข้อมูลจากเครื่องอ่านบัตรก่อน'); return; }
+  const cleaned=raw.replace(/\r/g,'\n');
+  const parts=cleaned.includes('#') ? cleaned.split('#').map(x=>x.trim()).filter(Boolean) : cleaned.split(/\n+/).map(x=>x.trim()).filter(Boolean);
+  const id=(raw.match(/\b\d{13}\b/)||[])[0];
+  if(id) document.getElementById('citizen_id').value=id;
+  const date=(raw.match(/\b\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4}\b/)||[])[0];
+  if(date) document.getElementById('birth_date').value=date;
+  let namePart=parts.find(x=>/(นาย|นางสาว|นาง|เด็กชาย|เด็กหญิง|ด\.ช\.|ด\.ญ\.)/.test(x)) || '';
+  if(!namePart && parts.length>=2) namePart=parts[1];
+  if(namePart){
+    const prefixes=['เด็กชาย','เด็กหญิง','นาย','นางสาว','นาง','ด.ช.','ด.ญ.'];
+    let pf=''; let txt=namePart;
+    prefixes.forEach(p=>{ if(!pf && txt.startsWith(p)){ pf=p; txt=txt.slice(p.length).trim(); }});
+    const ns=txt.split(/\s+/).filter(Boolean);
+    if(pf) document.getElementById('prefix').value=pf;
+    if(ns[0]) document.getElementById('first_name').value=ns[0];
+    if(ns.length>1) document.getElementById('last_name').value=ns.slice(1).join(' ');
+  }
+  const gender=parts.find(x=>x==='ชาย'||x==='หญิง');
+  if(gender) document.getElementById('gender').value=gender;
+  const address=parts.find(x=>x.includes('บ้านเลขที่') || x.includes('หมู่') || x.includes('ตำบล') || x.includes('อำเภอ'));
+  if(address) document.getElementById('address').value=address;
+}
+toggleStudentFields();
+</script>
+<style>.reader-box{background:#f8fafc;border:1px solid #e5e7eb;border-radius:16px;padding:12px;margin:10px 0}.student-extra-box{margin-top:18px}.form-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}</style>
+{% endblock %}

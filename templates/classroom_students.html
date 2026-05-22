@@ -3,7 +3,7 @@
 <div class="page-head">
   <div>
     <h1>นักเรียนในห้อง {{ room.name }}</h1>
-    <p class="muted">จัดการรายชื่อนักเรียน และไปเช็กชื่อเข้าแถว/กิจกรรมพิเศษของห้องนี้</p>
+    <p class="muted">เพิ่มนักเรียนใหม่/เลือกนักเรียนเดิม/ย้ายห้องได้จากหน้านี้</p>
   </div>
   <div class="actions-row">
     <a class="btn" href="{{ url_for('classroom_activities', classroom_id=room.id) }}">เช็กชื่อห้อง/กิจกรรม</a>
@@ -11,21 +11,75 @@
   </div>
 </div>
 
-<form method="post" class="form-row card">
-  <select name="student_id">
-    {% for s in students %}<option value="{{s.id}}">{{s.full_name}}</option>{% endfor %}
-  </select>
-  <button>เพิ่มนักเรียน</button>
-</form>
+<section class="card quick-student-card">
+  <h2>เพิ่มชื่อนักเรียนในห้องแบบเร็ว</h2>
+  <form method="post" class="form-grid">
+    <input type="hidden" name="action" value="quick_add">
+    <label>รหัสนักเรียน/username <input name="username" placeholder="เช่น 12345"></label>
+    <label>เลขที่ <input name="student_no"></label>
+    <label>ชื่อ-สกุล <input name="full_name" id="quick_full_name" required></label>
+    <label>เลขบัตรประชาชน <input name="citizen_id" id="quick_citizen_id"></label>
+    <label>วันเกิด <input name="birth_date" id="quick_birth_date"></label>
+    <label>เบอร์โทร <input name="phone"></label>
+    <label>ผู้ปกครอง <input name="guardian_name"></label>
+    <label>เบอร์ผู้ปกครอง <input name="guardian_phone"></label>
+    <label class="wide">ที่อยู่ <textarea name="address" rows="2"></textarea></label>
+    <label class="wide">ข้อมูลจากเครื่องอ่านบัตรประชาชน
+      <textarea id="quick_card_raw" rows="2" placeholder="วางข้อมูลจากเครื่องอ่านบัตร แล้วกดดึงข้อมูล"></textarea>
+    </label>
+    <div class="actions-row wide">
+      <button type="button" class="btn secondary" onclick="parseQuickCard()">ดึงข้อมูลจากบัตร</button>
+      <button class="btn">เพิ่มเข้าห้อง {{ room.name }}</button>
+    </div>
+  </form>
+</section>
+
+<section class="card">
+  <h2>เลือกจากนักเรียนที่มีอยู่แล้ว</h2>
+  <form method="post" class="form-row">
+    <input type="hidden" name="action" value="link_existing">
+    <select name="student_id">
+      {% for s in students %}<option value="{{s.id}}">{{s.full_name}} · {{s.username}}</option>{% endfor %}
+    </select>
+    <button>เพิ่มนักเรียนเดิมเข้าห้อง</button>
+  </form>
+</section>
 
 <table>
-  <tr><th>ชื่อ</th><th>username</th><th>จัดการ</th></tr>
+  <tr><th>ชื่อ</th><th>username</th><th>ข้อมูล</th><th>ย้ายห้อง</th><th>จัดการ</th></tr>
   {% for l in links %}
   <tr>
-    <td data-label="ชื่อ">{{l.student.full_name}}</td>
+    <td data-label="ชื่อ"><b>{{l.student.full_name}}</b></td>
     <td data-label="username">{{l.student.username}}</td>
-    <td data-label="จัดการ"><form method="post" action="{{url_for('classroom_student_delete', link_id=l.id)}}" class="inline" onsubmit="return confirm('นำนักเรียนออกจากห้อง?')"><button class="danger-btn small">ลบ</button></form></td>
+    <td data-label="ข้อมูล"><small>เลขบัตร: {{ l.student.citizen_id or '-' }}<br>ผู้ปกครอง: {{ l.student.guardian_name or '-' }}</small></td>
+    <td data-label="ย้ายห้อง">
+      <form method="post" action="{{ url_for('student_move_room', student_id=l.student.id) }}" class="inline move-room-form" onsubmit="return confirm('ย้าย {{l.student.full_name}} ไปห้องที่เลือก?')">
+        <input type="hidden" name="old_classroom_id" value="{{room.id}}">
+        <input type="hidden" name="redirect_to" value="{{ request.path }}">
+        <select name="new_classroom_id">
+          {% for r in classrooms_all %}<option value="{{r.id}}" {% if r.id==room.id %}selected{% endif %}>{{r.name}}</option>{% endfor %}
+        </select>
+        <button class="btn small secondary">ย้าย</button>
+      </form>
+    </td>
+    <td data-label="จัดการ">
+      <a class="btn small" href="{{ url_for('user_edit', user_id=l.student.id) }}">แก้ไขข้อมูล</a>
+      <form method="post" action="{{url_for('classroom_student_delete', link_id=l.id)}}" class="inline" onsubmit="return confirm('นำนักเรียนออกจากห้อง? ประวัติเช็กชื่อเดิมยังอยู่')"><button class="danger-btn small">ออกจากห้อง</button></form>
+    </td>
   </tr>
   {% endfor %}
 </table>
+
+<script>
+function parseQuickCard(){
+  const raw=(document.getElementById('quick_card_raw').value||'').trim();
+  if(!raw){ alert('วางข้อมูลจากเครื่องอ่านบัตรก่อน'); return; }
+  const parts=(raw.includes('#')?raw.split('#'):raw.split(/\n+/)).map(x=>x.trim()).filter(Boolean);
+  const id=(raw.match(/\b\d{13}\b/)||[])[0]; if(id) document.getElementById('quick_citizen_id').value=id;
+  const date=(raw.match(/\b\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4}\b/)||[])[0]; if(date) document.getElementById('quick_birth_date').value=date;
+  const name=parts.find(x=>/(นาย|นางสาว|นาง|เด็กชาย|เด็กหญิง|ด\.ช\.|ด\.ญ\.)/.test(x));
+  if(name) document.getElementById('quick_full_name').value=name;
+}
+</script>
+<style>.form-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}.form-grid .wide{grid-column:1/-1}.quick-student-card textarea{width:100%}.move-room-form{display:flex;gap:6px;align-items:center;flex-wrap:wrap}</style>
 {% endblock %}

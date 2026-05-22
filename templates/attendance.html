@@ -36,6 +36,45 @@
     </form>
   </div>
 
+  <details class="quick-student-manager">
+    <summary>👥 เพิ่มชื่อ/ย้ายห้องนักเรียนจากหน้าเช็กชื่อ</summary>
+    <div class="quick-student-grid">
+      <div class="quick-add-box">
+        <h3>เพิ่มนักเรียนเข้าห้องนี้แบบเร็ว</h3>
+        <form method="post" action="{{ url_for('attendance_quick_add_student', subject_id=subject.id, classroom_id=room.id) }}" class="mini-form-grid">
+          <input type="hidden" name="date" value="{{ att_date.isoformat() if att_date else '' }}">
+          <input type="hidden" name="period_no" value="{{ period_no or '' }}">
+          <input type="hidden" name="schedule_id" value="{{ schedule_id or '' }}">
+          <input type="hidden" name="redirect_to" value="{{ request.full_path }}">
+          <label>รหัสนักเรียน/username <input name="username" placeholder="เช่น 12345"></label>
+          <label>ชื่อ-สกุล <input name="full_name" id="att_full_name" required></label>
+          <label>เลขบัตรประชาชน <input name="citizen_id" id="att_citizen_id"></label>
+          <label>วันเกิด <input name="birth_date" id="att_birth_date"></label>
+          <label class="wide">ข้อมูลจากเครื่องอ่านบัตร <textarea id="att_card_raw" rows="2" placeholder="วางข้อมูลจากเครื่องอ่านบัตร แล้วกดดึงข้อมูล"></textarea></label>
+          <div class="actions-row wide"><button type="button" class="btn secondary small" onclick="parseAttCard()">ดึงข้อมูลจากบัตร</button><button class="btn small">เพิ่มเข้าห้องนี้</button></div>
+        </form>
+      </div>
+      <div class="move-box">
+        <h3>ย้ายห้องนักเรียน</h3>
+        <div class="move-list">
+          {% for l in links %}
+          <form method="post" action="{{ url_for('student_move_room', student_id=l.student_id) }}" class="move-line" onsubmit="return confirm('ย้าย {{ l.student.full_name }} ไปห้องที่เลือก?')">
+            <input type="hidden" name="old_classroom_id" value="{{ l.classroom_id }}">
+            <input type="hidden" name="redirect_to" value="{{ request.full_path }}">
+            <span>{{ loop.index }}. {{ l.student.full_name }}</span>
+            <select name="new_classroom_id">
+              {% for r in classrooms_all %}<option value="{{ r.id }}" {% if l.classroom_id == r.id %}selected{% endif %}>{{ r.name }}</option>{% endfor %}
+            </select>
+            <button class="btn secondary tiny">ย้าย</button>
+            <a class="btn tiny" href="{{ url_for('user_edit', user_id=l.student.id) }}">แก้ข้อมูล</a>
+          </form>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </details>
+
+
   <form method="post" id="attendanceForm">
     <input type="hidden" name="period_no" value="{{ period_no or '' }}">
     <input type="hidden" name="schedule_id" value="{{ schedule_id or '' }}">
@@ -267,4 +306,21 @@ document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.student-check-row input[type="radio"]:checked').forEach(paintRow);
 });
 </script>
+
+<script>
+function parseAttCard(){
+  const raw=(document.getElementById('att_card_raw').value||'').trim();
+  if(!raw){ alert('วางข้อมูลจากเครื่องอ่านบัตรก่อน'); return; }
+  const parts=(raw.includes('#')?raw.split('#'):raw.split(/
++/)).map(x=>x.trim()).filter(Boolean);
+  const id=(raw.match(/\d{13}/)||[])[0]; if(id) document.getElementById('att_citizen_id').value=id;
+  const date=(raw.match(/\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4}/)||[])[0]; if(date) document.getElementById('att_birth_date').value=date;
+  const name=parts.find(x=>/(นาย|นางสาว|นาง|เด็กชาย|เด็กหญิง|ด\.ช\.|ด\.ญ\.)/.test(x));
+  if(name) document.getElementById('att_full_name').value=name;
+}
+</script>
+<style>
+.quick-student-manager{margin:12px 0;background:#f8fafc;border:1px solid #e5e7eb;border-radius:16px;padding:10px}.quick-student-manager summary{cursor:pointer;font-weight:800}.quick-student-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:14px;margin-top:12px}.mini-form-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px}.mini-form-grid .wide{grid-column:1/-1}.move-list{max-height:360px;overflow:auto;border:1px solid #e5e7eb;border-radius:14px;background:#fff}.move-line{display:grid;grid-template-columns:minmax(180px,1fr) 120px auto auto;gap:6px;align-items:center;padding:7px;border-bottom:1px solid #eef2f7}.move-line:last-child{border-bottom:0}@media(max-width:700px){.move-line{grid-template-columns:1fr}.move-line select,.move-line button,.move-line a{width:100%}}
+</style>
+
 {% endblock %}

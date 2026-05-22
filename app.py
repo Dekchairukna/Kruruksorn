@@ -238,6 +238,68 @@ def normalize_attendance_status(value):
     value = (value or 'มา').strip()
     return ATTENDANCE_STATUS_ALIASES.get(value, value if value in ATTENDANCE_STATUSES else 'มา')
 
+def split_thai_full_name(full_name):
+    """แยกคำนำหน้า/ชื่อ/นามสกุลแบบง่าย เพื่อช่วยเติมจากเครื่องอ่านบัตรประชาชน"""
+    txt = (full_name or '').strip()
+    prefixes = ['เด็กชาย', 'เด็กหญิง', 'นาย', 'นางสาว', 'นาง', 'ด.ช.', 'ด.ญ.']
+    prefix = ''
+    for pf in prefixes:
+        if txt.startswith(pf):
+            prefix = pf
+            txt = txt[len(pf):].strip()
+            break
+    parts = txt.split()
+    first = parts[0] if parts else ''
+    last = ' '.join(parts[1:]) if len(parts) > 1 else ''
+    return prefix, first, last
+
+def fill_student_personal_fields(user, form):
+    """บันทึกข้อมูลพื้นฐานนักเรียนจากฟอร์ม โดยไม่กระทบประวัติเช็กชื่อ/คะแนน"""
+    for field in ['citizen_id','birth_date','student_no','prefix','first_name','last_name','gender','nationality','ethnicity','religion','blood_type','phone','address','guardian_name','guardian_phone']:
+        if field in form:
+            setattr(user, field, (form.get(field) or '').strip())
+    # ถ้าแยกชื่อไว้ ให้ประกอบ full_name อัตโนมัติ แต่ยังยอมให้กรอก full_name เองได้
+    if (form.get('first_name') or form.get('last_name')) and not form.get('full_name'):
+        user.full_name = f"{form.get('prefix','').strip()}{form.get('first_name','').strip()} {form.get('last_name','').strip()}".strip()
+
+def create_or_update_student_from_form(form, default_room_id=None):
+    """เพิ่มนักเรียนแบบเร็ว ใช้ได้จากหน้าห้องและหน้าเช็กชื่อ"""
+    full_name = (form.get('full_name') or '').strip()
+    citizen_id = (form.get('citizen_id') or '').strip()
+    username = (form.get('username') or form.get('student_no') or citizen_id or '').strip()
+    if not full_name and (form.get('first_name') or form.get('last_name')):
+        full_name = f"{form.get('prefix','').strip()}{form.get('first_name','').strip()} {form.get('last_name','').strip()}".strip()
+    if not username:
+        username = f"student{int(datetime.utcnow().timestamp())}"
+    if not full_name:
+        raise ValueError('กรุณากรอกชื่อ-สกุลนักเรียน')
+    user = None
+    if citizen_id:
+        user = User.query.filter_by(citizen_id=citizen_id).first()
+    if not user:
+        user = User.query.filter_by(username=username).first()
+    if user and user.role != 'student':
+        raise ValueError('username/เลขบัตรนี้มีอยู่แล้ว แต่ไม่ใช่บัญชีนักเรียน')
+    if not user:
+        base = username[:100]
+        username_try = base
+        n = 2
+        while User.query.filter_by(username=username_try).first():
+            username_try = f"{base[:90]}{n}"
+            n += 1
+        user = User(username=username_try, full_name=full_name, role='student', must_change_password=True)
+        user.set_password(form.get('password') or (citizen_id[-6:] if citizen_id and len(citizen_id) >= 6 else '1234'))
+        db.session.add(user); db.session.flush()
+    else:
+        user.full_name = full_name
+        user.is_active = True
+    fill_student_personal_fields(user, form)
+    room_id = form.get('classroom_id', type=int) or default_room_id
+    if room_id:
+        if not ClassroomStudent.query.filter_by(classroom_id=room_id, student_id=user.id).first():
+            db.session.add(ClassroomStudent(classroom_id=room_id, student_id=user.id))
+    return user
+
 class User(db.Model, UserMixin):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(100), unique=True, nullable=False)
@@ -249,6 +311,20 @@ class User(db.Model, UserMixin):
     must_change_password = db.Column(db.Boolean, default=False)
     position = db.Column(db.String(80), default='ครู')
     is_active = db.Column(db.Boolean, default=True)
+    # ข้อมูลพื้นฐานนักเรียน/บุคคล เพิ่มแบบไม่ลบข้อมูลเดิม รองรับการอ่าน/กรอกข้อมูลจากบัตรประชาชน
+    student_no = db.Column(db.String(30), default='')
+    prefix = db.Column(db.String(30), default='')
+    first_name = db.Column(db.String(120), default='')
+    last_name = db.Column(db.String(120), default='')
+    gender = db.Column(db.String(20), default='')
+    nationality = db.Column(db.String(80), default='')
+    ethnicity = db.Column(db.String(80), default='')
+    religion = db.Column(db.String(80), default='')
+    blood_type = db.Column(db.String(10), default='')
+    phone = db.Column(db.String(50), default='')
+    address = db.Column(db.Text, default='')
+    guardian_name = db.Column(db.String(255), default='')
+    guardian_phone = db.Column(db.String(50), default='')
 
     def set_password(self, password):
         self.password_hash = generate_password_hash(str(password))
@@ -1112,6 +1188,8 @@ def users():
             return redirect(url_for('users'))
 
         u = User(username=username, full_name=full_name, role=role)
+        if role == 'student':
+            fill_student_personal_fields(u, request.form)
         u.set_password(password)
         db.session.add(u)
         db.session.commit()
@@ -1141,6 +1219,8 @@ def user_edit(user_id):
         u.full_name = full_name
         u.username = username
         u.role = role
+        if role == 'student':
+            fill_student_personal_fields(u, request.form)
         if request.form.get('password'):
             u.set_password(request.form['password'])
         db.session.commit()
@@ -1480,14 +1560,62 @@ def classroom_students(classroom_id):
     if current_user.role != 'admin' and room.teacher_id != current_user.id:
         flash('ไม่มีสิทธิ์', 'danger'); return redirect(url_for('classrooms'))
     if request.method == 'POST':
-        student_id = int(request.form['student_id'])
-        if not ClassroomStudent.query.filter_by(classroom_id=room.id, student_id=student_id).first():
-            db.session.add(ClassroomStudent(classroom_id=room.id, student_id=student_id))
-            db.session.commit()
+        action = request.form.get('action') or 'link_existing'
+        try:
+            if action == 'quick_add':
+                create_or_update_student_from_form(request.form, default_room_id=room.id)
+                db.session.commit()
+                flash('เพิ่ม/อัปเดตนักเรียนและนำเข้าห้องแล้ว', 'success')
+            else:
+                student_id = int(request.form['student_id'])
+                if not ClassroomStudent.query.filter_by(classroom_id=room.id, student_id=student_id).first():
+                    db.session.add(ClassroomStudent(classroom_id=room.id, student_id=student_id))
+                    db.session.commit()
+                    flash('เพิ่มนักเรียนเข้าห้องแล้ว', 'success')
+        except Exception as e:
+            db.session.rollback(); flash(str(e), 'danger')
         return redirect(url_for('classroom_students', classroom_id=room.id))
     links = ClassroomStudent.query.filter_by(classroom_id=room.id).join(User, ClassroomStudent.student_id == User.id).order_by(User.username.asc(), User.full_name.asc()).all()
-    students = User.query.filter_by(role='student').order_by(User.username.asc(), User.full_name.asc()).all()
-    return render_template('classroom_students.html', room=room, links=links, students=students)
+    students = active_students_query().order_by(User.username.asc(), User.full_name.asc()).all()
+    classrooms_all = Classroom.query.filter(db.or_(Classroom.is_active == True, Classroom.is_active.is_(None))).order_by(Classroom.name).all()
+    return render_template('classroom_students.html', room=room, links=links, students=students, classrooms_all=classrooms_all)
+
+
+@app.route('/student/<int:student_id>/move-room', methods=['POST'])
+@login_required
+@role_required('teacher','admin')
+def student_move_room(student_id):
+    student = User.query.get_or_404(student_id)
+    new_room_id = request.form.get('new_classroom_id', type=int)
+    old_room_id = request.form.get('old_classroom_id', type=int)
+    redirect_to = request.form.get('redirect_to') or request.referrer or url_for('classrooms')
+    if student.role != 'student' or not new_room_id:
+        flash('ข้อมูลนักเรียนหรือห้องเรียนไม่ถูกต้อง', 'danger')
+        return redirect(redirect_to)
+    new_room = Classroom.query.get_or_404(new_room_id)
+    if current_user.role != 'admin' and not owns_classroom(new_room):
+        return deny_redirect('classrooms')
+    # ย้ายห้องปัจจุบัน: เอานักเรียนออกจากห้องเดิมทั้งหมด แล้วผูกเข้าห้องใหม่
+    ClassroomStudent.query.filter_by(student_id=student.id).delete(synchronize_session=False)
+    db.session.add(ClassroomStudent(classroom_id=new_room.id, student_id=student.id))
+    db.session.commit()
+    flash(f'ย้าย {student.full_name} ไปห้อง {new_room.name} แล้ว ประวัติเช็กชื่อ/คะแนนเดิมยังอยู่', 'success')
+    return redirect(redirect_to)
+
+@app.route('/attendance/<int:subject_id>/<int:classroom_id>/quick-add-student', methods=['POST'])
+@login_required
+@role_required('teacher','admin')
+def attendance_quick_add_student(subject_id, classroom_id):
+    subject = Subject.query.get_or_404(subject_id); room = Classroom.query.get_or_404(classroom_id)
+    if not owns_classroom(room):
+        return deny_redirect('records_center')
+    try:
+        create_or_update_student_from_form(request.form, default_room_id=room.id)
+        db.session.commit()
+        flash('เพิ่มนักเรียนเข้าห้องนี้แล้ว', 'success')
+    except Exception as e:
+        db.session.rollback(); flash(str(e), 'danger')
+    return redirect(request.form.get('redirect_to') or url_for('attendance', subject_id=subject.id, classroom_id=room.id, date=request.form.get('date') or local_today().isoformat(), period_no=request.form.get('period_no') or None, schedule_id=request.form.get('schedule_id') or None))
 
 
 @app.route('/classroom/<int:classroom_id>/activities', methods=['GET', 'POST'])
@@ -4209,7 +4337,8 @@ def attendance(subject_id, classroom_id):
         date_headers=date_headers, att_data=att_data, status_symbols=ATTENDANCE_SYMBOLS,
         classwork_items=classwork_items, classwork_scores=classwork_scores,
         attendance_scope=attendance_scope, attendance_scope_label=attendance_scope_label(subject, room),
-        show_classroom_column=show_classroom_column
+        show_classroom_column=show_classroom_column,
+        classrooms_all=Classroom.query.filter(db.or_(Classroom.is_active == True, Classroom.is_active.is_(None))).order_by(Classroom.name).all()
     )
 
 
@@ -4570,6 +4699,16 @@ def ensure_schema_columns():
             add_column('subject', 'is_active', 'BOOLEAN DEFAULT 1')
             add_column('user', 'position', "VARCHAR(80) DEFAULT 'ครู'")
             add_column('user', 'is_active', 'BOOLEAN DEFAULT 1')
+            for col, ddl in [
+                ('student_no', "VARCHAR(30) DEFAULT ''"), ('prefix', "VARCHAR(30) DEFAULT ''"),
+                ('first_name', "VARCHAR(120) DEFAULT ''"), ('last_name', "VARCHAR(120) DEFAULT ''"),
+                ('gender', "VARCHAR(20) DEFAULT ''"), ('nationality', "VARCHAR(80) DEFAULT ''"),
+                ('ethnicity', "VARCHAR(80) DEFAULT ''"), ('religion', "VARCHAR(80) DEFAULT ''"),
+                ('blood_type', "VARCHAR(10) DEFAULT ''"), ('phone', "VARCHAR(50) DEFAULT ''"),
+                ('address', 'TEXT DEFAULT \'\''), ('guardian_name', "VARCHAR(255) DEFAULT ''"),
+                ('guardian_phone', "VARCHAR(50) DEFAULT ''"),
+            ]:
+                add_column('user', col, ddl)
             add_column('classroom', 'is_active', 'BOOLEAN DEFAULT 1')
             add_column('worksheet', 'file_path', "VARCHAR(500) DEFAULT ''")
             add_column('worksheet', 'original_file_name', "VARCHAR(255) DEFAULT ''")
@@ -4607,6 +4746,16 @@ def ensure_schema_columns():
         add_column('subject', 'is_active', 'BOOLEAN DEFAULT 1', 'BOOLEAN DEFAULT TRUE')
         add_column('user', 'position', "VARCHAR(80) DEFAULT 'ครู'", "VARCHAR(80) DEFAULT 'ครู'")
         add_column('user', 'is_active', 'BOOLEAN DEFAULT 1', 'BOOLEAN DEFAULT TRUE')
+        for col, ddl in [
+            ('student_no', "VARCHAR(30) DEFAULT ''"), ('prefix', "VARCHAR(30) DEFAULT ''"),
+            ('first_name', "VARCHAR(120) DEFAULT ''"), ('last_name', "VARCHAR(120) DEFAULT ''"),
+            ('gender', "VARCHAR(20) DEFAULT ''"), ('nationality', "VARCHAR(80) DEFAULT ''"),
+            ('ethnicity', "VARCHAR(80) DEFAULT ''"), ('religion', "VARCHAR(80) DEFAULT ''"),
+            ('blood_type', "VARCHAR(10) DEFAULT ''"), ('phone', "VARCHAR(50) DEFAULT ''"),
+            ('address', "TEXT DEFAULT ''"), ('guardian_name', "VARCHAR(255) DEFAULT ''"),
+            ('guardian_phone', "VARCHAR(50) DEFAULT ''"),
+        ]:
+            add_column('user', col, ddl, ddl)
         add_column('classroom', 'is_active', 'BOOLEAN DEFAULT 1', 'BOOLEAN DEFAULT TRUE')
         add_column('worksheet', 'file_path', "VARCHAR(500) DEFAULT ''", "VARCHAR(500) DEFAULT ''")
         add_column('worksheet', 'original_file_name', "VARCHAR(255) DEFAULT ''", "VARCHAR(255) DEFAULT ''")
