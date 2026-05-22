@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime, date, time, timedelta
 import calendar as py_calendar
 from functools import wraps
-from flask import Flask, render_template, request, redirect, url_for, flash, send_file, send_from_directory
+from flask import Flask, render_template, request, redirect, url_for, flash, send_file, send_from_directory, session
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -100,6 +100,16 @@ app.config['SQLALCHEMY_DATABASE_URI'] = get_database_uri()
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['UPLOAD_FOLDER'] = UPLOAD_DIR
 app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100MB รองรับวิดีโอบทเรียน
+# ลดปัญหาเด้งออกจากระบบบ่อย: ให้ session อยู่ได้นานขึ้นและ refresh ทุกครั้งที่ใช้งาน
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=int(os.environ.get('SESSION_DAYS', '30')))
+app.config['REMEMBER_COOKIE_DURATION'] = timedelta(days=int(os.environ.get('REMEMBER_DAYS', '30')))
+app.config['SESSION_REFRESH_EACH_REQUEST'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+app.config['REMEMBER_COOKIE_SAMESITE'] = 'Lax'
+# เปิด secure cookie เฉพาะตอนกำหนดเอง เพื่อไม่ทำให้ localhost ใช้ไม่ได้
+if os.environ.get('COOKIE_SECURE') == '1':
+    app.config['SESSION_COOKIE_SECURE'] = True
+    app.config['REMEMBER_COOKIE_SECURE'] = True
 ALLOWED_WORKSHEET_EXTENSIONS = {'pdf', 'png', 'jpg', 'jpeg', 'doc', 'docx', 'ppt', 'pptx', 'mp4', 'webm', 'mov'}
 ALLOWED_IMAGE_EXTENSIONS = {'png', 'jpg', 'jpeg', 'webp', 'gif'}
 
@@ -927,8 +937,10 @@ def login():
         if user and (not getattr(user, 'is_active', True)):
             flash('บัญชีนี้ถูกปิดใช้งานแล้ว กรุณาติดต่อผู้ดูแลระบบ', 'danger')
         elif user and user.check_password(password):
-            login_user(user)
-            return redirect(url_for('index'))
+            session.permanent = True
+            login_user(user, remember=True, duration=app.config['REMEMBER_COOKIE_DURATION'])
+            next_page = request.args.get('next')
+            return redirect(next_page or url_for('index'))
         else:
             flash('ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง', 'danger')
     return render_template('login.html')
@@ -3045,6 +3057,41 @@ def build_schedule_grid(rows):
             group['topics'].append(topic)
         group['rows'].append(row)
     return grid
+
+
+def user_can_open_schedule(row):
+    if current_user.role == 'admin':
+        return True
+    if current_user.role == 'teacher':
+        return row.teacher_id == current_user.id or owns_subject(row.subject) or owns_classroom(row.classroom)
+    if current_user.role == 'student':
+        return ClassroomStudent.query.filter_by(classroom_id=row.classroom_id, student_id=current_user.id).first() is not None
+    return False
+
+@app.route('/schedule/<int:schedule_id>/period')
+@login_required
+@role_required('teacher','admin','student')
+def schedule_period(schedule_id):
+    row = TeachingSchedule.query.get_or_404(schedule_id)
+    if not user_can_open_schedule(row):
+        return deny_redirect('schedule')
+    selected_date = datetime.strptime(request.args.get('date', local_today().isoformat()), '%Y-%m-%d').date()
+    lesson = auto_lesson_for_schedule(row, selected_date)
+    worksheets = Worksheet.query.filter_by(lesson_id=lesson.id).all() if lesson else []
+    quizzes = Quiz.query.filter_by(lesson_id=lesson.id).all() if lesson else []
+    files_count = LessonFile.query.filter_by(lesson_id=lesson.id).count() if lesson else 0
+    lesson_status = get_or_create_lesson_status(lesson, current_user) if (lesson and current_user.role == 'student') else None
+    return render_template(
+        'schedule_period.html',
+        row=row,
+        selected_date=selected_date,
+        selected_day_label=thai_date_label(selected_date),
+        lesson=lesson,
+        worksheets=worksheets,
+        quizzes=quizzes,
+        files_count=files_count,
+        lesson_status=lesson_status,
+    )
 
 @app.route('/schedule', methods=['GET','POST'])
 @login_required

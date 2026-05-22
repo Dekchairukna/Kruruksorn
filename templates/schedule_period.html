@@ -1,0 +1,107 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>เปิดคาบเรียน</h1>
+    <p class="muted">{{ row.subject.name }} · {{ row.classroom.name }} · คาบ {{ row.period_no }} · {{ selected_day_label }}</p>
+  </div>
+  <div class="actions-row">
+    <a class="btn secondary" href="{{ url_for('schedule') }}">← กลับตารางสอน</a>
+    {% if current_user.role in ['teacher','admin'] %}
+      <a class="btn secondary" href="{{ url_for('schedule_edit', schedule_id=row.id) }}">แก้ไขคาบ/ผูกบทเรียน</a>
+    {% endif %}
+  </div>
+</div>
+
+<section class="card period-overview-card">
+  <form method="get" class="form-row">
+    <label>วันที่ใช้งานคาบนี้</label>
+    <input type="date" name="date" value="{{ selected_date.isoformat() }}">
+    <button class="btn secondary small">เปิดวันที่นี้</button>
+  </form>
+  <div class="period-summary-grid">
+    <div><b>วิชา</b><span>{{ row.subject.name }}</span></div>
+    <div><b>ห้อง</b><span>{{ row.classroom.name }}</span></div>
+    <div><b>เวลา</b><span>{{ row.start_time }} - {{ row.end_time }}</span></div>
+    <div><b>สถานที่</b><span>{{ row.room_name or '-' }}</span></div>
+  </div>
+  {% if row.topic %}<p class="period-topic"><b>หัวข้อในตาราง:</b> {{ row.topic }}</p>{% endif %}
+</section>
+
+<section class="period-action-grid">
+  {% if current_user.role in ['teacher','admin'] %}
+  <a class="period-action-card" href="{{ url_for('attendance', subject_id=row.subject_id, classroom_id=row.classroom_id, date=selected_date.isoformat(), period_no=row.period_no, schedule_id=row.id) }}">
+    <div class="period-icon">✅</div>
+    <h2>เช็กชื่อ</h2>
+    <p>เช็กชื่อย้อนหลัง/แก้ไขการมาเรียนของคาบนี้</p>
+  </a>
+  <a class="period-action-card" href="{{ url_for('attendance', subject_id=row.subject_id, classroom_id=row.classroom_id, date=selected_date.isoformat(), period_no=row.period_no, schedule_id=row.id) }}#classwork-score">
+    <div class="period-icon">🧮</div>
+    <h2>กรอกคะแนน</h2>
+    <p>กรอกคะแนนในคาบเรียน แล้วไปรวมกับคะแนนตัดเกรด</p>
+  </a>
+  {% endif %}
+
+  {% if lesson %}
+  <a class="period-action-card" href="{{ url_for('lesson_detail', lesson_id=lesson.id) }}">
+    <div class="period-icon">📘</div>
+    <h2>บทเรียน</h2>
+    <p>{{ lesson.title }}</p>
+    <small>{{ files_count }} ไฟล์แนบ</small>
+  </a>
+  {% if current_user.role in ['teacher','admin'] %}
+  <a class="period-action-card" href="{{ url_for('lesson_edit', lesson_id=lesson.id) }}">
+    <div class="period-icon">✏️</div>
+    <h2>แก้ไขบทเรียน</h2>
+    <p>แก้ชื่อบทเรียน จุดประสงค์ เนื้อหา และแนบไฟล์</p>
+  </a>
+  {% endif %}
+  <div class="period-action-card list-card">
+    <div class="period-icon">📝</div>
+    <h2>ใบงาน</h2>
+    {% if worksheets %}
+      {% for w in worksheets %}
+        {% if current_user.role == 'student' %}
+          {% if lesson_status %}<a class="btn small" href="{{ url_for('do_worksheet', status_id=lesson_status.id, worksheet_id=w.id) }}">ทำใบงาน: {{ w.title }}</a>{% endif %}
+        {% else %}
+          <a class="btn small" href="{{ url_for('worksheet_edit', worksheet_id=w.id) }}">แก้ไข: {{ w.title }}</a>
+        {% endif %}
+      {% endfor %}
+    {% else %}
+      <p>ยังไม่มีใบงาน</p>
+    {% endif %}
+    {% if current_user.role in ['teacher','admin'] %}<a class="btn secondary small" href="{{ url_for('worksheet_create', lesson_id=lesson.id) }}">+ เพิ่มใบงาน</a>{% endif %}
+  </div>
+  <div class="period-action-card list-card">
+    <div class="period-icon">📋</div>
+    <h2>แบบทดสอบ</h2>
+    {% if quizzes %}
+      {% for q in quizzes %}
+        {% if current_user.role == 'student' %}
+          {% if lesson_status %}<a class="btn small" href="{{ url_for('do_quiz', status_id=lesson_status.id, quiz_id=q.id) }}">ทำแบบทดสอบ: {{ q.title }}</a>{% endif %}
+        {% else %}
+          <a class="btn small" href="{{ url_for('quiz_questions', quiz_id=q.id) }}">แก้ไขข้อสอบ: {{ q.title }}</a>
+        {% endif %}
+      {% endfor %}
+    {% else %}
+      <p>ยังไม่มีแบบทดสอบ</p>
+    {% endif %}
+    {% if current_user.role in ['teacher','admin'] %}<a class="btn secondary small" href="{{ url_for('quiz_create', lesson_id=lesson.id) }}">+ เพิ่มแบบทดสอบ</a>{% endif %}
+  </div>
+  {% else %}
+  <div class="period-action-card warning-card">
+    <div class="period-icon">⚠️</div>
+    <h2>ยังไม่พบบทเรียนของคาบนี้</h2>
+    <p>ให้ครูผูกบทเรียนในตารางสอน หรือเพิ่มบทเรียนในรายวิชาก่อน นักเรียนจึงจะเปิดบทเรียน ใบงาน และแบบทดสอบจากคาบนี้ได้</p>
+    {% if current_user.role in ['teacher','admin'] %}
+      <a class="btn" href="{{ url_for('schedule_edit', schedule_id=row.id) }}">ผูกบทเรียนกับคาบนี้</a>
+      <a class="btn secondary" href="{{ url_for('subject_detail', subject_id=row.subject_id) }}">จัดการหน่วย/บทเรียนรายวิชา</a>
+    {% endif %}
+  </div>
+  {% endif %}
+</section>
+
+<style>
+.period-summary-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-top:12px}.period-summary-grid div{background:#f8fafc;border:1px solid #e5e7eb;border-radius:14px;padding:10px}.period-summary-grid b{display:block;color:#64748b;font-size:12px}.period-summary-grid span{font-weight:800}.period-topic{margin-top:12px}.period-action-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px;margin:18px 0}.period-action-card{display:block;text-decoration:none;color:inherit;background:#fff;border:1px solid #e5e7eb;border-radius:18px;padding:16px;box-shadow:0 8px 24px rgba(15,23,42,.06)}.period-action-card:hover{transform:translateY(-1px);box-shadow:0 10px 28px rgba(15,23,42,.09)}.period-action-card h2{margin:4px 0 6px}.period-action-card p{color:#64748b;margin:0 0 8px}.period-icon{font-size:30px}.list-card{display:flex;flex-direction:column;gap:8px}.warning-card{grid-column:1/-1;border-color:#fed7aa;background:#fff7ed}.period-overview-card .form-row{align-items:end}
+</style>
+{% endblock %}

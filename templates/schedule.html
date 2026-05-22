@@ -76,13 +76,13 @@
                   {% for item in items %}
                     <div class="slot-group {% if not loop.last %}slot-group-sep{% endif %}">
                       <div class="slot-subject">{{ item.subject.name }}</div>
-                      <div class="slot-action-row">
-                        {% if item.lesson %}<a class="btn tiny" href="{{ url_for('lesson_detail', lesson_id=item.lesson.id) }}">เข้าเนื้อหา</a>{% endif %}
-                        {% if current_user.role != 'student' %}
-                          {% for r in item.rows %}
-                            <a class="btn tiny attendance-shortcut" href="{{ url_for('attendance', subject_id=r.subject_id, classroom_id=r.classroom_id, date=today_date, period_no=r.period_no, schedule_id=r.id) }}">เช็กชื่อ {{ r.classroom.name }}</a>
-                          {% endfor %}
-                        {% endif %}
+                      <div class="slot-action-row period-hub-actions">
+                        {% for r in item.rows %}
+                          <a class="btn tiny primary-period-btn" href="{{ url_for('schedule_period', schedule_id=r.id, date=today_date) }}">เปิดคาบ {{ r.classroom.name }}</a>
+                          {% if current_user.role != 'student' %}
+                            <a class="btn tiny attendance-shortcut" href="{{ url_for('attendance', subject_id=r.subject_id, classroom_id=r.classroom_id, date=today_date, period_no=r.period_no, schedule_id=r.id) }}">เช็กชื่อ</a>
+                          {% endif %}
+                        {% endfor %}
                       </div>
                       <div class="slot-room">{{ item.classrooms|join(' + ') }}</div>
                       <div class="slot-place">{{ item.places|join(' / ') if item.places else '-' }}</div>
@@ -106,6 +106,7 @@
 .break-label{font-weight:800;writing-mode:vertical-rl;margin:auto;line-height:1.1}
 .break-cell span{font-weight:800;writing-mode:vertical-rl;display:inline-block}
 .break-cell small{display:block;font-size:10px;margin-top:4px}
+.period-hub-actions{display:flex;flex-wrap:wrap;gap:4px;margin:5px 0}.primary-period-btn{font-weight:800}
 </style>
 
 {% if current_user.role != 'student' %}
@@ -137,9 +138,9 @@
 
 <h2>รายการคาบสอน</h2>
 <table>
-<tr>{% if current_user.role=='admin' %}<th>ครู</th>{% endif %}<th>วัน</th><th>คาบ</th><th>เวลา</th><th>วิชา</th><th>ห้อง</th><th>บทเรียน/หัวข้อ</th>{% if current_user.role!='student' %}<th>เช็กชื่อ</th><th>จัดการ</th>{% endif %}</tr>
+<tr>{% if current_user.role=='admin' %}<th>ครู</th>{% endif %}<th>วัน</th><th>คาบ</th><th>เวลา</th><th>วิชา</th><th>ห้อง</th><th>บทเรียน/หัวข้อ</th><th>เปิดคาบ</th>{% if current_user.role!='student' %}<th>เช็กชื่อ/คะแนน</th><th>จัดการ</th>{% endif %}</tr>
 {% for s in schedules %}
-<tr>{% if current_user.role=='admin' %}<td data-label='ครู'>{{s.teacher.full_name if s.teacher is defined and s.teacher else ''}}</td>{% endif %}<td data-label="วัน">{{day_names[s.weekday]}}</td><td data-label="คาบ">{{s.period_no}}</td><td data-label="เวลา">{{s.start_time}}-{{s.end_time}}</td><td data-label="วิชา">{{s.subject.name}}</td><td data-label="ห้อง">{{s.classroom.name}}</td><td data-label="บทเรียน/หัวข้อ">{% if s.lesson %}<a class="btn small" href="{{url_for('lesson_detail', lesson_id=s.lesson.id)}}">{{s.lesson.title}}</a>{% else %}{{s.topic or '-'}}{% endif %}</td>{% if current_user.role!='student' %}<td data-label="เช็กชื่อ"><a class="btn small attendance-shortcut" href="{{url_for('attendance', subject_id=s.subject_id, classroom_id=s.classroom_id, date=today_date, period_no=s.period_no, schedule_id=s.id)}}">เช็กชื่อ</a></td><td data-label="จัดการ"><a class="btn small" href="{{url_for('schedule_edit', schedule_id=s.id)}}">แก้ไข</a><form method="post" action="{{url_for('schedule_delete', schedule_id=s.id)}}" class="inline" onsubmit="return confirm('ลบคาบนี้?')"><button class="danger-btn small">ลบ</button></form></td>{% endif %}</tr>
+<tr>{% if current_user.role=='admin' %}<td data-label='ครู'>{{s.teacher.full_name if s.teacher is defined and s.teacher else ''}}</td>{% endif %}<td data-label="วัน">{{day_names[s.weekday]}}</td><td data-label="คาบ">{{s.period_no}}</td><td data-label="เวลา">{{s.start_time}}-{{s.end_time}}</td><td data-label="วิชา">{{s.subject.name}}</td><td data-label="ห้อง">{{s.classroom.name}}</td><td data-label="บทเรียน/หัวข้อ">{% if s.lesson %}<a class="btn small" href="{{url_for('lesson_detail', lesson_id=s.lesson.id)}}">{{s.lesson.title}}</a>{% else %}{{s.topic or '-'}}{% endif %}</td><td data-label="เปิดคาบ"><a class="btn small" href="{{url_for('schedule_period', schedule_id=s.id, date=today_date)}}">เปิดคาบ/บทเรียน</a></td>{% if current_user.role!='student' %}<td data-label="เช็กชื่อ/คะแนน"><a class="btn small attendance-shortcut" href="{{url_for('attendance', subject_id=s.subject_id, classroom_id=s.classroom_id, date=today_date, period_no=s.period_no, schedule_id=s.id)}}">เช็กชื่อ/คะแนน</a></td><td data-label="จัดการ"><a class="btn small" href="{{url_for('schedule_edit', schedule_id=s.id)}}">แก้ไขคาบ</a><form method="post" action="{{url_for('schedule_delete', schedule_id=s.id)}}" class="inline" onsubmit="return confirm('ลบคาบนี้?')"><button class="danger-btn small">ลบ</button></form></td>{% endif %}</tr>
 {% endfor %}
 </table>
 
