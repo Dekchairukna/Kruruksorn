@@ -44,9 +44,10 @@
     </div>
 
     <div class="actions-row">
-      <button>นำเข้าหน่วย/บทเรียน</button>
+      <button type="submit">นำเข้าหน่วย/บทเรียน</button>
       <a class="btn secondary" href="{{ url_for('download_subject_lesson_import_template', subject_id=subject.id) }}">ไฟล์ตัวอย่าง</a>
     </div>
+  </form>
 </section>
 
 <section class="card">
@@ -110,7 +111,6 @@
         {% endfor %}
       </table>
     </div>
-  </form>
 </section>
 
 <section class="card">
