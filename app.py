@@ -946,7 +946,7 @@ def is_school_blocked_day(target_date, teacher_id=None):
     return q.first() is not None or target_date.weekday() >= 5
 
 def ordered_lessons_for_subject(subject_id):
-    return Lesson.query.join(Unit).filter(Unit.subject_id==subject_id).order_by(Unit.id, Lesson.id).all()
+    return Lesson.query.join(Unit).filter(Unit.subject_id==subject_id).order_by(Unit.id.asc(), Lesson.id.asc()).all()
 
 def auto_lesson_for_schedule(schedule_row, target_date=None):
     """ถ้าครูผูกบทเรียนไว้ ใช้บทเรียนนั้นก่อน; ถ้าไม่ผูก ให้เรียงบทเรียนตามวันที่มีเรียนจริงในภาคเรียน"""
@@ -2822,15 +2822,44 @@ def subject_detail(subject_id):
     if request.method == 'POST':
         db.session.add(Unit(subject_id=subject.id, title=request.form['title'], indicators=request.form.get('indicators',''), required_periods=int(request.form.get('required_periods',1))))
         db.session.commit(); return redirect(url_for('subject_detail', subject_id=subject.id))
-    units = Unit.query.filter_by(subject_id=subject.id).all()
+
+    # ใช้เส้นทางเดียวให้ชัดเจน: รายวิชา -> หน่วย -> บทเรียน -> ใบงาน/แบบทดสอบ
+    # หน้านี้จึงไม่แสดงแค่จำนวนรวม แต่แตกบทเรียนย่อยใต้หน่วย เพื่อกันอัปใบงานผิดบทเรียนแล้วหาไม่เจอ
+    units = Unit.query.filter_by(subject_id=subject.id).order_by(Unit.id.asc()).all()
     completeness = []
     for u in units:
-        lessons = Lesson.query.filter_by(unit_id=u.id).all()
+        lessons = Lesson.query.filter_by(unit_id=u.id).order_by(Lesson.id.asc()).all()
+        lesson_rows = []
+        worksheet_total = 0
+        quiz_total = 0
+        file_total = 0
+        for lesson in lessons:
+            worksheet_count = Worksheet.query.filter_by(lesson_id=lesson.id).count()
+            quiz_count = Quiz.query.filter_by(lesson_id=lesson.id).count()
+            file_count = LessonFile.query.filter_by(lesson_id=lesson.id).count()
+            worksheet_total += worksheet_count
+            quiz_total += quiz_count
+            file_total += file_count
+            lesson_rows.append(SimpleNamespace(
+                lesson=lesson,
+                worksheet_count=worksheet_count,
+                quiz_count=quiz_count,
+                file_count=file_count,
+            ))
+
         lesson_count = len(lessons)
-        worksheets = sum(1 for l in lessons if Worksheet.query.filter_by(lesson_id=l.id).first())
-        quizzes = sum(1 for l in lessons if Quiz.query.filter_by(lesson_id=l.id).first())
-        percent = min(100, int((lesson_count / max(1,u.required_periods))*100))
-        completeness.append((u, lesson_count, worksheets, quizzes, percent, max(0,u.required_periods-lesson_count)))
+        percent = min(100, int((lesson_count / max(1, u.required_periods)) * 100))
+        completeness.append(SimpleNamespace(
+            unit=u,
+            lesson_count=lesson_count,
+            required_periods=u.required_periods,
+            worksheets=worksheet_total,
+            quizzes=quiz_total,
+            files=file_total,
+            percent=percent,
+            missing=max(0, u.required_periods - lesson_count),
+            lesson_rows=lesson_rows,
+        ))
     subject_rooms = subject_classrooms_for_user(subject.id)
     return render_template('subject_detail.html', subject=subject, units=units, completeness=completeness, subject_rooms=subject_rooms)
 
@@ -2979,14 +3008,45 @@ def lesson_delete(lesson_id):
     lesson = Lesson.query.get_or_404(lesson_id)
     if not owns_lesson(lesson): return deny_redirect('subjects')
     subject_id = lesson.unit.subject_id
-    for lf in LessonFile.query.filter_by(lesson_id=lesson.id).all():
+    unit_id = lesson.unit_id
+    title = lesson.title
+    try:
+        # ลบงานประจำคาบ/คำตอบ/สถานะที่ผูกกับบทเรียนนี้ก่อน
+        _delete_assignments(Assignment.query.filter_by(lesson_id=lesson.id))
+        PeriodLessonLog.query.filter_by(lesson_id=lesson.id).delete(synchronize_session=False)
+        TeachingSchedule.query.filter_by(lesson_id=lesson.id).update({TeachingSchedule.lesson_id: None}, synchronize_session=False)
         try:
-            abs_path = os.path.join(app.config['UPLOAD_FOLDER'], lf.file_path)
-            if os.path.exists(abs_path): os.remove(abs_path)
+            ClassworkScoreItem.query.filter_by(lesson_id=lesson.id).update({ClassworkScoreItem.lesson_id: None}, synchronize_session=False)
         except Exception:
             pass
-        db.session.delete(lf)
-    db.session.delete(lesson); db.session.commit(); flash('ลบบทเรียนแล้ว', 'success')
+
+        # ลบไฟล์แนบ ใบงาน ข้อคำถาม คำตอบ แบบทดสอบ และข้อสอบ เพื่อให้บทเรียนไม่ค้างข้อมูลลูก
+        for lf in LessonFile.query.filter_by(lesson_id=lesson.id).all():
+            try:
+                abs_path = os.path.join(app.config['UPLOAD_FOLDER'], lf.file_path)
+                if os.path.exists(abs_path): os.remove(abs_path)
+            except Exception:
+                pass
+            db.session.delete(lf)
+
+        for ws in Worksheet.query.filter_by(lesson_id=lesson.id).all():
+            force_delete_worksheet_data(ws.id)
+            db.session.delete(ws)
+
+        for qz in Quiz.query.filter_by(lesson_id=lesson.id).all():
+            qids = [q.id for q in QuizQuestion.query.filter_by(quiz_id=qz.id).all()]
+            if qids:
+                QuizAnswer.query.filter(QuizAnswer.question_id.in_(qids)).delete(synchronize_session=False)
+                QuizQuestion.query.filter(QuizQuestion.id.in_(qids)).delete(synchronize_session=False)
+            db.session.delete(qz)
+
+        db.session.delete(lesson)
+        db.session.commit()
+        flash(f'ลบบทเรียน “{title}” พร้อมใบงาน/แบบทดสอบที่ผูกอยู่แล้ว', 'success')
+    except Exception as e:
+        db.session.rollback()
+        flash(f'ลบบทเรียนไม่สำเร็จ: {e}', 'danger')
+        return redirect(url_for('unit_lessons', unit_id=unit_id))
     return redirect(url_for('subject_detail', subject_id=subject_id))
 
 
@@ -3470,7 +3530,15 @@ def schedule_period(schedule_id):
         files_count=files_count,
         lesson_status=lesson_status,
         lesson_log=lesson_log,
-        available_lessons=ordered_lessons_for_subject(row.subject_id) if current_user.role in ['teacher','admin'] else []
+        available_lessons=[
+            SimpleNamespace(
+                lesson=l,
+                worksheet_count=Worksheet.query.filter_by(lesson_id=l.id).count(),
+                quiz_count=Quiz.query.filter_by(lesson_id=l.id).count(),
+                file_count=LessonFile.query.filter_by(lesson_id=l.id).count(),
+            )
+            for l in (ordered_lessons_for_subject(row.subject_id) if current_user.role in ['teacher','admin'] else [])
+        ]
     )
 
 

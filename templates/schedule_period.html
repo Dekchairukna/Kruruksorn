@@ -55,10 +55,12 @@
     <input type="hidden" name="date" value="{{ selected_date.isoformat() }}">
     <label>บทเรียนที่จะเปิดในคาบนี้</label>
     <select name="lesson_id" required>
-      {% for l in available_lessons %}
-        <option value="{{ l.id }}" {% if lesson and l.id == lesson.id %}selected{% endif %}>{{ l.unit.title }} — {{ l.title }}</option>
+      {% for item in available_lessons %}
+        {% set l = item.lesson %}
+        <option value="{{ l.id }}" {% if lesson and l.id == lesson.id %}selected{% endif %}>{{ l.unit.title }} — {{ l.title }} | ใบงาน {{ item.worksheet_count }} | แบบทดสอบ {{ item.quiz_count }} | ไฟล์ {{ item.file_count }}</option>
       {% endfor %}
     </select>
+    <small class="muted">ถ้าเลือกบทเรียนที่ไม่มีใบงาน นักเรียนจะเห็นเฉพาะเนื้อหา ให้กด “+ เพิ่มใบงาน” ในบทเรียนที่ต้องการก่อน</small>
     <label>บันทึกครูผู้สอน / หมายเหตุคาบนี้</label>
     <textarea name="note" rows="2" placeholder="เช่น สอนถึงตัวอย่างที่ 2 / ให้นักเรียนทำใบงานท้ายคาบ">{{ lesson_log.note if lesson_log else '' }}</textarea>
     <div class="actions-row">
