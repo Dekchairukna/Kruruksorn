@@ -16,7 +16,9 @@ from sqlalchemy import inspect as sa_inspect
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 INSTANCE_DIR = os.path.join(BASE_DIR, 'instance')
-UPLOAD_DIR = os.path.join(BASE_DIR, 'uploads')
+# ไฟล์อัปโหลดต้องไม่ผูกกับโฟลเดอร์โค้ดอย่างเดียว เพราะบน Railway เมื่อ redeploy ไฟล์ใน container อาจหายได้
+# ถ้ามี Railway Volume ให้ตั้งตัวแปร PERSISTENT_UPLOAD_DIR=/data/uploads หรือ /app/uploads ตามที่ mount ไว้
+UPLOAD_DIR = os.environ.get('PERSISTENT_UPLOAD_DIR') or os.environ.get('UPLOAD_DIR') or os.path.join(BASE_DIR, 'uploads')
 os.makedirs(INSTANCE_DIR, exist_ok=True)
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
@@ -130,6 +132,23 @@ def save_uploaded_file(file_obj, subdir='worksheets'):
     filename = f"{stamp}_{safe}"
     file_obj.save(os.path.join(target_dir, filename))
     return f"{subdir}/{filename}", original
+
+
+def safe_remove_upload_file(file_path):
+    """ลบไฟล์จริงจากโฟลเดอร์ uploads แบบปลอดภัย ไม่ให้ path หลุดออกนอก uploads"""
+    if not file_path:
+        return False
+    try:
+        upload_root = os.path.abspath(app.config['UPLOAD_FOLDER'])
+        abs_path = os.path.abspath(os.path.join(upload_root, file_path))
+        if not abs_path.startswith(upload_root):
+            return False
+        if os.path.exists(abs_path) and os.path.isfile(abs_path):
+            os.remove(abs_path)
+            return True
+    except Exception:
+        pass
+    return False
 
 
 
@@ -1569,16 +1588,57 @@ def _delete_assignments(query):
     return deleted
 
 
-def force_delete_worksheet_data(worksheet_id):
-    """ลบใบงานพร้อมข้อคำถามและคำตอบนักเรียนที่อ้างถึงข้อในใบงานนี้"""
+def force_delete_worksheet_data(worksheet_id, delete_file=True):
+    """ลบใบงานพร้อมไฟล์ ข้อคำถาม และคำตอบนักเรียนที่อ้างถึงข้อในใบงานนี้"""
+    ws = Worksheet.query.get(worksheet_id)
+    if ws and delete_file:
+        safe_remove_upload_file(ws.file_path)
     question_ids = [q.id for q in WorksheetQuestion.query.filter_by(worksheet_id=worksheet_id).all()]
     if question_ids:
         WorksheetAnswer.query.filter(WorksheetAnswer.question_id.in_(question_ids)).delete(synchronize_session=False)
         WorksheetQuestion.query.filter(WorksheetQuestion.id.in_(question_ids)).delete(synchronize_session=False)
 
+
+def force_delete_quiz_data(quiz_id):
+    """ลบแบบทดสอบพร้อมข้อสอบและคำตอบนักเรียนที่อ้างถึงข้อสอบนั้น"""
+    question_ids = [q.id for q in QuizQuestion.query.filter_by(quiz_id=quiz_id).all()]
+    if question_ids:
+        QuizAnswer.query.filter(QuizAnswer.question_id.in_(question_ids)).delete(synchronize_session=False)
+        QuizQuestion.query.filter(QuizQuestion.id.in_(question_ids)).delete(synchronize_session=False)
+
+
+def force_delete_lesson_data(lesson_id, delete_files=True):
+    """ลบบทเรียนแบบรวมศูนย์ เพื่อไม่ให้มีข้อมูลลูกค้าง: ไฟล์ ใบงาน แบบทดสอบ งาน คาบเรียน และคะแนนคาบ"""
+    _delete_assignments(Assignment.query.filter_by(lesson_id=lesson_id))
+    PeriodLessonLog.query.filter_by(lesson_id=lesson_id).delete(synchronize_session=False)
+    TeachingSchedule.query.filter_by(lesson_id=lesson_id).update({TeachingSchedule.lesson_id: None}, synchronize_session=False)
+    try:
+        ClassworkScoreItem.query.filter_by(lesson_id=lesson_id).update({ClassworkScoreItem.lesson_id: None}, synchronize_session=False)
+    except Exception:
+        pass
+
+    for lf in LessonFile.query.filter_by(lesson_id=lesson_id).all():
+        if delete_files:
+            safe_remove_upload_file(lf.file_path)
+        db.session.delete(lf)
+
+    for ws in Worksheet.query.filter_by(lesson_id=lesson_id).all():
+        force_delete_worksheet_data(ws.id, delete_file=delete_files)
+        db.session.delete(ws)
+
+    for quiz in Quiz.query.filter_by(lesson_id=lesson_id).all():
+        force_delete_quiz_data(quiz.id)
+        db.session.delete(quiz)
+
 def force_delete_classroom_data(classroom_id):
     """ลบห้องเรียนแบบตัดข้อมูลที่ผูกอยู่ทั้งหมด เพื่อให้ลบได้จริงตามคำขอ"""
     _delete_assignments(Assignment.query.filter_by(classroom_id=classroom_id))
+
+    item_ids = [x.id for x in ClassworkScoreItem.query.filter_by(classroom_id=classroom_id).all()]
+    if item_ids:
+        ClassworkScore.query.filter(ClassworkScore.item_id.in_(item_ids)).delete(synchronize_session=False)
+        ClassworkScoreItem.query.filter(ClassworkScoreItem.id.in_(item_ids)).delete(synchronize_session=False)
+
     Attendance.query.filter_by(classroom_id=classroom_id).delete(synchronize_session=False)
     TeachingSchedule.query.filter_by(classroom_id=classroom_id).delete(synchronize_session=False)
     SubjectClassroom.query.filter_by(classroom_id=classroom_id).delete(synchronize_session=False)
@@ -1589,6 +1649,12 @@ def force_delete_subject_data(subject_id):
     """ลบรายวิชาแบบตัดข้อมูลที่ผูกอยู่ทั้งหมด เพื่อให้ลบได้จริงตามคำขอ"""
     _delete_assignments(Assignment.query.filter_by(subject_id=subject_id))
 
+    # คะแนนรายคาบต้องลบคะแนนลูกก่อนหัวข้อคะแนน
+    item_ids = [x.id for x in ClassworkScoreItem.query.filter_by(subject_id=subject_id).all()]
+    if item_ids:
+        ClassworkScore.query.filter(ClassworkScore.item_id.in_(item_ids)).delete(synchronize_session=False)
+        ClassworkScoreItem.query.filter(ClassworkScoreItem.id.in_(item_ids)).delete(synchronize_session=False)
+
     Attendance.query.filter_by(subject_id=subject_id).delete(synchronize_session=False)
     ManualScore.query.filter_by(subject_id=subject_id).delete(synchronize_session=False)
     GradeSetting.query.filter_by(subject_id=subject_id).delete(synchronize_session=False)
@@ -1597,54 +1663,17 @@ def force_delete_subject_data(subject_id):
     TeacherSubject.query.filter_by(subject_id=subject_id).delete(synchronize_session=False)
 
     units = Unit.query.filter_by(subject_id=subject_id).all()
-    unit_ids = [u.id for u in units]
-    if unit_ids:
-        lessons = Lesson.query.filter(Lesson.unit_id.in_(unit_ids)).all()
-        lesson_ids = [l.id for l in lessons]
-        if lesson_ids:
-            worksheet_ids = [w.id for w in Worksheet.query.filter(Worksheet.lesson_id.in_(lesson_ids)).all()]
-            quiz_ids = [q.id for q in Quiz.query.filter(Quiz.lesson_id.in_(lesson_ids)).all()]
-
-            LessonFile.query.filter(LessonFile.lesson_id.in_(lesson_ids)).delete(synchronize_session=False)
-            if worksheet_ids:
-                worksheet_question_ids = [q.id for q in WorksheetQuestion.query.filter(WorksheetQuestion.worksheet_id.in_(worksheet_ids)).all()]
-                if worksheet_question_ids:
-                    WorksheetAnswer.query.filter(WorksheetAnswer.question_id.in_(worksheet_question_ids)).delete(synchronize_session=False)
-                WorksheetQuestion.query.filter(WorksheetQuestion.worksheet_id.in_(worksheet_ids)).delete(synchronize_session=False)
-                Worksheet.query.filter(Worksheet.id.in_(worksheet_ids)).delete(synchronize_session=False)
-            if quiz_ids:
-                QuizQuestion.query.filter(QuizQuestion.quiz_id.in_(quiz_ids)).delete(synchronize_session=False)
-                Quiz.query.filter(Quiz.id.in_(quiz_ids)).delete(synchronize_session=False)
-            Lesson.query.filter(Lesson.id.in_(lesson_ids)).delete(synchronize_session=False)
-        Unit.query.filter(Unit.id.in_(unit_ids)).delete(synchronize_session=False)
+    for unit in units:
+        force_delete_unit_data(unit.id)
+        db.session.delete(unit)
 
 
 def force_delete_unit_data(unit_id):
-    """ลบหน่วยการเรียนรู้พร้อมข้อมูลที่ผูกอยู่ เช่น บทเรียน ไฟล์ ใบงาน แบบทดสอบ และงานที่สั่งแล้ว"""
+    """ลบหน่วยการเรียนรู้พร้อมบทเรียน ไฟล์ ใบงาน แบบทดสอบ งาน และคำตอบทั้งหมดที่ผูกอยู่"""
     lessons = Lesson.query.filter_by(unit_id=unit_id).all()
-    lesson_ids = [l.id for l in lessons]
-    if lesson_ids:
-        # งาน/คำตอบของนักเรียนที่ผูกกับบทเรียนนี้ ต้องลบก่อนเพราะเป็นข้อมูลลูก
-        _delete_assignments(Assignment.query.filter(Assignment.lesson_id.in_(lesson_ids)))
-
-        # ตารางสอนหรือคะแนนรายคาบบางรายการอาจอ้างถึงบทเรียน ให้ตัดลิงก์ออกแทนการลบทั้งตาราง
-        TeachingSchedule.query.filter(TeachingSchedule.lesson_id.in_(lesson_ids)).update({TeachingSchedule.lesson_id: None}, synchronize_session=False)
-        try:
-            ClassworkScoreItem.query.filter(ClassworkScoreItem.lesson_id.in_(lesson_ids)).update({ClassworkScoreItem.lesson_id: None}, synchronize_session=False)
-        except Exception:
-            pass
-
-        worksheet_ids = [w.id for w in Worksheet.query.filter(Worksheet.lesson_id.in_(lesson_ids)).all()]
-        quiz_ids = [q.id for q in Quiz.query.filter(Quiz.lesson_id.in_(lesson_ids)).all()]
-
-        LessonFile.query.filter(LessonFile.lesson_id.in_(lesson_ids)).delete(synchronize_session=False)
-        if worksheet_ids:
-            WorksheetQuestion.query.filter(WorksheetQuestion.worksheet_id.in_(worksheet_ids)).delete(synchronize_session=False)
-            Worksheet.query.filter(Worksheet.id.in_(worksheet_ids)).delete(synchronize_session=False)
-        if quiz_ids:
-            QuizQuestion.query.filter(QuizQuestion.quiz_id.in_(quiz_ids)).delete(synchronize_session=False)
-            Quiz.query.filter(Quiz.id.in_(quiz_ids)).delete(synchronize_session=False)
-        Lesson.query.filter(Lesson.id.in_(lesson_ids)).delete(synchronize_session=False)
+    for lesson in lessons:
+        force_delete_lesson_data(lesson.id, delete_files=True)
+        db.session.delete(lesson)
 
 @app.route('/classrooms/<int:classroom_id>/deactivate', methods=['POST'])
 @login_required
@@ -3080,11 +3109,7 @@ def lesson_file_delete(file_id):
     lf = LessonFile.query.get_or_404(file_id)
     lesson = lf.lesson
     if not owns_lesson(lesson): return deny_redirect('subjects')
-    try:
-        abs_path = os.path.join(app.config['UPLOAD_FOLDER'], lf.file_path)
-        if os.path.exists(abs_path): os.remove(abs_path)
-    except Exception:
-        pass
+    safe_remove_upload_file(lf.file_path)
     db.session.delete(lf); db.session.commit(); flash('ลบไฟล์บทเรียนแล้ว', 'success')
     return redirect(url_for('lesson_edit', lesson_id=lesson.id))
 
@@ -3098,38 +3123,10 @@ def lesson_delete(lesson_id):
     unit_id = lesson.unit_id
     title = lesson.title
     try:
-        # ลบงานประจำคาบ/คำตอบ/สถานะที่ผูกกับบทเรียนนี้ก่อน
-        _delete_assignments(Assignment.query.filter_by(lesson_id=lesson.id))
-        PeriodLessonLog.query.filter_by(lesson_id=lesson.id).delete(synchronize_session=False)
-        TeachingSchedule.query.filter_by(lesson_id=lesson.id).update({TeachingSchedule.lesson_id: None}, synchronize_session=False)
-        try:
-            ClassworkScoreItem.query.filter_by(lesson_id=lesson.id).update({ClassworkScoreItem.lesson_id: None}, synchronize_session=False)
-        except Exception:
-            pass
-
-        # ลบไฟล์แนบ ใบงาน ข้อคำถาม คำตอบ แบบทดสอบ และข้อสอบ เพื่อให้บทเรียนไม่ค้างข้อมูลลูก
-        for lf in LessonFile.query.filter_by(lesson_id=lesson.id).all():
-            try:
-                abs_path = os.path.join(app.config['UPLOAD_FOLDER'], lf.file_path)
-                if os.path.exists(abs_path): os.remove(abs_path)
-            except Exception:
-                pass
-            db.session.delete(lf)
-
-        for ws in Worksheet.query.filter_by(lesson_id=lesson.id).all():
-            force_delete_worksheet_data(ws.id)
-            db.session.delete(ws)
-
-        for qz in Quiz.query.filter_by(lesson_id=lesson.id).all():
-            qids = [q.id for q in QuizQuestion.query.filter_by(quiz_id=qz.id).all()]
-            if qids:
-                QuizAnswer.query.filter(QuizAnswer.question_id.in_(qids)).delete(synchronize_session=False)
-                QuizQuestion.query.filter(QuizQuestion.id.in_(qids)).delete(synchronize_session=False)
-            db.session.delete(qz)
-
+        force_delete_lesson_data(lesson.id, delete_files=True)
         db.session.delete(lesson)
         db.session.commit()
-        flash(f'ลบบทเรียน “{title}” พร้อมใบงาน/แบบทดสอบที่ผูกอยู่แล้ว', 'success')
+        flash(f'ลบบทเรียน “{title}” พร้อมไฟล์ ใบงาน แบบทดสอบ และคำตอบที่ผูกอยู่แล้ว', 'success')
     except Exception as e:
         db.session.rollback()
         flash(f'ลบบทเรียนไม่สำเร็จ: {e}', 'danger')
@@ -3337,7 +3334,14 @@ def quiz_delete(quiz_id):
     quiz = Quiz.query.get_or_404(quiz_id)
     if not owns_lesson(quiz.lesson): return deny_redirect('subjects')
     lesson_id = quiz.lesson_id
-    db.session.delete(quiz); db.session.commit(); flash('ลบแบบทดสอบแล้ว', 'success')
+    try:
+        force_delete_quiz_data(quiz.id)
+        db.session.delete(quiz)
+        db.session.commit()
+        flash('ลบแบบทดสอบพร้อมข้อสอบและคำตอบที่ผูกอยู่แล้ว', 'success')
+    except Exception as e:
+        db.session.rollback()
+        flash(f'ลบแบบทดสอบไม่สำเร็จ: {e}', 'danger')
     return redirect(url_for('lesson_detail', lesson_id=lesson_id))
 
 @app.route('/quiz_question/<int:question_id>/edit', methods=['GET','POST'])
@@ -3368,7 +3372,14 @@ def quiz_question_delete(question_id):
     q = QuizQuestion.query.get_or_404(question_id)
     if not owns_lesson(q.quiz.lesson): return deny_redirect('subjects')
     quiz_id = q.quiz_id
-    db.session.delete(q); db.session.commit(); flash('ลบข้อสอบแล้ว', 'success')
+    try:
+        QuizAnswer.query.filter_by(question_id=q.id).delete(synchronize_session=False)
+        db.session.delete(q)
+        db.session.commit()
+        flash('ลบข้อสอบพร้อมคำตอบที่ผูกอยู่แล้ว', 'success')
+    except Exception as e:
+        db.session.rollback()
+        flash(f'ลบข้อสอบไม่สำเร็จ: {e}', 'danger')
     return redirect(url_for('quiz_questions', quiz_id=quiz_id))
 
 
@@ -3419,7 +3430,13 @@ def assignment_edit(assignment_id):
 def assignment_delete(assignment_id):
     a = Assignment.query.get_or_404(assignment_id)
     if current_user.role != 'admin' and a.teacher_id != current_user.id: return deny_redirect('assignments')
-    db.session.delete(a); db.session.commit(); flash('ลบงานที่สั่งแล้ว', 'success')
+    try:
+        _delete_assignments(Assignment.query.filter_by(id=a.id))
+        db.session.commit()
+        flash('ลบงานที่สั่ง พร้อมสถานะ/คำตอบนักเรียนที่ผูกอยู่แล้ว', 'success')
+    except Exception as e:
+        db.session.rollback()
+        flash(f'ลบงานไม่สำเร็จ: {e}', 'danger')
     return redirect(url_for('assignments'))
 
 
@@ -3943,7 +3960,15 @@ def schedule_edit(schedule_id):
 def schedule_delete(schedule_id):
     row = TeachingSchedule.query.get_or_404(schedule_id)
     if current_user.role != 'admin' and row.teacher_id != current_user.id: return deny_redirect('schedule')
-    db.session.delete(row); db.session.commit(); flash('ลบคาบสอนแล้ว', 'success')
+    try:
+        PeriodLessonLog.query.filter_by(schedule_id=row.id).delete(synchronize_session=False)
+        ClassworkScoreItem.query.filter_by(schedule_id=row.id).update({ClassworkScoreItem.schedule_id: None}, synchronize_session=False)
+        db.session.delete(row)
+        db.session.commit()
+        flash('ลบคาบสอนแล้ว และตัดลิงก์ข้อมูลคาบที่เกี่ยวข้องแล้ว', 'success')
+    except Exception as e:
+        db.session.rollback()
+        flash(f'ลบคาบสอนไม่สำเร็จ: {e}', 'danger')
     return redirect(url_for('schedule'))
 
 
