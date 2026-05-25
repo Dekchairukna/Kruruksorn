@@ -1235,7 +1235,10 @@ def teacher_dashboard():
     assignments = Assignment.query.filter_by(teacher_id=current_user.id).order_by(Assignment.created_at.desc()).limit(5).all() if current_user.role=='teacher' else Assignment.query.order_by(Assignment.created_at.desc()).limit(5).all()
     active_semester = get_active_semester()
     cal_months, upcoming, today_position = build_calendar_dashboard(teacher_id=current_user.id if current_user.role=='teacher' else None, semester=active_semester)
-    return render_template('teacher_dashboard.html', cur=cur, nxt=nxt, subjects=subjects, classrooms=classrooms, assignments=assignments, cal_months=cal_months, upcoming=upcoming, today_position=today_position, active_semester=active_semester, period_info=current_period_info(local_today(), current_user.id))
+    today = local_today()
+    cur_lesson_log = get_period_lesson_log(cur, today) if cur else None
+    nxt_lesson_log = get_period_lesson_log(nxt, today) if nxt else None
+    return render_template('teacher_dashboard.html', cur=cur, nxt=nxt, subjects=subjects, classrooms=classrooms, assignments=assignments, cal_months=cal_months, upcoming=upcoming, today_position=today_position, active_semester=active_semester, period_info=current_period_info(today, current_user.id), cur_lesson_log=cur_lesson_log, nxt_lesson_log=nxt_lesson_log, today_date=today.isoformat())
 
 @app.route('/student')
 @login_required
@@ -3598,6 +3601,8 @@ def schedule():
         {'type':'period','no':7,'time':'14:41-15:30'},
         {'type':'period','no':8,'time':'15:41-16:00'},
     ]
+    today = local_today()
+    current_lesson_logs = {row.id: get_period_lesson_log(row, today) for row in schedules}
     schedule_grid = build_schedule_grid(schedules)
     day_pairs = list(enumerate(day_names[:5]))
     schedules_by_teacher = {}
@@ -3605,7 +3610,7 @@ def schedule():
         all_rows = TeachingSchedule.query.order_by(TeachingSchedule.teacher_id, TeachingSchedule.weekday, TeachingSchedule.period_no).all()
         for row in all_rows:
             schedules_by_teacher.setdefault(row.teacher_id, []).append(row)
-    return render_template('schedule.html', schedules=schedules, subjects=subjects, rooms=rooms, lessons=lessons, edit_row=edit_row, day_names=day_names, periods=periods, schedule_grid=schedule_grid, day_pairs=day_pairs, teachers=teachers, selected_teacher_id=selected_teacher_id, active_teacher_id=active_teacher_id, teacher_title=teacher_title, schedules_by_teacher=schedules_by_teacher, today_date=local_today().isoformat(), schedule_slots=schedule_slots)
+    return render_template('schedule.html', schedules=schedules, subjects=subjects, rooms=rooms, lessons=lessons, edit_row=edit_row, day_names=day_names, periods=periods, schedule_grid=schedule_grid, day_pairs=day_pairs, teachers=teachers, selected_teacher_id=selected_teacher_id, active_teacher_id=active_teacher_id, teacher_title=teacher_title, schedules_by_teacher=schedules_by_teacher, today_date=today.isoformat(), schedule_slots=schedule_slots, current_lesson_logs=current_lesson_logs)
 
 @app.route('/schedule/import', methods=['POST'])
 @login_required

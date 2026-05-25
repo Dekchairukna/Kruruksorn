@@ -79,6 +79,14 @@
                       <div class="slot-action-row period-hub-actions">
                         {% for r in item.rows %}
                           <a class="btn tiny primary-period-btn" href="{{ url_for('schedule_period', schedule_id=r.id, date=today_date) }}">เปิดคาบ {{ r.classroom.name }}</a>
+                          {% set live_log = current_lesson_logs.get(r.id) if current_lesson_logs is defined else none %}
+                          {% if live_log and live_log.is_published %}
+                            <span class="live-lesson-badge">กำลังเปิด: {{ live_log.lesson.title }}</span>
+                          {% elif live_log %}
+                            <span class="hidden-lesson-badge">ซ่อนอยู่: {{ live_log.lesson.title }}</span>
+                          {% else %}
+                            <span class="muted-lesson-badge">ยังไม่เปิดเนื้อหา</span>
+                          {% endif %}
                           {% if current_user.role != 'student' %}
                             <a class="btn tiny attendance-shortcut" href="{{ url_for('attendance', subject_id=r.subject_id, classroom_id=r.classroom_id, date=today_date, period_no=r.period_no, schedule_id=r.id) }}">เช็กชื่อ</a>
                           {% endif %}
@@ -106,7 +114,7 @@
 .break-label{font-weight:800;writing-mode:vertical-rl;margin:auto;line-height:1.1}
 .break-cell span{font-weight:800;writing-mode:vertical-rl;display:inline-block}
 .break-cell small{display:block;font-size:10px;margin-top:4px}
-.period-hub-actions{display:flex;flex-wrap:wrap;gap:4px;margin:5px 0}.primary-period-btn{font-weight:800}
+.period-hub-actions{display:flex;flex-wrap:wrap;gap:4px;margin:5px 0}.primary-period-btn{font-weight:800}.live-lesson-badge{display:block;margin-top:5px;padding:5px 7px;border-radius:10px;background:#dcfce7;color:#166534;font-size:11px;font-weight:800}.hidden-lesson-badge{display:block;margin-top:5px;padding:5px 7px;border-radius:10px;background:#fee2e2;color:#991b1b;font-size:11px;font-weight:800}.muted-lesson-badge{display:block;margin-top:5px;padding:5px 7px;border-radius:10px;background:#f1f5f9;color:#64748b;font-size:11px;font-weight:700}
 </style>
 
 {% if current_user.role != 'student' %}
@@ -138,9 +146,31 @@
 
 <h2>รายการคาบสอน</h2>
 <table>
-<tr>{% if current_user.role=='admin' %}<th>ครู</th>{% endif %}<th>วัน</th><th>คาบ</th><th>เวลา</th><th>วิชา</th><th>ห้อง</th><th>บทเรียน/หัวข้อ</th><th>เปิดคาบ</th>{% if current_user.role!='student' %}<th>เช็กชื่อ/คะแนน</th><th>จัดการ</th>{% endif %}</tr>
+<tr>{% if current_user.role=='admin' %}<th>ครู</th>{% endif %}<th>วัน</th><th>คาบ</th><th>เวลา</th><th>วิชา</th><th>ห้อง</th><th>เนื้อหาที่เปิดอยู่วันนี้</th><th>บทเรียน/หัวข้อเดิม</th><th>เปิดคาบ</th>{% if current_user.role!='student' %}<th>เช็กชื่อ/คะแนน</th><th>จัดการ</th>{% endif %}</tr>
 {% for s in schedules %}
-<tr>{% if current_user.role=='admin' %}<td data-label='ครู'>{{s.teacher.full_name if s.teacher is defined and s.teacher else ''}}</td>{% endif %}<td data-label="วัน">{{day_names[s.weekday]}}</td><td data-label="คาบ">{{s.period_no}}</td><td data-label="เวลา">{{s.start_time}}-{{s.end_time}}</td><td data-label="วิชา">{{s.subject.name}}</td><td data-label="ห้อง">{{s.classroom.name}}</td><td data-label="บทเรียน/หัวข้อ">{% if s.lesson %}<a class="btn small" href="{{url_for('lesson_detail', lesson_id=s.lesson.id)}}">{{s.lesson.title}}</a>{% else %}{{s.topic or '-'}}{% endif %}</td><td data-label="เปิดคาบ"><a class="btn small" href="{{url_for('schedule_period', schedule_id=s.id, date=today_date)}}">เปิดคาบ/บทเรียน</a></td>{% if current_user.role!='student' %}<td data-label="เช็กชื่อ/คะแนน"><a class="btn small attendance-shortcut" href="{{url_for('attendance', subject_id=s.subject_id, classroom_id=s.classroom_id, date=today_date, period_no=s.period_no, schedule_id=s.id)}}">เช็กชื่อ/คะแนน</a></td><td data-label="จัดการ"><a class="btn small" href="{{url_for('schedule_edit', schedule_id=s.id)}}">แก้ไขคาบ</a><form method="post" action="{{url_for('schedule_delete', schedule_id=s.id)}}" class="inline" onsubmit="return confirm('ลบคาบนี้?')"><button class="danger-btn small">ลบ</button></form></td>{% endif %}</tr>
+<tr>
+  {% if current_user.role=='admin' %}<td data-label='ครู'>{{s.teacher.full_name if s.teacher is defined and s.teacher else ''}}</td>{% endif %}
+  <td data-label="วัน">{{day_names[s.weekday]}}</td>
+  <td data-label="คาบ">{{s.period_no}}</td>
+  <td data-label="เวลา">{{s.start_time}}-{{s.end_time}}</td>
+  <td data-label="วิชา">{{s.subject.name}}</td>
+  <td data-label="ห้อง">{{s.classroom.name}}</td>
+  <td data-label="เนื้อหาที่เปิดอยู่วันนี้">
+    {% set live_log = current_lesson_logs.get(s.id) if current_lesson_logs is defined else none %}
+    {% if live_log and live_log.is_published %}
+      <span class="live-lesson-badge">กำลังเปิดให้นักเรียนเห็น</span>
+      <a class="btn small" href="{{ url_for('schedule_period', schedule_id=s.id, date=today_date) }}">{{ live_log.lesson.unit.title }} — {{ live_log.lesson.title }}</a>
+    {% elif live_log %}
+      <span class="hidden-lesson-badge">มีบทเรียนที่เลือกไว้ แต่ซ่อนอยู่</span>
+      <small>{{ live_log.lesson.title }}</small>
+    {% else %}
+      <span class="muted-lesson-badge">ยังไม่เปิดเนื้อหา</span>
+    {% endif %}
+  </td>
+  <td data-label="บทเรียน/หัวข้อเดิม">{% if s.lesson %}<a class="btn small" href="{{url_for('lesson_detail', lesson_id=s.lesson.id)}}">{{s.lesson.title}}</a>{% else %}{{s.topic or '-'}}{% endif %}</td>
+  <td data-label="เปิดคาบ"><a class="btn small" href="{{url_for('schedule_period', schedule_id=s.id, date=today_date)}}">เปิดคาบ/บทเรียน</a></td>
+  {% if current_user.role!='student' %}<td data-label="เช็กชื่อ/คะแนน"><a class="btn small attendance-shortcut" href="{{url_for('attendance', subject_id=s.subject_id, classroom_id=s.classroom_id, date=today_date, period_no=s.period_no, schedule_id=s.id)}}">เช็กชื่อ/คะแนน</a></td><td data-label="จัดการ"><a class="btn small" href="{{url_for('schedule_edit', schedule_id=s.id)}}">แก้ไขคาบ</a><form method="post" action="{{url_for('schedule_delete', schedule_id=s.id)}}" class="inline" onsubmit="return confirm('ลบคาบนี้?')"><button class="danger-btn small">ลบ</button></form></td>{% endif %}
+</tr>
 {% endfor %}
 </table>
 

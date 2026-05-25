@@ -26,10 +26,29 @@
     <div><b>สถานที่</b><span>{{ row.room_name or '-' }}</span></div>
   </div>
   {% if row.topic %}<p class="period-topic"><b>หัวข้อในตาราง:</b> {{ row.topic }}</p>{% endif %}
+  <div class="current-content-box {% if lesson_log and lesson_log.is_published %}is-live{% else %}is-hidden{% endif %}">
+    <div>
+      <b>ตอนนี้นักเรียนเห็นเนื้อหาเรื่อง</b>
+      {% if lesson_log and lesson_log.is_published and lesson %}
+        <h2>{{ lesson.unit.title }} — {{ lesson.title }}</h2>
+        <p>เปิดเมื่อ {{ lesson_log.taught_at.strftime('%d/%m/%Y %H:%M') if lesson_log.taught_at else '-' }}{% if lesson_log.taught_by %} โดย {{ lesson_log.taught_by.full_name }}{% endif %}</p>
+        {% if lesson_log.note %}<p class="preline muted"><b>หมายเหตุ:</b> {{ lesson_log.note }}</p>{% endif %}
+      {% elif lesson_log and not lesson_log.is_published %}
+        <h2>ยังไม่เปิดให้นักเรียนเห็น</h2>
+        <p>มีบทเรียนที่เคยเลือกไว้ แต่ถูกซ่อนไว้จากนักเรียน</p>
+      {% else %}
+        <h2>ยังไม่ได้กำหนดบทเรียนของคาบนี้</h2>
+        <p>นักเรียนจะยังไม่เห็นบทเรียนจนกว่าครูกด “สอนแล้ว / เปิดให้นักเรียนเห็น”</p>
+      {% endif %}
+    </div>
+    {% if current_user.role in ['teacher','admin'] %}
+      <a class="btn small" href="#publish-lesson-panel">เปลี่ยนเนื้อหาที่เปิดอยู่</a>
+    {% endif %}
+  </div>
 </section>
 
 {% if current_user.role in ['teacher','admin'] %}
-<section class="card period-publish-card">
+<section class="card period-publish-card" id="publish-lesson-panel">
   <h2>📌 กำหนดบทเรียนของคาบนี้</h2>
   <p class="muted">เลือกบทเรียนที่สอนในวันที่นี้ แล้วกด “สอนแล้ว/เปิดให้นักเรียนเห็น” นักเรียนในห้องนี้จึงจะเห็นบทเรียน ใบงาน และแบบทดสอบของคาบนี้</p>
   <form method="post" action="{{ url_for('schedule_period_publish', schedule_id=row.id) }}" class="stack-form js-confirm-form" data-confirm="ยืนยันเปิดบทเรียนนี้ให้นักเรียนเห็นและบันทึกว่าสอนไปแล้ว?">
@@ -132,5 +151,6 @@
 
 <style>
 .period-summary-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-top:12px}.period-summary-grid div{background:#f8fafc;border:1px solid #e5e7eb;border-radius:14px;padding:10px}.period-summary-grid b{display:block;color:#64748b;font-size:12px}.period-summary-grid span{font-weight:800}.period-topic{margin-top:12px}.period-action-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px;margin:18px 0}.period-action-card{display:block;text-decoration:none;color:inherit;background:#fff;border:1px solid #e5e7eb;border-radius:18px;padding:16px;box-shadow:0 8px 24px rgba(15,23,42,.06)}.period-action-card:hover{transform:translateY(-1px);box-shadow:0 10px 28px rgba(15,23,42,.09)}.period-action-card h2{margin:4px 0 6px}.period-action-card p{color:#64748b;margin:0 0 8px}.period-icon{font-size:30px}.list-card{display:flex;flex-direction:column;gap:8px}.warning-card{grid-column:1/-1;border-color:#fed7aa;background:#fff7ed}.period-overview-card .form-row{align-items:end}
+.current-content-box{margin-top:14px;border-radius:18px;padding:14px 16px;display:flex;justify-content:space-between;align-items:flex-start;gap:12px;border:1px solid #e5e7eb;background:#f8fafc}.current-content-box h2{margin:4px 0;font-size:20px}.current-content-box p{margin:3px 0}.current-content-box.is-live{border-color:#86efac;background:#f0fdf4}.current-content-box.is-hidden{border-color:#fecaca;background:#fff7f7}.preline{white-space:pre-line}
 </style>
 {% endblock %}
