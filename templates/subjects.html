@@ -25,18 +25,19 @@
 </section>
 <p><a class="btn" href="{{url_for('teacher_assignments')}}">⚙️ มอบหมายวิชา/ห้องให้ครู</a></p>
 {% endif %}
-<div class="cards">
+<div class="cards subject-card-grid">
 {% for s in subjects %}
-  <div class="card">
+  <article class="card detail-list-card subject-detail-card">
+    <div class="card-icon blue">📚</div>
     <h3>{{s.name}} {% if s.is_active==False %}<span class='tag muted-tag'>ปิดใช้งาน</span>{% endif %}</h3>
-    <p>{{s.credit}} หน่วยกิต · {{s.total_periods}} คาบ</p>
-    <p class="muted">ครูหลัก: {{s.teacher.full_name if s.teacher else 'ยังไม่กำหนด'}}</p>
+    <div class="card-meta-row">⏱️ {{s.total_periods}} คาบ · {{s.credit}} หน่วยกิต</div>
+    <div class="card-meta-row">👨‍🏫 ครูหลัก: {{s.teacher.full_name if s.teacher else 'ยังไม่กำหนด'}}</div>
     {% set linked_rooms = [] %}
     {% for link in classroom_links if link.subject_id == s.id and link.classroom %}
       {% set _ = linked_rooms.append(link.classroom) %}
     {% endfor %}
     <div class="subject-room-box">
-      <div class="muted">ห้องเรียนที่ผูกกับรายวิชา:</div>
+      <div class="card-meta-row">🏫 ห้องเรียนที่ผูกกับรายวิชา</div>
       {% if linked_rooms %}
         <div class="room-tags">
           {% for room in linked_rooms %}
@@ -71,7 +72,7 @@
     <form method="post" action="{{url_for('subject_deactivate', subject_id=s.id)}}" class="inline" onsubmit="return confirm('ปิดใช้งานรายวิชานี้? ข้อมูลเดิมจะยังอยู่')"><button class="warning-btn">ปิดใช้งาน</button></form>
     {% endif %}
     <form method="post" action="{{url_for('subject_delete', subject_id=s.id)}}" class="inline" onsubmit="return confirm('ลบรายวิชานี้ถาวร? ถ้ามีข้อมูลผูกไว้ ระบบจะปิดใช้งานแทน')"><button class="danger-btn">ลบถาวร</button></form>
-  </div>
+  </article>
 {% endfor %}
 </div>
 {% endblock %}

@@ -58,6 +58,54 @@
   {% block content %}{% endblock %}
 </main>
 
+{% if current_user.is_authenticated %}
+<nav class="mobile-bottom-nav" aria-label="เมนูมือถือ">
+  <a href="{{ url_for('index') }}"><span>🏠</span><b>หน้าแรก</b></a>
+  <a href="{{ url_for('schedule') }}"><span>🗓️</span><b>ตาราง</b></a>
+  <button type="button" class="mobile-fab" id="mobile-quick-open" aria-label="เมนูด่วน">+</button>
+  {% if current_user.role in ['teacher','admin'] %}
+    <a href="{{ url_for('records_center') }}"><span>✅</span><b>เช็กชื่อ</b></a>
+    <a href="{{ url_for('subjects') }}"><span>📚</span><b>รายวิชา</b></a>
+  {% else %}
+    <a href="{{ url_for('assignments') }}"><span>📝</span><b>งาน</b></a>
+    <a href="{{ url_for('logout') }}"><span>👤</span><b>โปรไฟล์</b></a>
+  {% endif %}
+</nav>
+<div class="mobile-modal-backdrop" id="mobile-quick-modal" aria-hidden="true">
+  <div class="mobile-modal-card" role="dialog" aria-modal="true" aria-label="เมนูด่วน">
+    <button type="button" class="mobile-modal-close" id="mobile-quick-close">×</button>
+    <h2>เมนูด่วน</h2>
+    <div class="mobile-quick-list">
+      {% if current_user.role in ['teacher','admin'] %}
+      <a href="{{ url_for('subjects') }}"><span>📚</span><div><b>รายวิชา</b><small>จัดการหน่วย บทเรียน ใบงาน</small></div><em>›</em></a>
+      <a href="{{ url_for('classrooms') }}"><span>🏫</span><div><b>ห้องเรียน</b><small>รายชื่อนักเรียนและห้อง</small></div><em>›</em></a>
+      <a href="{{ url_for('assign') }}"><span>📌</span><div><b>สั่งงาน</b><small>มอบหมายงานให้นักเรียน</small></div><em>›</em></a>
+      <a href="{{ url_for('attendance_dashboard') }}"><span>📊</span><div><b>ภาพรวมวันนี้</b><small>ติดตามการเช็กชื่อและคาบเรียน</small></div><em>›</em></a>
+      {% else %}
+      <a href="{{ url_for('schedule') }}"><span>🗓️</span><div><b>ตารางเรียน</b><small>ดูคาบเรียนของฉัน</small></div><em>›</em></a>
+      <a href="{{ url_for('assignments') }}"><span>📝</span><div><b>งานของฉัน</b><small>ใบงานและแบบทดสอบ</small></div><em>›</em></a>
+      {% endif %}
+    </div>
+    <button type="button" class="mobile-modal-cancel" id="mobile-quick-cancel">ปิด</button>
+  </div>
+</div>
+<script>
+(function(){
+  const open=document.getElementById('mobile-quick-open');
+  const modal=document.getElementById('mobile-quick-modal');
+  const close=document.getElementById('mobile-quick-close');
+  const cancel=document.getElementById('mobile-quick-cancel');
+  if(!open||!modal) return;
+  function show(){modal.classList.add('show'); modal.setAttribute('aria-hidden','false');}
+  function hide(){modal.classList.remove('show'); modal.setAttribute('aria-hidden','true');}
+  open.addEventListener('click', show);
+  if(close) close.addEventListener('click', hide);
+  if(cancel) cancel.addEventListener('click', hide);
+  modal.addEventListener('click', e=>{ if(e.target===modal) hide(); });
+})();
+</script>
+{% endif %}
+
 <div id="confirm-modal" class="confirm-modal" aria-hidden="true">
   <div class="confirm-modal__box" role="dialog" aria-modal="true" aria-labelledby="confirm-modal-title">
     <h2 id="confirm-modal-title">ยืนยันการทำรายการ</h2>
