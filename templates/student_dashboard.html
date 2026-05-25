@@ -3,7 +3,7 @@
 <div class="page-head">
   <div>
     <h1>หน้าเรียนของฉัน</h1>
-    <p>บทเรียนประจำคาบจะแสดงตามตารางเรียนและเรียงตามวันที่เรียนจริง ส่วน “งานของฉัน” คือ งานพิเศษ/รายงานที่ครูสั่งเพิ่ม</p>
+    <p>บทเรียนประจำคาบจะแสดงเฉพาะคาบที่ครูกด “สอนแล้ว/เปิดให้นักเรียนเห็น” ส่วน “งานของฉัน” คือ งานพิเศษ/รายงานที่ครูสั่งเพิ่ม</p>
   </div>
 </div>
 
@@ -15,8 +15,8 @@
     <div class="card mini-card pastel-lesson-card">
       <h3>คาบ {{ s.period_no }} · {{ s.subject.name }}</h3>
       <p>{{ s.start_time }}-{{ s.end_time }} | {{ s.classroom.name }}</p>
-      <p><b>บทเรียน:</b> {{ les.title if les else (s.topic or 'ครูยังไม่ได้เพิ่มบทเรียน') }}</p>
-      {% if les %}<a class="btn" href="{{ url_for('lesson_detail', lesson_id=les.id) }}">เข้าเนื้อหา</a>{% else %}<span class="badge-soft">รอครูเพิ่มบทเรียนในวิชานี้</span>{% endif %}
+      <p><b>บทเรียน:</b> {{ les.title if les else (s.topic or 'ครูยังไม่ได้เปิดบทเรียนคาบนี้') }}</p>
+      {% if les %}<a class="btn" href="{{ url_for('lesson_detail', lesson_id=les.id) }}">เข้าเนื้อหา</a>{% else %}<span class="badge-soft">รอครูเปิดบทเรียนคาบนี้</span>{% endif %}
     </div>
   {% else %}
     <div class="card">วันนี้ยังไม่มีคาบเรียน หรือเป็นวันหยุดตามปฏิทิน</div>
@@ -25,8 +25,8 @@
 </section>
 
 <section class="card">
-  <h2>📚 บทเรียนทั้งเทอม เรียงตามวันที่มีเรียน</h2>
-  <p class="hint">ระบบจะเรียงบทเรียนตามลำดับที่ครูเพิ่มไว้ในหน่วยการเรียนรู้ เช่น จันทร์แรก = บทเรียนที่ 1, จันทร์ต่อไป = บทเรียนที่ 2, 3, 4 โดยข้ามวันหยุดตามปฏิทิน</p>
+  <h2>📚 บทเรียนที่ครูเปิดให้เรียนแล้ว</h2>
+  <p class="hint">แสดงตามวันที่เรียนจริง เฉพาะรายการที่ครูกดเปิดให้นักเรียนเห็นแล้ว รายการที่ยังไม่เปิดจะขึ้นว่า “ยังไม่เปิดบทเรียน”</p>
   <div class="table-scroll">
     <table>
       <tr><th>วันที่</th><th>วัน</th><th>คาบ</th><th>เวลา</th><th>วิชา</th><th>ห้อง</th><th>บทเรียน</th></tr>
@@ -39,7 +39,7 @@
         <td data-label="วิชา">{{ row.schedule.subject.name }}</td>
         <td data-label="ห้อง">{{ row.schedule.classroom.name }}</td>
         <td data-label="บทเรียน">
-          {% if row.lesson %}<a class="btn small" href="{{ url_for('lesson_detail', lesson_id=row.lesson.id) }}">{{ row.lesson.title }}</a>{% else %}<span class="muted">ยังไม่มีบทเรียน</span>{% endif %}
+          {% if row.lesson %}<a class="btn small" href="{{ url_for('lesson_detail', lesson_id=row.lesson.id) }}">{{ row.lesson.title }}</a>{% else %}<span class="muted">ยังไม่เปิดบทเรียน</span>{% endif %}
         </td>
       </tr>
       {% else %}<tr><td colspan="7">ยังไม่มีแผนบทเรียนจากตารางเรียน</td></tr>{% endfor %}
@@ -51,7 +51,7 @@
   <h2>🗓 ตารางเรียนประจำสัปดาห์</h2>
   <div class="table-scroll">
     <table>
-      <tr><th>วัน</th><th>คาบ</th><th>เวลา</th><th>วิชา</th><th>ห้อง</th><th>บทเรียนโดยประมาณ</th></tr>
+      <tr><th>วัน</th><th>คาบ</th><th>เวลา</th><th>วิชา</th><th>ห้อง</th><th>บทเรียนที่เปิดแล้ว</th></tr>
       {% for s in schedules %}
       {% set les = s.auto_lesson if s.auto_lesson is defined else s.lesson %}
       <tr>

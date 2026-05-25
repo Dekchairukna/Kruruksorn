@@ -1132,3 +1132,13 @@ input,select,textarea{background:#fff!important;border-color:#d9e8ef!important;c
 
 /* Content import/update management */
 .smart-import-card .import-mode-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;margin:12px 0}.mode-card{display:block;border:1px solid #dbeafe;background:#f8fafc;border-radius:18px;padding:14px;cursor:pointer}.mode-card input{width:auto;margin-right:8px}.mode-card b{display:block;color:#0f172a;margin-bottom:6px}.mode-card small{display:block;color:#64748b;line-height:1.45}.mode-card:has(input:checked){border-color:#14b8a6;background:#ecfeff;box-shadow:0 0 0 4px rgba(20,184,166,.12)}.warning-mode{border-color:#fed7aa;background:#fff7ed}.danger-mode{border-color:#fecaca;background:#fef2f2}.bulk-action-bar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;background:#f8fafc;border:1px solid #e5e7eb;border-radius:18px;padding:12px 14px;margin:12px 0}.unit-check{width:22px;height:22px;margin:0}.confirm-modal{display:none;position:fixed;inset:0;z-index:9999;background:rgba(15,23,42,.55);align-items:center;justify-content:center;padding:18px}.confirm-modal.show{display:flex}.confirm-modal__box{width:min(520px,100%);background:white;border-radius:26px;padding:24px;box-shadow:0 28px 70px rgba(15,23,42,.35);border:1px solid #e5e7eb}.confirm-modal__box h2{margin:0 0 8px;color:#0f172a}.confirm-modal__box p{color:#475569;line-height:1.6}.confirm-modal__actions{display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap;margin-top:18px}@media(max-width:640px){.confirm-modal{align-items:flex-end;padding:10px}.confirm-modal__box{border-radius:24px 24px 12px 12px}.confirm-modal__actions button{width:100%}}
+
+/* Lesson publish / preserve typed line breaks */
+.period-publish-card select,
+.period-publish-card textarea{width:100%;}
+.lesson-text,
+.lesson-content-box,
+.preserve-lines,
+.worksheet-description,
+.lesson-reader p{white-space:pre-wrap;line-height:1.75;}
+.lesson-content-box{word-break:break-word;}

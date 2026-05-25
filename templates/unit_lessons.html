@@ -29,8 +29,8 @@
       <td>{{ loop.index }}</td>
       <td><b>{{ lesson.title }}</b></td>
       <td>
-        {% if lesson.objective %}<div><small><b>จุดประสงค์:</b> {{ lesson.objective[:120] }}{% if lesson.objective|length > 120 %}...{% endif %}</small></div>{% endif %}
-        {% if lesson.content %}<div><small><b>เนื้อหา:</b> {{ lesson.content[:120] }}{% if lesson.content|length > 120 %}...{% endif %}</small></div>{% endif %}
+        {% if lesson.objective %}<div><small><b>จุดประสงค์:</b> {{ (lesson.objective or '')[:120] }}{% if (lesson.objective or '')|length > 120 %}...{% endif %}</small></div>{% endif %}
+        {% if lesson.content %}<div><small><b>เนื้อหา:</b> {{ (lesson.content or '')[:120] }}{% if (lesson.content or '')|length > 120 %}...{% endif %}</small></div>{% endif %}
         {% if not lesson.objective and not lesson.content %}<small class="muted">ยังไม่มีรายละเอียด</small>{% endif %}
       </td>
       <td>{{ worksheet_count }}</td>

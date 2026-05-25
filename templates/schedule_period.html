@@ -28,6 +28,35 @@
   {% if row.topic %}<p class="period-topic"><b>หัวข้อในตาราง:</b> {{ row.topic }}</p>{% endif %}
 </section>
 
+{% if current_user.role in ['teacher','admin'] %}
+<section class="card period-publish-card">
+  <h2>📌 กำหนดบทเรียนของคาบนี้</h2>
+  <p class="muted">เลือกบทเรียนที่สอนในวันที่นี้ แล้วกด “สอนแล้ว/เปิดให้นักเรียนเห็น” นักเรียนในห้องนี้จึงจะเห็นบทเรียน ใบงาน และแบบทดสอบของคาบนี้</p>
+  <form method="post" action="{{ url_for('schedule_period_publish', schedule_id=row.id) }}" class="stack-form js-confirm-form" data-confirm="ยืนยันเปิดบทเรียนนี้ให้นักเรียนเห็นและบันทึกว่าสอนไปแล้ว?">
+    <input type="hidden" name="date" value="{{ selected_date.isoformat() }}">
+    <label>บทเรียนที่จะเปิดในคาบนี้</label>
+    <select name="lesson_id" required>
+      {% for l in available_lessons %}
+        <option value="{{ l.id }}" {% if lesson and l.id == lesson.id %}selected{% endif %}>{{ l.unit.title }} — {{ l.title }}</option>
+      {% endfor %}
+    </select>
+    <label>บันทึกครูผู้สอน / หมายเหตุคาบนี้</label>
+    <textarea name="note" rows="2" placeholder="เช่น สอนถึงตัวอย่างที่ 2 / ให้นักเรียนทำใบงานท้ายคาบ">{{ lesson_log.note if lesson_log else '' }}</textarea>
+    <div class="actions-row">
+      <button type="submit" class="btn">สอนแล้ว / เปิดให้นักเรียนเห็น</button>
+      {% if lesson_log and lesson_log.is_published %}
+      <button type="submit" formaction="{{ url_for('schedule_period_unpublish', schedule_id=row.id) }}" class="danger-btn secondary">ซ่อนบทเรียนคาบนี้</button>
+      {% endif %}
+    </div>
+  </form>
+  {% if lesson_log and lesson_log.is_published %}
+    <p class="ok"><b>สถานะ:</b> เปิดให้นักเรียนเห็นแล้ว{% if lesson_log.taught_at %} · {{ lesson_log.taught_at.strftime('%d/%m/%Y %H:%M') }}{% endif %}</p>
+  {% else %}
+    <p class="bad"><b>สถานะ:</b> ยังไม่เปิดให้นักเรียนเห็น</p>
+  {% endif %}
+</section>
+{% endif %}
+
 <section class="period-action-grid">
   {% if current_user.role in ['teacher','admin'] %}
   <a class="period-action-card" href="{{ url_for('attendance', subject_id=row.subject_id, classroom_id=row.classroom_id, date=selected_date.isoformat(), period_no=row.period_no, schedule_id=row.id) }}">
@@ -91,8 +120,8 @@
   {% else %}
   <div class="period-action-card warning-card">
     <div class="period-icon">⚠️</div>
-    <h2>ยังไม่พบบทเรียนของคาบนี้</h2>
-    <p>ให้ครูผูกบทเรียนในตารางสอน หรือเพิ่มบทเรียนในรายวิชาก่อน นักเรียนจึงจะเปิดบทเรียน ใบงาน และแบบทดสอบจากคาบนี้ได้</p>
+    <h2>ครูยังไม่ได้เปิดบทเรียนของคาบนี้</h2>
+    <p>นักเรียนจะเห็นบทเรียนเมื่อครูกด “สอนแล้ว/เปิดให้นักเรียนเห็น” ของวันที่เรียนนี้</p>
     {% if current_user.role in ['teacher','admin'] %}
       <a class="btn" href="{{ url_for('schedule_edit', schedule_id=row.id) }}">ผูกบทเรียนกับคาบนี้</a>
       <a class="btn secondary" href="{{ url_for('subject_detail', subject_id=row.subject_id) }}">จัดการหน่วย/บทเรียนรายวิชา</a>

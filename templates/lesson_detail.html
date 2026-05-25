@@ -14,10 +14,10 @@
 
 <section class="card lesson-reader">
   <h2>🎯 จุดประสงค์</h2>
-  <div class="lesson-text">{{ lesson.objective|replace('\n','<br>')|safe }}</div>
+  <div class="lesson-text">{{ lesson.objective or '' }}</div>
 
   <h2>📘 เนื้อหาบทเรียน</h2>
-  <div class="lesson-content-box">{{ lesson.content|replace('\n','<br>')|safe }}</div>
+  <div class="lesson-content-box">{{ lesson.content or '' }}</div>
 
   {% if lesson.media_url %}
     {% if youtube_embed %}
@@ -93,7 +93,7 @@
   <div class="card">
     <h3>{{ w.title }}</h3>
     <p><b>ประเภท:</b> {% if w.worksheet_type=='petanque_score' %}ใบงานเปตอง{% elif w.worksheet_type=='upload' %}อัปโหลดไฟล์{% else %}ใบงานวิชาการ{% endif %}</p>
-    <p>{{ w.description }}</p>
+    <p class="preserve-lines">{{ w.description or "" }}</p>
     {% if w.file_path %}<p><a class="btn small" href="{{ url_for('uploaded_file', filename=w.file_path) }}" target="_blank">เปิดไฟล์ใบงาน</a></p>{% endif %}
     {% if current_user.role == 'student' and lesson_status %}
       <a class="btn" href="{{ url_for('do_worksheet', status_id=lesson_status.id, worksheet_id=w.id) }}">ทำใบงาน</a>
@@ -101,7 +101,7 @@
     {% if current_user.role in ['teacher','admin'] %}
       <a class="btn" href="{{ url_for('worksheet_review', worksheet_id=w.id) }}">ตรวจใบงาน</a>
       <a class="btn secondary" href="{{ url_for('worksheet_edit', worksheet_id=w.id) }}">แก้ไข</a>
-      <form method="post" action="{{ url_for('worksheet_delete', worksheet_id=w.id) }}" class="inline" onsubmit="return confirm('ลบใบงานนี้?')"><button class="danger-btn">ลบ</button></form>
+      <form method="post" action="{{ url_for('worksheet_delete', worksheet_id=w.id) }}" class="inline js-confirm-form" data-confirm="ยืนยันลบใบงานนี้? คำถามและคำตอบนักเรียนที่ผูกอยู่จะถูกลบด้วย"><button class="danger-btn">ลบ</button></form>
     {% endif %}
   </div>
 {% else %}<div class="card">ยังไม่มีใบงาน</div>{% endfor %}

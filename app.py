@@ -555,6 +555,22 @@ class TeachingSchedule(db.Model):
 
 
 
+
+class PeriodLessonLog(db.Model):
+    """บันทึกว่าคาบเรียนวันใดใช้บทเรียนใด และเปิดให้นักเรียนเห็นหรือยัง"""
+    id = db.Column(db.Integer, primary_key=True)
+    schedule_id = db.Column(db.Integer, db.ForeignKey('teaching_schedule.id'), nullable=False)
+    lesson_id = db.Column(db.Integer, db.ForeignKey('lesson.id'), nullable=False)
+    taught_date = db.Column(db.Date, nullable=False)
+    is_published = db.Column(db.Boolean, default=True)
+    taught_at = db.Column(db.DateTime, default=datetime.utcnow)
+    taught_by_id = db.Column(db.Integer, db.ForeignKey('user.id'))
+    note = db.Column(db.Text, default='')
+    schedule = db.relationship('TeachingSchedule')
+    lesson = db.relationship('Lesson')
+    taught_by = db.relationship('User')
+
+
 class CalendarEvent(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     teacher_id = db.Column(db.Integer, db.ForeignKey('user.id'))
@@ -954,6 +970,76 @@ def auto_lesson_for_schedule(schedule_row, target_date=None):
     idx = max(0, count - 1)
     return lessons[idx] if idx < len(lessons) else lessons[-1]
 
+
+def get_period_lesson_log(schedule_row, target_date=None):
+    """คืนค่าบันทึกคาบเรียนของตาราง/วันที่ ถ้ามี"""
+    if not schedule_row:
+        return None
+    target_date = target_date or local_today()
+    return PeriodLessonLog.query.filter_by(schedule_id=schedule_row.id, taught_date=target_date).first()
+
+
+def lesson_for_schedule(schedule_row, target_date=None, for_student=False):
+    """เลือกบทเรียนสำหรับคาบ
+    - ถ้าครูกดเปิด/สอนแล้ว จะใช้บทเรียนนั้น
+    - นักเรียนจะเห็นเฉพาะบทเรียนที่ครู published แล้ว
+    - ครู/แอดมินยังเห็นบทเรียนอัตโนมัติเพื่อเตรียมกดเปิดได้
+    """
+    log = get_period_lesson_log(schedule_row, target_date)
+    if log and log.lesson_id:
+        if for_student and not log.is_published:
+            return None
+        return log.lesson
+    if for_student:
+        return None
+    return auto_lesson_for_schedule(schedule_row, target_date)
+
+
+def student_can_view_lesson(lesson, student):
+    """นักเรียนเปิดบทเรียนได้เมื่อครูกดเปิดบทเรียนนั้นให้ห้องของนักเรียนแล้ว"""
+    if not lesson or not student or getattr(student, 'role', None) != 'student':
+        return False
+    room_ids = [x.classroom_id for x in ClassroomStudent.query.filter_by(student_id=student.id).all()]
+    if not room_ids:
+        return False
+    return db.session.query(PeriodLessonLog.id).join(TeachingSchedule, PeriodLessonLog.schedule_id == TeachingSchedule.id).filter(
+        PeriodLessonLog.lesson_id == lesson.id,
+        PeriodLessonLog.is_published == True,
+        TeachingSchedule.classroom_id.in_(room_ids),
+        TeachingSchedule.subject_id == lesson.unit.subject_id,
+    ).first() is not None
+
+
+def create_lesson_assignment_for_classroom(lesson, schedule_row):
+    """สร้าง AssignmentStatus ให้นักเรียนในห้อง เพื่อให้ใบงาน/แบบทดสอบของบทเรียนนั้นเปิดทำได้ทันที"""
+    if not lesson or not schedule_row:
+        return 0
+    ass = Assignment.query.filter_by(
+        lesson_id=lesson.id,
+        classroom_id=schedule_row.classroom_id,
+        assignment_type='lesson'
+    ).first()
+    if not ass:
+        ass = Assignment(
+            teacher_id=schedule_row.teacher_id,
+            subject_id=schedule_row.subject_id,
+            classroom_id=schedule_row.classroom_id,
+            lesson_id=lesson.id,
+            title=f'บทเรียนประจำคาบ: {lesson.title}',
+            assignment_type='lesson'
+        )
+        db.session.add(ass)
+        db.session.flush()
+    created = 0
+    students = ClassroomStudent.query.filter_by(classroom_id=schedule_row.classroom_id).all()
+    for cs in students:
+        st = AssignmentStatus.query.filter_by(assignment_id=ass.id, student_id=cs.student_id).first()
+        if not st:
+            db.session.add(AssignmentStatus(assignment_id=ass.id, student_id=cs.student_id, status='กำลังเรียน', lesson_viewed=False))
+            created += 1
+    return created
+
+
 def build_student_learning_plan(student, limit=80):
     room_ids = [x.classroom_id for x in ClassroomStudent.query.filter_by(student_id=student.id).all()]
     schedules = TeachingSchedule.query.filter(TeachingSchedule.classroom_id.in_(room_ids or [-1])).order_by(TeachingSchedule.weekday, TeachingSchedule.period_no).all()
@@ -966,7 +1052,7 @@ def build_student_learning_plan(student, limit=80):
         for srow in [x for x in schedules if x.weekday == cur.weekday()]:
             if is_school_blocked_day(cur, srow.teacher_id):
                 continue
-            les = auto_lesson_for_schedule(srow, cur)
+            les = lesson_for_schedule(srow, cur, for_student=True)
             rows.append(SimpleNamespace(date=cur, schedule=srow, lesson=les))
         cur += timedelta(days=1)
     return rows
@@ -1162,9 +1248,9 @@ def student_dashboard():
     today_idx = today.weekday()
     today_schedules = [x for x in schedules if x.weekday == today_idx and not is_school_blocked_day(today, x.teacher_id)]
     for row in schedules:
-        row.auto_lesson = auto_lesson_for_schedule(row, today)
+        row.auto_lesson = lesson_for_schedule(row, today, for_student=True)
     for row in today_schedules:
-        row.auto_lesson = auto_lesson_for_schedule(row, today)
+        row.auto_lesson = lesson_for_schedule(row, today, for_student=True)
     learning_plan = build_student_learning_plan(current_user, limit=120)
     return render_template('student_dashboard.html', statuses=statuses, schedules=schedules, today_schedules=today_schedules, learning_plan=learning_plan, day_names=['จันทร์','อังคาร','พุธ','พฤหัสบดี','ศุกร์','เสาร์','อาทิตย์'])
 
@@ -1392,6 +1478,14 @@ def _delete_assignments(query):
     deleted = Assignment.query.filter(Assignment.id.in_(assignment_ids)).delete(synchronize_session=False)
     return deleted
 
+
+def force_delete_worksheet_data(worksheet_id):
+    """ลบใบงานพร้อมข้อคำถามและคำตอบนักเรียนที่อ้างถึงข้อในใบงานนี้"""
+    question_ids = [q.id for q in WorksheetQuestion.query.filter_by(worksheet_id=worksheet_id).all()]
+    if question_ids:
+        WorksheetAnswer.query.filter(WorksheetAnswer.question_id.in_(question_ids)).delete(synchronize_session=False)
+        WorksheetQuestion.query.filter(WorksheetQuestion.id.in_(question_ids)).delete(synchronize_session=False)
+
 def force_delete_classroom_data(classroom_id):
     """ลบห้องเรียนแบบตัดข้อมูลที่ผูกอยู่ทั้งหมด เพื่อให้ลบได้จริงตามคำขอ"""
     _delete_assignments(Assignment.query.filter_by(classroom_id=classroom_id))
@@ -1423,6 +1517,9 @@ def force_delete_subject_data(subject_id):
 
             LessonFile.query.filter(LessonFile.lesson_id.in_(lesson_ids)).delete(synchronize_session=False)
             if worksheet_ids:
+                worksheet_question_ids = [q.id for q in WorksheetQuestion.query.filter(WorksheetQuestion.worksheet_id.in_(worksheet_ids)).all()]
+                if worksheet_question_ids:
+                    WorksheetAnswer.query.filter(WorksheetAnswer.question_id.in_(worksheet_question_ids)).delete(synchronize_session=False)
                 WorksheetQuestion.query.filter(WorksheetQuestion.worksheet_id.in_(worksheet_ids)).delete(synchronize_session=False)
                 Worksheet.query.filter(Worksheet.id.in_(worksheet_ids)).delete(synchronize_session=False)
             if quiz_ids:
@@ -2894,6 +2991,9 @@ def lesson_delete(lesson_id):
 @login_required
 def lesson_detail(lesson_id):
     lesson = Lesson.query.get_or_404(lesson_id)
+    if current_user.role == 'student' and not student_can_view_lesson(lesson, current_user):
+        flash('ครูยังไม่ได้เปิดบทเรียนนี้ให้นักเรียนในห้องของคุณเห็น', 'warning')
+        return redirect(url_for('student_dashboard'))
     worksheets = Worksheet.query.filter_by(lesson_id=lesson.id).all()
     quizzes = Quiz.query.filter_by(lesson_id=lesson.id).all()
     files = LessonFile.query.filter_by(lesson_id=lesson.id).order_by(LessonFile.created_at.desc()).all()
@@ -3009,7 +3109,15 @@ def worksheet_delete(worksheet_id):
     ws = Worksheet.query.get_or_404(worksheet_id)
     if not owns_lesson(ws.lesson): return deny_redirect('subjects')
     lesson_id = ws.lesson_id
-    db.session.delete(ws); db.session.commit(); flash('ลบใบงานแล้ว', 'success')
+    try:
+        # ต้องลบคำตอบนักเรียนและข้อคำถามก่อน ไม่อย่างนั้นฐานข้อมูลจะกันไม่ให้ลบใบงาน
+        force_delete_worksheet_data(ws.id)
+        db.session.delete(ws)
+        db.session.commit()
+        flash('ลบใบงานพร้อมข้อคำถามและคำตอบที่ผูกอยู่แล้ว', 'success')
+    except Exception as e:
+        db.session.rollback()
+        flash(f'ลบใบงานไม่สำเร็จ: {e}', 'danger')
     return redirect(url_for('lesson_detail', lesson_id=lesson_id))
 
 @app.route('/worksheet_question/<int:question_id>/delete', methods=['POST'])
@@ -3019,7 +3127,14 @@ def worksheet_question_delete(question_id):
     q = WorksheetQuestion.query.get_or_404(question_id)
     if not owns_lesson(q.worksheet.lesson): return deny_redirect('subjects')
     lesson_id = q.worksheet.lesson_id
-    db.session.delete(q); db.session.commit(); flash('ลบข้อคำถามใบงานแล้ว', 'success')
+    try:
+        WorksheetAnswer.query.filter_by(question_id=q.id).delete(synchronize_session=False)
+        db.session.delete(q)
+        db.session.commit()
+        flash('ลบข้อคำถามใบงานและคำตอบที่ผูกอยู่แล้ว', 'success')
+    except Exception as e:
+        db.session.rollback()
+        flash(f'ลบข้อคำถามไม่สำเร็จ: {e}', 'danger')
     return redirect(url_for('lesson_detail', lesson_id=lesson_id))
 
 
@@ -3321,7 +3436,22 @@ def schedule_period(schedule_id):
     if not user_can_open_schedule(row):
         return deny_redirect('schedule')
     selected_date = datetime.strptime(request.args.get('date', local_today().isoformat()), '%Y-%m-%d').date()
-    lesson = auto_lesson_for_schedule(row, selected_date)
+    lesson_log = get_period_lesson_log(row, selected_date)
+    lesson = lesson_for_schedule(row, selected_date, for_student=(current_user.role == 'student'))
+    if current_user.role == 'student' and not lesson:
+        return render_template(
+            'schedule_period.html',
+            row=row,
+            selected_date=selected_date,
+            selected_day_label=thai_date_label(selected_date),
+            lesson=None,
+            worksheets=[],
+            quizzes=[],
+            files_count=0,
+            lesson_status=None,
+            lesson_log=lesson_log,
+            available_lessons=[]
+        )
     worksheets = Worksheet.query.filter_by(lesson_id=lesson.id).all() if lesson else []
     quizzes = Quiz.query.filter_by(lesson_id=lesson.id).all() if lesson else []
     files_count = LessonFile.query.filter_by(lesson_id=lesson.id).count() if lesson else 0
@@ -3336,7 +3466,57 @@ def schedule_period(schedule_id):
         quizzes=quizzes,
         files_count=files_count,
         lesson_status=lesson_status,
+        lesson_log=lesson_log,
+        available_lessons=ordered_lessons_for_subject(row.subject_id) if current_user.role in ['teacher','admin'] else []
     )
+
+
+@app.route('/schedule/<int:schedule_id>/period/publish', methods=['POST'])
+@login_required
+@role_required('teacher','admin')
+def schedule_period_publish(schedule_id):
+    row = TeachingSchedule.query.get_or_404(schedule_id)
+    if not user_can_open_schedule(row):
+        return deny_redirect('schedule')
+    selected_date = datetime.strptime(request.form.get('date', local_today().isoformat()), '%Y-%m-%d').date()
+    lesson_id = request.form.get('lesson_id', type=int)
+    note = (request.form.get('note') or '').strip()
+    lesson = Lesson.query.get_or_404(lesson_id)
+    if lesson.unit.subject_id != row.subject_id:
+        flash('บทเรียนนี้ไม่ได้อยู่ในรายวิชาของคาบนี้', 'danger')
+        return redirect(url_for('schedule_period', schedule_id=row.id, date=selected_date.isoformat()))
+    log = get_period_lesson_log(row, selected_date)
+    if not log:
+        log = PeriodLessonLog(schedule_id=row.id, taught_date=selected_date)
+        db.session.add(log)
+    log.lesson_id = lesson.id
+    log.is_published = True
+    log.taught_at = datetime.utcnow()
+    log.taught_by_id = current_user.id
+    log.note = note
+    created = create_lesson_assignment_for_classroom(lesson, row)
+    db.session.commit()
+    flash(f'เปิดบทเรียน “{lesson.title}” ให้นักเรียนเห็นแล้ว และบันทึกว่าคาบนี้สอนไปแล้ว', 'success')
+    return redirect(url_for('schedule_period', schedule_id=row.id, date=selected_date.isoformat()))
+
+
+@app.route('/schedule/<int:schedule_id>/period/unpublish', methods=['POST'])
+@login_required
+@role_required('teacher','admin')
+def schedule_period_unpublish(schedule_id):
+    row = TeachingSchedule.query.get_or_404(schedule_id)
+    if not user_can_open_schedule(row):
+        return deny_redirect('schedule')
+    selected_date = datetime.strptime(request.form.get('date', local_today().isoformat()), '%Y-%m-%d').date()
+    log = get_period_lesson_log(row, selected_date)
+    if log:
+        log.is_published = False
+        db.session.commit()
+        flash('ซ่อนบทเรียนของคาบนี้จากนักเรียนแล้ว', 'success')
+    else:
+        flash('ยังไม่มีบทเรียนที่เปิดในคาบนี้', 'warning')
+    return redirect(url_for('schedule_period', schedule_id=row.id, date=selected_date.isoformat()))
+
 
 @app.route('/schedule', methods=['GET','POST'])
 @login_required
