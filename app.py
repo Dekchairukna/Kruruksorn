@@ -2570,12 +2570,102 @@ def subject_import_lessons_excel(subject_id):
         flash('เปิดไฟล์ Excel ไม่สำเร็จ กรุณาใช้ไฟล์ .xlsx', 'danger')
         return redirect(url_for('subject_detail', subject_id=subject.id))
 
-    # รองรับทั้งชีตเดียว LessonImport และไฟล์เดิมที่แยก Units / Lessons
-    rows, h = sheet_rows(wb, ['LessonImport','บทเรียนรายวิชา','Lessons','บทเรียน'])
+    # โหมดนำเข้า:
+    # update = อัปเดตข้อมูลเดิมเมื่อชื่อหน่วย/บทเรียนตรงกัน และเพิ่มรายการใหม่
+    # keep = คงข้อมูลเดิมไว้ ถ้าชื่อตรงกันจะไม่ทับ แต่ยังเพิ่มรายการใหม่
+    # replace_matching_units = ถ้าชื่อหน่วยตรงกัน ให้ลบหน่วยเดิมพร้อมข้อมูลลูก แล้วนำเข้าใหม่
+    # replace_all_units = ลบหน่วยทั้งหมดในรายวิชานี้ก่อน แล้วนำเข้าใหม่ทั้งไฟล์
+    import_mode = request.form.get('import_mode', 'update').strip() or 'update'
+    if import_mode not in ['update', 'keep', 'replace_matching_units', 'replace_all_units']:
+        import_mode = 'update'
+
     imported_units = 0
     imported_lessons = 0
+    updated_units = 0
+    updated_lessons = 0
+    kept_units = 0
+    kept_lessons = 0
+    replaced_units = 0
     skipped = 0
+    replaced_title_cache = set()
 
+    if import_mode == 'replace_all_units':
+        old_units = Unit.query.filter_by(subject_id=subject.id).all()
+        for old_unit in old_units:
+            force_delete_unit_data(old_unit.id)
+            db.session.delete(old_unit)
+            replaced_units += 1
+        db.session.flush()
+
+    def get_or_prepare_unit(unit_title):
+        nonlocal imported_units, replaced_units, kept_units
+        unit_title = str(unit_title).strip()
+        unit = Unit.query.filter_by(subject_id=subject.id, title=unit_title).first()
+        if unit and import_mode == 'replace_matching_units' and unit_title not in replaced_title_cache:
+            force_delete_unit_data(unit.id)
+            db.session.delete(unit)
+            db.session.flush()
+            replaced_title_cache.add(unit_title)
+            replaced_units += 1
+            unit = None
+        if not unit:
+            unit = Unit(subject_id=subject.id, title=unit_title)
+            db.session.add(unit)
+            db.session.flush()
+            imported_units += 1
+        else:
+            kept_units += 1
+        return unit
+
+    def apply_unit_fields(unit, r, h):
+        nonlocal updated_units
+        if import_mode == 'keep' and unit.id:
+            return
+        changed = False
+        indicators = cell(r,h,'indicators','indicator','ตัวชี้วัด','ผลการเรียนรู้')
+        if indicators not in (None, '') and str(unit.indicators or '') != str(indicators):
+            unit.indicators = str(indicators); changed = True
+        rp = cell(r,h,'required_periods','periods','จำนวนคาบ','ชั่วโมง')
+        if rp not in (None, ''):
+            try:
+                rp_int = int(float(rp))
+                if unit.required_periods != rp_int:
+                    unit.required_periods = rp_int; changed = True
+            except Exception:
+                pass
+        if changed:
+            updated_units += 1
+
+    def apply_lesson_fields(lesson, r, h):
+        nonlocal updated_lessons, kept_lessons
+        if import_mode == 'keep':
+            kept_lessons += 1
+            return
+        changed = False
+        objective = cell(r,h,'objective','จุดประสงค์')
+        content = cell(r,h,'content','เนื้อหา','รายละเอียด')
+        media_url = cell(r,h,'media_url','สื่อ','ลิงก์สื่อ')
+        required_minutes = cell(r,h,'required_minutes','minutes','นาที')
+        if objective not in (None, '') and str(lesson.objective or '') != str(objective):
+            lesson.objective = str(objective); changed = True
+        if content not in (None, '') and str(lesson.content or '') != str(content):
+            lesson.content = str(content); changed = True
+        if media_url not in (None, '') and str(lesson.media_url or '') != str(media_url):
+            lesson.media_url = str(media_url); changed = True
+        if required_minutes not in (None, ''):
+            try:
+                minutes_int = int(float(required_minutes))
+                if lesson.required_minutes != minutes_int:
+                    lesson.required_minutes = minutes_int; changed = True
+            except Exception:
+                pass
+        if changed:
+            updated_lessons += 1
+        else:
+            kept_lessons += 1
+
+    # รองรับทั้งชีตเดียว LessonImport และไฟล์เดิมที่แยก Units / Lessons
+    rows, h = sheet_rows(wb, ['LessonImport','บทเรียนรายวิชา','Lessons','บทเรียน'])
     for r in rows:
         unit_title = cell(r,h,'unit_title','unit','หน่วย','ชื่อหน่วย')
         lesson_title = cell(r,h,'lesson_title','lesson','บทเรียน','ชื่อบทเรียน')
@@ -2585,23 +2675,8 @@ def subject_import_lessons_excel(subject_id):
             skipped += 1
             continue
 
-        unit_title = str(unit_title).strip()
-        unit = Unit.query.filter_by(subject_id=subject.id, title=unit_title).first()
-        if not unit:
-            unit = Unit(subject_id=subject.id, title=unit_title)
-            db.session.add(unit)
-            db.session.flush()
-            imported_units += 1
-
-        indicators = cell(r,h,'indicators','indicator','ตัวชี้วัด','ผลการเรียนรู้')
-        if indicators not in (None, ''):
-            unit.indicators = str(indicators)
-        rp = cell(r,h,'required_periods','periods','จำนวนคาบ','ชั่วโมง')
-        if rp not in (None, ''):
-            try:
-                unit.required_periods = int(float(rp))
-            except Exception:
-                pass
+        unit = get_or_prepare_unit(unit_title)
+        apply_unit_fields(unit, r, h)
 
         if lesson_title:
             lesson_title = str(lesson_title).strip()
@@ -2610,21 +2685,7 @@ def subject_import_lessons_excel(subject_id):
                 lesson = Lesson(unit_id=unit.id, title=lesson_title)
                 db.session.add(lesson)
                 imported_lessons += 1
-            objective = cell(r,h,'objective','จุดประสงค์')
-            content = cell(r,h,'content','เนื้อหา','รายละเอียด')
-            media_url = cell(r,h,'media_url','สื่อ','ลิงก์สื่อ')
-            required_minutes = cell(r,h,'required_minutes','minutes','นาที')
-            if objective not in (None, ''):
-                lesson.objective = str(objective)
-            if content not in (None, ''):
-                lesson.content = str(content)
-            if media_url not in (None, ''):
-                lesson.media_url = str(media_url)
-            if required_minutes not in (None, ''):
-                try:
-                    lesson.required_minutes = int(float(required_minutes))
-                except Exception:
-                    pass
+            apply_lesson_fields(lesson, r, h)
 
     # ถ้าไฟล์เป็นรูปแบบแยก Units ให้เก็บหน่วยจากชีต Units เพิ่มเติมด้วย
     rows_u, h_u = sheet_rows(wb, ['Units','หน่วยการเรียนรู้','หน่วย'])
@@ -2632,24 +2693,20 @@ def subject_import_lessons_excel(subject_id):
         unit_title = cell(r,h_u,'unit_title','unit','หน่วย','ชื่อหน่วย')
         if not unit_title:
             continue
-        unit_title = str(unit_title).strip()
-        unit = Unit.query.filter_by(subject_id=subject.id, title=unit_title).first()
-        if not unit:
-            unit = Unit(subject_id=subject.id, title=unit_title)
-            db.session.add(unit)
-            imported_units += 1
-        indicators = cell(r,h_u,'indicators','indicator','ตัวชี้วัด','ผลการเรียนรู้')
-        if indicators not in (None, ''):
-            unit.indicators = str(indicators)
-        rp = cell(r,h_u,'required_periods','periods','จำนวนคาบ','ชั่วโมง')
-        if rp not in (None, ''):
-            try:
-                unit.required_periods = int(float(rp))
-            except Exception:
-                pass
+        unit = get_or_prepare_unit(unit_title)
+        apply_unit_fields(unit, r, h_u)
 
     db.session.commit()
-    msg = f'นำเข้าหน่วย/บทเรียนให้รายวิชา {subject.name} สำเร็จ: หน่วยใหม่ {imported_units} / บทเรียนใหม่ {imported_lessons}'
+    mode_label = {
+        'update': 'อัปเดตของเดิม + เพิ่มรายการใหม่',
+        'keep': 'คงข้อมูลเดิมไว้ + เพิ่มเฉพาะรายการใหม่',
+        'replace_matching_units': 'ทำทับเฉพาะหน่วยที่ชื่อซ้ำ',
+        'replace_all_units': 'ลบหน่วยเดิมทั้งหมดแล้วนำเข้าใหม่'
+    }.get(import_mode, import_mode)
+    msg = (f'นำเข้าหน่วย/บทเรียนให้รายวิชา {subject.name} สำเร็จ '
+           f'({mode_label}): หน่วยใหม่ {imported_units} / บทเรียนใหม่ {imported_lessons} '
+           f'/ อัปเดตหน่วย {updated_units} / อัปเดตบทเรียน {updated_lessons} '
+           f'/ คงไว้ {kept_lessons} รายการ / ลบแทนที่ {replaced_units} หน่วย')
     if skipped:
         msg += f' / ข้าม {skipped} แถว'
     flash(msg, 'success')
@@ -2704,6 +2761,34 @@ def unit_delete(unit_id):
     db.session.commit()
     flash(f'ลบหน่วยการเรียนรู้ {unit_title} พร้อมบทเรียน/ใบงาน/แบบทดสอบที่ผูกอยู่แล้ว', 'success')
     return redirect(url_for('subject_detail', subject_id=subject_id))
+
+
+@app.route('/subject/<int:subject_id>/units/bulk-delete', methods=['POST'])
+@login_required
+@role_required('teacher','admin')
+def subject_units_bulk_delete(subject_id):
+    subject = Subject.query.get_or_404(subject_id)
+    if not owns_subject(subject):
+        return deny_redirect('subjects')
+    raw_ids = request.form.getlist('unit_ids')
+    unit_ids = []
+    for x in raw_ids:
+        try:
+            unit_ids.append(int(x))
+        except Exception:
+            pass
+    if not unit_ids:
+        flash('กรุณาติ๊กเลือกหน่วยการเรียนรู้ที่ต้องการลบก่อน', 'danger')
+        return redirect(url_for('subject_detail', subject_id=subject.id))
+    units = Unit.query.filter(Unit.subject_id==subject.id, Unit.id.in_(unit_ids)).all()
+    deleted_titles = []
+    for unit in units:
+        deleted_titles.append(unit.title)
+        force_delete_unit_data(unit.id)
+        db.session.delete(unit)
+    db.session.commit()
+    flash(f'ลบหน่วยการเรียนรู้ {len(deleted_titles)} หน่วย พร้อมบทเรียน/ใบงาน/แบบทดสอบที่ผูกอยู่แล้ว', 'success')
+    return redirect(url_for('subject_detail', subject_id=subject.id))
 
 
 def add_lesson_uploads(lesson):

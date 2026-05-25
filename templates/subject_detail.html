@@ -1,27 +1,157 @@
-{% extends 'base.html' %}{% block content %}<h1>{{subject.name}}</h1><div class="card"><b>ตรวจความพร้อมตามหน่วยกิต/คาบ</b><p>จำนวนคาบรายวิชา: {{subject.total_periods}}</p></div><section class="card import-card">
-<h2>นำเข้าหน่วย/บทเรียนของรายวิชานี้จาก Excel</h2>
-<p class="muted">ใช้ไฟล์เดียวเพิ่มได้ทั้งหน่วยการเรียนและบทเรียน โดยระบบจะผูกเข้ากับรายวิชานี้ให้อัตโนมัติ ไม่ต้องพิมพ์ชื่อรายวิชาใน Excel</p>
-<div class="form-row">
-  <form method="post" action="{{ url_for('subject_import_lessons_excel', subject_id=subject.id) }}" enctype="multipart/form-data" class="inline">
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>{{ subject.name }}</h1>
+    <p class="muted">จัดการหน่วยการเรียนรู้ บทเรียน ใบงาน แบบทดสอบ และการนำเข้าเนื้อหา</p>
+  </div>
+  <div class="actions-row">
+    <a class="btn secondary" href="{{ url_for('subjects') }}">← กลับรายวิชา</a>
+    <a class="btn" href="{{ url_for('subject_worksheets', subject_id=subject.id) }}">ดู/ตรวจใบงานทั้งหมด</a>
+  </div>
+</div>
+
+<div class="card"><b>ตรวจความพร้อมตามหน่วยกิต/คาบ</b><p>จำนวนคาบรายวิชา: {{ subject.total_periods }}</p></div>
+
+<section class="card import-card smart-import-card">
+  <h2>นำเข้าหน่วย/บทเรียนของรายวิชานี้จาก Excel</h2>
+  <p class="muted">ระบบจะผูกข้อมูลเข้ากับรายวิชานี้อัตโนมัติ และรองรับการอัปเดตข้อมูลเดิมเมื่อชื่อหน่วย/ชื่อบทเรียนตรงกัน</p>
+  <form method="post" action="{{ url_for('subject_import_lessons_excel', subject_id=subject.id) }}" enctype="multipart/form-data" class="stack-form js-confirm-form" data-confirm="ยืนยันนำเข้าข้อมูลตามโหมดที่เลือก?">
+    <label>เลือกไฟล์ Excel (.xlsx)</label>
     <input type="file" name="file" accept=".xlsx,.xls" required>
-    <button>นำเข้าหน่วย/บทเรียน</button>
-    <a class="btn secondary" href="{{ url_for('download_subject_lesson_import_template', subject_id=subject.id) }}">ไฟล์ตัวอย่าง</a>
-  </form>
-</div>
+
+    <div class="import-mode-grid">
+      <label class="mode-card">
+        <input type="radio" name="import_mode" value="update" checked>
+        <b>อัปเดตของเดิม + เพิ่มใหม่</b>
+        <small>ถ้าชื่อหน่วย/บทเรียนตรงกัน ระบบจะทับเฉพาะช่องที่มีข้อมูลในไฟล์ เช่น จุดประสงค์ เนื้อหา ตัวชี้วัด</small>
+      </label>
+      <label class="mode-card">
+        <input type="radio" name="import_mode" value="keep">
+        <b>คงข้อมูลเดิมไว้</b>
+        <small>ถ้าชื่อตรงกันจะไม่ทับของเดิม แต่จะเพิ่มหน่วย/บทเรียนที่ยังไม่มี</small>
+      </label>
+      <label class="mode-card warning-mode">
+        <input type="radio" name="import_mode" value="replace_matching_units">
+        <b>ทำทับเฉพาะหน่วยที่ชื่อซ้ำ</b>
+        <small>ลบหน่วยเดิมที่ชื่อซ้ำพร้อมบทเรียน/ใบงาน/แบบทดสอบ แล้วนำเข้าใหม่จากไฟล์</small>
+      </label>
+      <label class="mode-card danger-mode">
+        <input type="radio" name="import_mode" value="replace_all_units">
+        <b>ล้างหน่วยเดิมทั้งหมดแล้วนำเข้าใหม่</b>
+        <small>ใช้เมื่ออยากจัดเนื้อหารายวิชานี้ใหม่ทั้งชุด ระวังข้อมูลใบงาน/แบบทดสอบเดิมจะถูกลบด้วย</small>
+      </label>
+    </div>
+
+    <div class="actions-row">
+      <button>นำเข้าหน่วย/บทเรียน</button>
+      <a class="btn secondary" href="{{ url_for('download_subject_lesson_import_template', subject_id=subject.id) }}">ไฟล์ตัวอย่าง</a>
+    </div>
 </section>
-<div class="quick-actions card">
-  <a class="btn" href="{{ url_for('subject_worksheets', subject_id=subject.id) }}">ดู/ตรวจใบงานทั้งหมด</a>
-  <span class="muted">กดเข้ารายวิชาแล้วจัดการเช็กชื่อ ใบงาน และคะแนนได้จากหน้านี้</span>
-</div>
-<h2>เพิ่มหน่วยการเรียนรู้</h2><form method="post" class="stack-form"><input name="title" placeholder="ชื่อหน่วย" required><input name="required_periods" type="number" value="1" placeholder="คาบที่กำหนด"><textarea name="indicators" placeholder="ตัวชี้วัด/ผลการเรียนรู้"></textarea><button>เพิ่มหน่วย</button></form><h2>ความครบของหน่วย</h2><table><tr><th>หน่วย</th><th>บทเรียน</th><th>ใบงาน</th><th>แบบทดสอบ</th><th>ครบ</th><th>จัดการ</th></tr>{% for u,lesson_count,worksheets,quizzes,percent,missing in completeness %}<tr><td>{{u.title}}<br><small>{{u.indicators}}</small></td><td>{{lesson_count}}/{{u.required_periods}}</td><td>{{worksheets}}</td><td>{{quizzes}}</td><td><div class="bar"><span style="width:{{percent}}%"></span></div>{{percent}}% {% if missing>0 %}<b class="bad">ขาด {{missing}} คาบ</b>{% else %}<b class="ok">ครบ</b>{% endif %}</td><td><a class="btn small" href="{{ url_for('unit_lessons', unit_id=u.id) }}">ดู/แก้ไขบทเรียน</a><a class="btn small" href="{{ url_for('lesson_create', unit_id=u.id) }}">เพิ่มบทเรียน</a><a class="btn secondary small" href="{{url_for('unit_edit', unit_id=u.id)}}">แก้ไขหน่วย</a><form method="post" action="{{url_for('unit_delete', unit_id=u.id)}}" class="inline" onsubmit="return confirm('ลบหน่วยนี้?')"><button class="danger-btn small">ลบหน่วย</button></form></td></tr>{% endfor %}</table>
+
 <section class="card">
-<h2>เช็กชื่อและคะแนนของรายวิชานี้</h2>
-<table><tr><th>ห้องเรียน</th><th>จัดการ</th></tr>
-{% for sr in subject_rooms %}
-<tr><td>{{ sr.classroom.name }}</td><td>
-<a class="btn small" href="{{ url_for('attendance', subject_id=subject.id, classroom_id=sr.classroom_id) }}">เช็กชื่อ</a>
-<a class="btn secondary small" href="{{ url_for('grades', subject_id=subject.id, classroom_id=sr.classroom_id) }}">สมุดคะแนน/ตัดเกรด</a>
-</td></tr>
-{% else %}<tr><td colspan="2">ยังไม่ได้ผูกวิชานี้กับห้องเรียน</td></tr>{% endfor %}</table>
+  <h2>เพิ่มหน่วยการเรียนรู้</h2>
+  <form method="post" class="stack-form">
+    <input name="title" placeholder="ชื่อหน่วย" required>
+    <input name="required_periods" type="number" value="1" min="1" placeholder="คาบที่กำหนด">
+    <textarea name="indicators" placeholder="ตัวชี้วัด/ผลการเรียนรู้"></textarea>
+    <button>เพิ่มหน่วย</button>
+  </form>
 </section>
+
+<section class="card">
+  <div class="section-head-row">
+    <div>
+      <h2>ความครบของหน่วย</h2>
+      <p class="muted">ติ๊กเลือกหลายหน่วยเพื่อลบพร้อมกันได้ ระบบจะเด้งกล่องยืนยันกลางหน้าจอ</p>
+    </div>
+    <div class="actions-row">
+      <button type="button" class="secondary" id="select-all-units">เลือกทั้งหมด</button>
+      <button type="button" class="secondary" id="clear-all-units">ยกเลิกเลือก</button>
+    </div>
+  </div>
+
+  <form method="post" action="{{ url_for('subject_units_bulk_delete', subject_id=subject.id) }}" id="bulk-delete-units-form" class="js-confirm-form" data-confirm="ยืนยันลบหน่วยที่เลือกทั้งหมด? ข้อมูลบทเรียน ใบงาน แบบทดสอบ และงานที่ผูกกับหน่วยนั้นจะถูกลบด้วย"></form>
+    <div class="bulk-action-bar">
+      <span><b id="selected-unit-count">0</b> หน่วยที่เลือก</span>
+      <button type="submit" form="bulk-delete-units-form" class="danger-btn">ลบหน่วยที่เลือก</button>
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <tr>
+          <th style="width:54px;">เลือก</th>
+          <th>หน่วย</th>
+          <th>บทเรียน</th>
+          <th>ใบงาน</th>
+          <th>แบบทดสอบ</th>
+          <th>ครบ</th>
+          <th>จัดการ</th>
+        </tr>
+        {% for u,lesson_count,worksheets,quizzes,percent,missing in completeness %}
+        <tr>
+          <td data-label="เลือก"><input type="checkbox" class="unit-check" name="unit_ids" value="{{ u.id }}" form="bulk-delete-units-form"></td>
+          <td data-label="หน่วย"><b>{{ u.title }}</b><br><small>{{ u.indicators }}</small></td>
+          <td data-label="บทเรียน">{{ lesson_count }}/{{ u.required_periods }}</td>
+          <td data-label="ใบงาน">{{ worksheets }}</td>
+          <td data-label="แบบทดสอบ">{{ quizzes }}</td>
+          <td data-label="ครบ"><div class="bar"><span style="width:{{ percent }}%"></span></div>{{ percent }}% {% if missing>0 %}<b class="bad">ขาด {{ missing }} คาบ</b>{% else %}<b class="ok">ครบ</b>{% endif %}</td>
+          <td data-label="จัดการ">
+            <a class="btn small" href="{{ url_for('unit_lessons', unit_id=u.id) }}">ดู/แก้ไขบทเรียน</a>
+            <a class="btn small" href="{{ url_for('lesson_create', unit_id=u.id) }}">เพิ่มบทเรียน</a>
+            <a class="btn secondary small" href="{{ url_for('unit_edit', unit_id=u.id) }}">แก้ไขหน่วย</a>
+            <form method="post" action="{{ url_for('unit_delete', unit_id=u.id) }}" class="inline js-confirm-form" data-confirm="ยืนยันลบหน่วย ‘{{ u.title }}’? ข้อมูลบทเรียน ใบงาน แบบทดสอบ และงานที่ผูกกับหน่วยนี้จะถูกลบด้วย">
+              <button class="danger-btn small" type="submit">ลบหน่วย</button>
+            </form>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="7">ยังไม่มีหน่วยการเรียนรู้</td></tr>
+        {% endfor %}
+      </table>
+    </div>
+  </form>
+</section>
+
+<section class="card">
+  <h2>เช็กชื่อและคะแนนของรายวิชานี้</h2>
+  <table>
+    <tr><th>ห้องเรียน</th><th>จัดการ</th></tr>
+    {% for sr in subject_rooms %}
+    <tr>
+      <td>{{ sr.classroom.name }}</td>
+      <td>
+        <a class="btn small" href="{{ url_for('attendance', subject_id=subject.id, classroom_id=sr.classroom_id) }}">เช็กชื่อ</a>
+        <a class="btn secondary small" href="{{ url_for('grades', subject_id=subject.id, classroom_id=sr.classroom_id) }}">สมุดคะแนน/ตัดเกรด</a>
+      </td>
+    </tr>
+    {% else %}<tr><td colspan="2">ยังไม่ได้ผูกวิชานี้กับห้องเรียน</td></tr>{% endfor %}
+  </table>
+</section>
+
+<script>
+(function(){
+  const checks = Array.from(document.querySelectorAll('.unit-check'));
+  const countEl = document.getElementById('selected-unit-count');
+  function updateCount(){
+    if(countEl) countEl.textContent = checks.filter(c => c.checked).length;
+  }
+  checks.forEach(c => c.addEventListener('change', updateCount));
+  const selectAll = document.getElementById('select-all-units');
+  const clearAll = document.getElementById('clear-all-units');
+  if(selectAll) selectAll.addEventListener('click', () => { checks.forEach(c => c.checked = true); updateCount(); });
+  if(clearAll) clearAll.addEventListener('click', () => { checks.forEach(c => c.checked = false); updateCount(); });
+  const bulkForm = document.getElementById('bulk-delete-units-form');
+  if(bulkForm){
+    bulkForm.addEventListener('submit', function(e){
+      if(checks.filter(c => c.checked).length === 0){
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        alert('กรุณาติ๊กเลือกหน่วยก่อน');
+      }
+    }, true);
+  }
+  updateCount();
+})();
+</script>
 {% endblock %}

@@ -58,5 +58,51 @@
   {% block content %}{% endblock %}
 </main>
 
+<div id="confirm-modal" class="confirm-modal" aria-hidden="true">
+  <div class="confirm-modal__box" role="dialog" aria-modal="true" aria-labelledby="confirm-modal-title">
+    <h2 id="confirm-modal-title">ยืนยันการทำรายการ</h2>
+    <p id="confirm-modal-message">ต้องการดำเนินการต่อหรือไม่?</p>
+    <div class="confirm-modal__actions">
+      <button type="button" class="secondary" id="confirm-modal-cancel">ยกเลิก</button>
+      <button type="button" class="danger-btn" id="confirm-modal-ok">ยืนยัน</button>
+    </div>
+  </div>
+</div>
+<script>
+(function(){
+  const modal = document.getElementById('confirm-modal');
+  if(!modal) return;
+  const msg = document.getElementById('confirm-modal-message');
+  const ok = document.getElementById('confirm-modal-ok');
+  const cancel = document.getElementById('confirm-modal-cancel');
+  let pendingForm = null;
+  function openModal(form){
+    pendingForm = form;
+    msg.textContent = form.getAttribute('data-confirm') || 'ต้องการดำเนินการต่อหรือไม่?';
+    modal.classList.add('show');
+    modal.setAttribute('aria-hidden', 'false');
+  }
+  function closeModal(){
+    modal.classList.remove('show');
+    modal.setAttribute('aria-hidden', 'true');
+    pendingForm = null;
+  }
+  document.addEventListener('submit', function(e){
+    const form = e.target.closest && e.target.closest('.js-confirm-form');
+    if(!form || form.dataset.confirmed === '1') return;
+    e.preventDefault();
+    openModal(form);
+  }, true);
+  ok.addEventListener('click', function(){
+    if(!pendingForm) return closeModal();
+    pendingForm.dataset.confirmed = '1';
+    pendingForm.requestSubmit ? pendingForm.requestSubmit() : pendingForm.submit();
+  });
+  cancel.addEventListener('click', closeModal);
+  modal.addEventListener('click', function(e){ if(e.target === modal) closeModal(); });
+  document.addEventListener('keydown', function(e){ if(e.key === 'Escape') closeModal(); });
+})();
+</script>
+
 </body>
 </html>
