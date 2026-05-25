@@ -1,17 +1,8 @@
 {% extends 'base.html' %}
 {% block content %}
-<section class="mobile-dashboard-hero dashboard-hero-card">
-  <div class="hero-user-badge">{{ (current_user.full_name or 'ครู')[:2] }}</div>
-  <div>
-    <span class="hero-school">{{ school.name if school is defined and school else 'Teaching Management Dashboard' }}</span>
-    <h1>สวัสดี, {{ current_user.full_name }}</h1>
-    <p>วันนี้ {{ today_date }} · {{ current_user.role }}</p>
-    {% if period_info %}<p class="hero-period">⏰ {{ period_info.now_text }} น. · {% if period_info.status == 'current' %}คาบ {{ period_info.period_no }} {{ period_info.start_time }}-{{ period_info.end_time }}{% elif period_info.status == 'before_next' %}คาบถัดไป {{ period_info.period_no }} {{ period_info.start_time }}-{{ period_info.end_time }}{% else %}หมดคาบสอนของวันนี้แล้ว{% endif %}</p>{% endif %}
-  </div>
-</section>
-
+<h1>แดชบอร์ดครู</h1>
 {% if period_info %}
-<div class="period-alert detail-alert">
+<div class="period-alert">
   <div>
     <b>⏰ เวลาไทยตอนนี้ {{ period_info.now_text }} น.</b>
     {% if period_info.status == 'current' %}
@@ -25,62 +16,13 @@
   <a class="btn small" href="{{ url_for('attendance_dashboard') }}">เปิดภาพรวมวันนี้</a>
 </div>
 {% endif %}
-
-<div class="grid colorful dashboard-stat-grid">
-  <div class="stat-card green detail-stat-card">
-    <div class="stat-icon">✅</div>
-    <b>คาบปัจจุบัน</b>
-    {% if cur %}
-      <h3>{{cur.subject.name}}</h3>
-      <p>{{cur.classroom.name}} · {{cur.start_time}}-{{cur.end_time}}</p>
-      {% if cur_lesson_log and cur_lesson_log.is_published %}<small>กำลังเปิด: {{ cur_lesson_log.lesson.title }}</small>{% elif cur_lesson_log %}<small>เลือกไว้แต่ยังซ่อน: {{ cur_lesson_log.lesson.title }}</small>{% else %}<small>ยังไม่ได้เปิดเนื้อหา{% if cur.topic or cur.lesson %} · หัวข้อเดิม: {{cur.topic or cur.lesson.title}}{% endif %}</small>{% endif %}
-      <a class="btn tiny" href="{{ url_for('schedule_period', schedule_id=cur.id, date=today_date) }}">จัดการเนื้อหาคาบนี้</a>
-    {% else %}
-      <h3>ไม่มีคาบสอน</h3><p>ตามเวลาปัจจุบัน</p><small>ใช้เมนูตารางสอนเพื่อเตรียมคาบถัดไป</small>
-    {% endif %}
-  </div>
-  <div class="stat-card blue detail-stat-card">
-    <div class="stat-icon">🗓️</div>
-    <b>คาบถัดไป</b>
-    {% if nxt %}
-      <h3>{{nxt.subject.name}}</h3>
-      <p>{{nxt.classroom.name}} · {{nxt.start_time}}-{{nxt.end_time}}</p>
-      {% if nxt_lesson_log and nxt_lesson_log.is_published %}<small>เปิดไว้แล้ว: {{ nxt_lesson_log.lesson.title }}</small>{% elif nxt_lesson_log %}<small>เลือกไว้แต่ซ่อน: {{ nxt_lesson_log.lesson.title }}</small>{% else %}<small>ยังไม่ได้เปิดเนื้อหา</small>{% endif %}
-      <a class="btn tiny secondary" href="{{ url_for('schedule_period', schedule_id=nxt.id, date=today_date) }}">เตรียมคาบถัดไป</a>
-    {% else %}
-      <h3>ไม่มีคาบถัดไป</h3><p>วันนี้ไม่มีคาบต่อไป</p><small>ตรวจตารางสอนได้จากเมนูด้านล่าง</small>
-    {% endif %}
-  </div>
-  <div class="stat-card orange detail-stat-card">
-    <div class="stat-icon">📚</div>
-    <b>รายวิชา</b>
-    <h2>{{subjects|length}}</h2>
-    <p>วิชาที่รับผิดชอบ</p>
-    <small>จัดการหน่วย บทเรียน ใบงาน และแบบทดสอบ</small>
-  </div>
-  <div class="stat-card pink detail-stat-card">
-    <div class="stat-icon">🏫</div>
-    <b>ห้องเรียน</b>
-    <h2>{{classrooms|length}}</h2>
-    <p>ห้องที่เกี่ยวข้อง</p>
-    <small>เช็กชื่อ กรอกคะแนน และดูรายงาน</small>
-  </div>
+<div class="grid colorful">
+  <div class="stat-card green"><b>คาบปัจจุบัน</b>{% if cur %}<h3>{{cur.subject.name}}</h3><p>{{cur.classroom.name}} | {{cur.start_time}}-{{cur.end_time}}</p>{% if cur_lesson_log and cur_lesson_log.is_published %}<small>กำลังเปิดให้นักเรียนเห็น: {{ cur_lesson_log.lesson.title }}</small>{% elif cur_lesson_log %}<small>เลือกไว้แต่ยังซ่อน: {{ cur_lesson_log.lesson.title }}</small>{% else %}<small>ยังไม่ได้เปิดเนื้อหา{% if cur.topic or cur.lesson %} · หัวข้อเดิม: {{cur.topic or cur.lesson.title}}{% endif %}</small>{% endif %}<br><a class="btn tiny" href="{{ url_for('schedule_period', schedule_id=cur.id, date=today_date) }}">จัดการเนื้อหาคาบนี้</a>{% else %}<h3>ไม่มีคาบสอน</h3><small>ตามเวลาปัจจุบัน</small>{% endif %}</div>
+  <div class="stat-card blue"><b>คาบถัดไป</b>{% if nxt %}<h3>{{nxt.subject.name}}</h3><p>{{nxt.classroom.name}} | {{nxt.start_time}}-{{nxt.end_time}}</p>{% if nxt_lesson_log and nxt_lesson_log.is_published %}<small>เปิดไว้แล้ว: {{ nxt_lesson_log.lesson.title }}</small>{% elif nxt_lesson_log %}<small>เลือกไว้แต่ซ่อน: {{ nxt_lesson_log.lesson.title }}</small>{% else %}<small>ยังไม่ได้เปิดเนื้อหา</small>{% endif %}<br><a class="btn tiny secondary" href="{{ url_for('schedule_period', schedule_id=nxt.id, date=today_date) }}">เตรียมคาบถัดไป</a>{% else %}<h3>ไม่มีคาบถัดไปวันนี้</h3>{% endif %}</div>
+  <div class="stat-card orange"><b>รายวิชา</b><h2>{{subjects|length}}</h2><small>วิชา</small></div>
+  <div class="stat-card pink"><b>ห้องเรียน</b><h2>{{classrooms|length}}</h2><small>ห้อง</small></div>
 </div>
-
 {% include '_calendar_dashboard.html' %}
-
 <h2>งานล่าสุด</h2>
-<div class="cards assignment-card-grid">
-{% for a in assignments %}
-  <article class="card detail-list-card">
-    <div class="card-icon blue">📝</div>
-    <h3>{{a.title}}</h3>
-    <div class="card-meta-row">📚 {{a.subject.name}}</div>
-    <div class="card-meta-row">🏫 {{a.classroom.name}}</div>
-    <div class="card-meta-row">📅 กำหนดส่ง {{a.due_date or '-'}}</div>
-  </article>
-{% else %}
-  <div class="card">ยังไม่มีงานล่าสุด</div>
-{% endfor %}
-</div>
+<table><tr><th>งาน</th><th>วิชา</th><th>ห้อง</th><th>กำหนดส่ง</th></tr>{% for a in assignments %}<tr><td>{{a.title}}</td><td>{{a.subject.name}}</td><td>{{a.classroom.name}}</td><td>{{a.due_date or '-'}}</td></tr>{% endfor %}</table>
 {% endblock %}
