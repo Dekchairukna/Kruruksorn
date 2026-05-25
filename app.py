@@ -9,6 +9,7 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
+from werkzeug.exceptions import BadRequest, BadRequestKeyError
 from openpyxl import load_workbook, Workbook
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
@@ -24,6 +25,23 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'krurakson-dev')
+
+@app.errorhandler(BadRequestKeyError)
+def handle_bad_request_key_error(e):
+    """กันหน้า Bad Request เวลากดปุ่ม/ฟอร์มบางตัวส่งข้อมูลไม่ครบ เช่น field หายหลังปรับ modal/form"""
+    try:
+        missing = getattr(e, 'args', [''])[0]
+    except Exception:
+        missing = ''
+    flash(f'ระบบได้รับข้อมูลจากฟอร์มไม่ครบ กรุณาลองใหม่อีกครั้ง {"(ขาดช่อง: " + str(missing) + ")" if missing else ""}', 'danger')
+    return redirect(request.referrer or url_for('index'))
+
+@app.errorhandler(BadRequest)
+def handle_bad_request(e):
+    """แสดงข้อความในระบบแทนหน้า Bad Request สีขาวของ Flask"""
+    flash('คำขอไม่สมบูรณ์หรือฟอร์มส่งข้อมูลไม่ครบ กรุณาย้อนกลับแล้วลองใหม่อีกครั้ง', 'danger')
+    return redirect(request.referrer or url_for('index'))
+
 
 def get_database_uri():
     """เลือกฐานข้อมูลให้ปลอดภัยสำหรับ Railway PostgreSQL
@@ -1417,7 +1435,7 @@ def user_edit(user_id):
         if role == 'student':
             fill_student_personal_fields(u, request.form)
         if request.form.get('password'):
-            u.set_password(request.form['password'])
+            u.set_password(request.form.get('password',''))
         db.session.commit()
         flash('แก้ไขผู้ใช้แล้ว', 'success')
         return redirect(url_for('users'))
@@ -1533,7 +1551,7 @@ def classrooms():
     if request.method == 'POST':
         teacher_id_raw = request.form.get('teacher_id')
         teacher_id = current_user.id if current_user.role == 'teacher' else (int(teacher_id_raw) if teacher_id_raw else None)
-        room = Classroom(name=request.form['name'], teacher_id=teacher_id)
+        room = Classroom(name=request.form.get('name',''), teacher_id=teacher_id)
         db.session.add(room); db.session.flush()
 
         activity_teacher_ids = request.form.getlist('activity_teacher_ids')
@@ -1555,7 +1573,7 @@ def classroom_edit(classroom_id):
     room = Classroom.query.get_or_404(classroom_id)
     if not owns_classroom(room): return deny_redirect('classrooms')
     if request.method == 'POST':
-        room.name = request.form['name']
+        room.name = request.form.get('name','')
         if current_user.role == 'admin':
             teacher_id_raw = request.form.get('teacher_id')
             room.teacher_id = int(teacher_id_raw) if teacher_id_raw else None
@@ -1723,7 +1741,7 @@ def classroom_student_delete(link_id):
 @role_required('admin')
 def teacher_assignments():
     if request.method == 'POST':
-        teacher_id = int(request.form['teacher_id'])
+        teacher_id = int(request.form.get('teacher_id',''))
         new_subject_ids = {int(x) for x in request.form.getlist('subject_ids') if x}
         new_classroom_ids = {int(x) for x in request.form.getlist('classroom_ids') if x}
 
@@ -1811,7 +1829,7 @@ def classroom_students(classroom_id):
                 db.session.commit()
                 flash('เพิ่ม/อัปเดตนักเรียนและนำเข้าห้องแล้ว', 'success')
             else:
-                student_id = int(request.form['student_id'])
+                student_id = int(request.form.get('student_id',''))
                 if not ClassroomStudent.query.filter_by(classroom_id=room.id, student_id=student_id).first():
                     db.session.add(ClassroomStudent(classroom_id=room.id, student_id=student_id))
                     db.session.commit()
@@ -1951,7 +1969,7 @@ def classroom_activity_attendance(classroom_id, activity_id):
         selected_date = activity.event_date
 
     if request.method == 'POST':
-        selected_date = datetime.strptime(request.form['date'], '%Y-%m-%d').date()
+        selected_date = datetime.strptime(request.form.get('date',''), '%Y-%m-%d').date()
         if activity.event_date:
             selected_date = activity.event_date
         bulk_status = normalize_attendance_status(request.form.get('bulk_status')) if request.form.get('bulk_status') else None
@@ -2005,7 +2023,7 @@ def classroom_activity_attendance_delete_day(classroom_id, activity_id):
     if not owns_classroom(room):
         return deny_redirect('classrooms')
     activity = ClassroomActivity.query.filter_by(id=activity_id, classroom_id=room.id).first_or_404()
-    att_date = datetime.strptime(request.form['date'], '%Y-%m-%d').date()
+    att_date = datetime.strptime(request.form.get('date',''), '%Y-%m-%d').date()
     ActivityAttendance.query.filter_by(activity_id=activity.id, date=att_date).delete()
     db.session.commit()
     flash('ลบเช็กชื่อกิจกรรมของวันที่เลือกแล้ว', 'success')
@@ -2018,7 +2036,7 @@ def import_students():
     rooms = teacher_filter(Classroom).all()
     if request.method == 'POST':
         f = request.files.get('excel')
-        classroom_id = int(request.form['classroom_id'])
+        classroom_id = int(request.form.get('classroom_id',''))
         if not f:
             flash('กรุณาเลือกไฟล์ Excel', 'danger'); return redirect(url_for('import_students'))
         path = os.path.join(app.config['UPLOAD_FOLDER'], secure_filename(f.filename))
@@ -2647,7 +2665,7 @@ def subjects():
     if request.method == 'POST':
         teacher_id_raw = request.form.get('teacher_id')
         teacher_id = current_user.id if current_user.role == 'teacher' else (int(teacher_id_raw) if teacher_id_raw else None)
-        sub = Subject(name=request.form['name'], teacher_id=teacher_id, credit=float(request.form.get('credit',1)), total_periods=int(request.form.get('total_periods',40)))
+        sub = Subject(name=request.form.get('name',''), teacher_id=teacher_id, credit=float(request.form.get('credit',1)), total_periods=int(request.form.get('total_periods',40)))
         db.session.add(sub); db.session.flush()
         if teacher_id and not TeacherSubject.query.filter_by(teacher_id=teacher_id, subject_id=sub.id).first():
             db.session.add(TeacherSubject(teacher_id=teacher_id, subject_id=sub.id))
@@ -2704,7 +2722,7 @@ def subject_edit(subject_id):
     subject = Subject.query.get_or_404(subject_id)
     if not owns_subject(subject): return deny_redirect('subjects')
     if request.method == 'POST':
-        subject.name = request.form['name']
+        subject.name = request.form.get('name','')
         subject.credit = float(request.form.get('credit',1))
         subject.total_periods = int(request.form.get('total_periods',40))
         if current_user.role == 'admin':
@@ -2936,7 +2954,7 @@ def subject_detail(subject_id):
     subject = Subject.query.get_or_404(subject_id)
     if not owns_subject(subject): flash('ไม่มีสิทธิ์','danger'); return redirect(url_for('subjects'))
     if request.method == 'POST':
-        db.session.add(Unit(subject_id=subject.id, title=request.form['title'], indicators=request.form.get('indicators',''), required_periods=int(request.form.get('required_periods',1))))
+        db.session.add(Unit(subject_id=subject.id, title=request.form.get('title',''), indicators=request.form.get('indicators',''), required_periods=int(request.form.get('required_periods',1))))
         db.session.commit(); return redirect(url_for('subject_detail', subject_id=subject.id))
 
     # ใช้เส้นทางเดียวให้ชัดเจน: รายวิชา -> หน่วย -> บทเรียน -> ใบงาน/แบบทดสอบ
@@ -2986,7 +3004,7 @@ def unit_edit(unit_id):
     unit = Unit.query.get_or_404(unit_id)
     if not owns_unit(unit): return deny_redirect('subjects')
     if request.method == 'POST':
-        unit.title = request.form['title']
+        unit.title = request.form.get('title','')
         unit.indicators = request.form.get('indicators','')
         unit.required_periods = int(request.form.get('required_periods',1))
         db.session.commit(); flash('แก้ไขหน่วยการเรียนรู้แล้ว', 'success')
@@ -3077,7 +3095,7 @@ def lesson_create(unit_id):
     subject = unit.subject
     if not owns_subject(subject): flash('ไม่มีสิทธิ์','danger'); return redirect(url_for('subjects'))
     if request.method == 'POST':
-        l = Lesson(unit_id=unit.id, title=request.form['title'], objective=request.form.get('objective',''), content=request.form.get('content',''), media_url=request.form.get('media_url',''))
+        l = Lesson(unit_id=unit.id, title=request.form.get('title',''), objective=request.form.get('objective',''), content=request.form.get('content',''), media_url=request.form.get('media_url',''))
         db.session.add(l); db.session.flush()
         add_lesson_uploads(l)
         db.session.commit()
@@ -3092,7 +3110,7 @@ def lesson_edit(lesson_id):
     lesson = Lesson.query.get_or_404(lesson_id)
     if not owns_lesson(lesson): return deny_redirect('subjects')
     if request.method == 'POST':
-        lesson.title = request.form['title']
+        lesson.title = request.form.get('title','')
         lesson.objective = request.form.get('objective','')
         lesson.content = request.form.get('content','')
         lesson.media_url = request.form.get('media_url','')
@@ -3196,7 +3214,7 @@ def worksheet_create(lesson_id):
     lesson = Lesson.query.get_or_404(lesson_id)
     if not owns_lesson(lesson): return deny_redirect('subjects')
     if request.method == 'POST':
-        ws = Worksheet(lesson_id=lesson.id, title=request.form['title'], worksheet_type=request.form.get('worksheet_type','academic'), description=request.form.get('description',''))
+        ws = Worksheet(lesson_id=lesson.id, title=request.form.get('title',''), worksheet_type=request.form.get('worksheet_type','academic'), description=request.form.get('description',''))
         try:
             fp, original = save_uploaded_file(request.files.get('worksheet_file'), 'worksheets')
             ws.file_path, ws.original_file_name = fp, original
@@ -3227,7 +3245,7 @@ def worksheet_edit(worksheet_id):
     if not owns_lesson(ws.lesson): return deny_redirect('subjects')
     if request.method == 'POST':
         old_type = ws.worksheet_type
-        ws.title = request.form['title']
+        ws.title = request.form.get('title','')
         ws.worksheet_type = request.form.get('worksheet_type','academic')
         ws.description = request.form.get('description','')
         try:
@@ -3291,7 +3309,7 @@ def worksheet_question_delete(question_id):
 def quiz_create(lesson_id):
     lesson = Lesson.query.get_or_404(lesson_id)
     if request.method == 'POST':
-        qz = Quiz(lesson_id=lesson.id, title=request.form['title'], pass_percent=int(request.form.get('pass_percent',60)))
+        qz = Quiz(lesson_id=lesson.id, title=request.form.get('title',''), pass_percent=int(request.form.get('pass_percent',60)))
         db.session.add(qz); db.session.commit(); return redirect(url_for('quiz_questions', quiz_id=qz.id))
     return render_template('quiz_form.html', lesson=lesson)
 
@@ -3309,7 +3327,7 @@ def quiz_questions(quiz_id):
         else:
             choices = request.form.get('choices','')
             correct_answer = request.form.get('correct_answer','')
-        db.session.add(QuizQuestion(quiz_id=quiz.id, question_text=request.form['question_text'], question_type=question_type, choices=choices, correct_answer=correct_answer, score=float(request.form.get('score',1))))
+        db.session.add(QuizQuestion(quiz_id=quiz.id, question_text=request.form.get('question_text',''), question_type=question_type, choices=choices, correct_answer=correct_answer, score=float(request.form.get('score',1))))
         db.session.commit(); flash('เพิ่มข้อสอบแล้ว', 'success'); return redirect(url_for('quiz_questions', quiz_id=quiz.id))
     questions = QuizQuestion.query.filter_by(quiz_id=quiz.id).all()
     return render_template('quiz_questions.html', quiz=quiz, questions=questions)
@@ -3321,7 +3339,7 @@ def quiz_edit(quiz_id):
     quiz = Quiz.query.get_or_404(quiz_id)
     if not owns_lesson(quiz.lesson): return deny_redirect('subjects')
     if request.method == 'POST':
-        quiz.title = request.form['title']
+        quiz.title = request.form.get('title','')
         quiz.pass_percent = int(request.form.get('pass_percent',60))
         db.session.commit(); flash('แก้ไขแบบทดสอบแล้ว', 'success')
         return redirect(url_for('lesson_detail', lesson_id=quiz.lesson_id))
@@ -3351,7 +3369,7 @@ def quiz_question_edit(question_id):
     q = QuizQuestion.query.get_or_404(question_id)
     if not owns_lesson(q.quiz.lesson): return deny_redirect('subjects')
     if request.method == 'POST':
-        q.question_text = request.form['question_text']
+        q.question_text = request.form.get('question_text','')
         q.question_type = request.form.get('question_type','abcd')
         if q.question_type == 'abcd':
             labels = ['ก','ข','ค','ง']
@@ -3391,7 +3409,7 @@ def assign():
     rooms = teacher_filter(Classroom).all()
     lessons = Lesson.query.join(Unit).join(Subject).filter(Subject.id.in_(teacher_subject_ids() or [-1])).all() if current_user.role=='teacher' else Lesson.query.all()
     if request.method == 'POST':
-        a = Assignment(teacher_id=current_user.id, subject_id=int(request.form['subject_id']), classroom_id=int(request.form['classroom_id']), lesson_id=int(request.form['lesson_id']), title=request.form['title'], due_date=datetime.strptime(request.form['due_date'],'%Y-%m-%d').date() if request.form.get('due_date') else None)
+        a = Assignment(teacher_id=current_user.id, subject_id=int(request.form.get('subject_id','')), classroom_id=int(request.form.get('classroom_id','')), lesson_id=int(request.form.get('lesson_id','')), title=request.form.get('title',''), due_date=datetime.strptime(request.form.get('due_date',''),'%Y-%m-%d').date() if request.form.get('due_date') else None)
         db.session.add(a); db.session.flush()
         links = ClassroomStudent.query.filter_by(classroom_id=a.classroom_id).all()
         for link in links:
@@ -3415,11 +3433,11 @@ def assignment_edit(assignment_id):
     subjects = teacher_filter(Subject).all(); rooms = teacher_filter(Classroom).all()
     lessons = Lesson.query.join(Unit).join(Subject).filter(Subject.id.in_(teacher_subject_ids() or [-1])).all() if current_user.role=='teacher' else Lesson.query.all()
     if request.method == 'POST':
-        a.title = request.form['title']
-        a.subject_id = int(request.form['subject_id'])
-        a.classroom_id = int(request.form['classroom_id'])
-        a.lesson_id = int(request.form['lesson_id'])
-        a.due_date = datetime.strptime(request.form['due_date'],'%Y-%m-%d').date() if request.form.get('due_date') else None
+        a.title = request.form.get('title','')
+        a.subject_id = int(request.form.get('subject_id',''))
+        a.classroom_id = int(request.form.get('classroom_id',''))
+        a.lesson_id = int(request.form.get('lesson_id',''))
+        a.due_date = datetime.strptime(request.form.get('due_date',''),'%Y-%m-%d').date() if request.form.get('due_date') else None
         db.session.commit(); flash('แก้ไขงานที่สั่งแล้ว', 'success')
         return redirect(url_for('assignments'))
     return render_template('assign.html', subjects=subjects, rooms=rooms, lessons=lessons, assignment=a)
@@ -3733,8 +3751,8 @@ def schedule():
         post_teacher_id = int(request.form.get('teacher_id') or current_user.id)
         if current_user.role != 'admin':
             post_teacher_id = current_user.id
-        subject_id = int(request.form['subject_id'])
-        classroom_id = int(request.form['classroom_id'])
+        subject_id = int(request.form.get('subject_id',''))
+        classroom_id = int(request.form.get('classroom_id',''))
         # ตารางสอนต้องใช้เฉพาะวิชา/ห้องที่กำหนดให้ครูแล้วเท่านั้น
         if not TeacherSubject.query.filter_by(teacher_id=post_teacher_id, subject_id=subject_id).first():
             flash('ยังไม่ได้มอบหมายวิชานี้ให้ครูคนนี้ กรุณาไปหน้ามอบหมายครูก่อน', 'danger')
@@ -3742,20 +3760,20 @@ def schedule():
         if not TeacherClassroom.query.filter_by(teacher_id=post_teacher_id, classroom_id=classroom_id).first():
             flash('ยังไม่ได้มอบหมายห้องนี้ให้ครูคนนี้ กรุณาไปหน้ามอบหมายครูก่อน', 'danger')
             return redirect(url_for('schedule', teacher_id=post_teacher_id))
-        period_no = int(request.form['period_no'])
+        period_no = int(request.form.get('period_no',''))
         defaults = default_period_times()
         st, en = defaults.get(period_no, ('08:00','09:00'))
         db.session.add(TeachingSchedule(
             teacher_id=post_teacher_id,
             subject_id=subject_id,
             classroom_id=classroom_id,
-            weekday=int(request.form['weekday']),
+            weekday=int(request.form.get('weekday','')),
             period_no=period_no,
             start_time=request.form.get('start_time') or st,
             end_time=request.form.get('end_time') or en,
             room_name=request.form.get('room_name',''),
             topic=request.form.get('topic',''),
-            lesson_id=int(request.form['lesson_id']) if request.form.get('lesson_id') else None
+            lesson_id=int(request.form.get('lesson_id','')) if request.form.get('lesson_id') else None
         ))
         db.session.commit(); return redirect(url_for('schedule', teacher_id=post_teacher_id))
 
@@ -3933,10 +3951,10 @@ def schedule_edit(schedule_id):
     subjects = teacher_filter(Subject).all(); rooms = teacher_filter(Classroom).all()
     lessons = Lesson.query.join(Unit).join(Subject).filter(Subject.id.in_(teacher_subject_ids() or [-1])).all() if current_user.role=='teacher' else Lesson.query.all()
     if request.method == 'POST':
-        row.weekday=int(request.form['weekday']); row.period_no=int(request.form['period_no'])
-        row.start_time=request.form['start_time']; row.end_time=request.form['end_time']
-        row.subject_id=int(request.form['subject_id']); row.classroom_id=int(request.form['classroom_id'])
-        row.lesson_id=int(request.form['lesson_id']) if request.form.get('lesson_id') else None
+        row.weekday=int(request.form.get('weekday','')); row.period_no=int(request.form.get('period_no',''))
+        row.start_time=request.form.get('start_time',''); row.end_time=request.form.get('end_time','')
+        row.subject_id=int(request.form.get('subject_id','')); row.classroom_id=int(request.form.get('classroom_id',''))
+        row.lesson_id=int(request.form.get('lesson_id','')) if request.form.get('lesson_id') else None
         row.room_name=request.form.get('room_name',''); row.topic=request.form.get('topic','')
         db.session.commit(); flash('แก้ไขตารางสอนแล้ว', 'success')
         return redirect(url_for('schedule'))
@@ -4096,11 +4114,11 @@ def working_day_summary(start=None, end=None, teacher_id=None, semester=None):
 def semesters():
     if request.method == 'POST':
         sem = Semester(
-            name=request.form['name'],
+            name=request.form.get('name',''),
             academic_year=request.form.get('academic_year','2569'),
             term_no=request.form.get('term_no','1'),
-            start_date=datetime.strptime(request.form['start_date'],'%Y-%m-%d').date(),
-            end_date=datetime.strptime(request.form['end_date'],'%Y-%m-%d').date(),
+            start_date=datetime.strptime(request.form.get('start_date',''),'%Y-%m-%d').date(),
+            end_date=datetime.strptime(request.form.get('end_date',''),'%Y-%m-%d').date(),
             is_active=bool(request.form.get('is_active'))
         )
         if sem.is_active:
@@ -4115,10 +4133,10 @@ def semesters():
 def semester_edit(semester_id):
     sem = Semester.query.get_or_404(semester_id)
     if request.method == 'POST':
-        sem.name=request.form['name']; sem.academic_year=request.form.get('academic_year','')
+        sem.name=request.form.get('name',''); sem.academic_year=request.form.get('academic_year','')
         sem.term_no=request.form.get('term_no','')
-        sem.start_date=datetime.strptime(request.form['start_date'],'%Y-%m-%d').date()
-        sem.end_date=datetime.strptime(request.form['end_date'],'%Y-%m-%d').date()
+        sem.start_date=datetime.strptime(request.form.get('start_date',''),'%Y-%m-%d').date()
+        sem.end_date=datetime.strptime(request.form.get('end_date',''),'%Y-%m-%d').date()
         sem.is_active=bool(request.form.get('is_active'))
         if sem.is_active:
             Semester.query.filter(Semester.id!=sem.id).update({Semester.is_active: False})
@@ -4152,8 +4170,8 @@ def calendar_events():
     if request.method == 'POST':
         db.session.add(CalendarEvent(
             teacher_id=None if current_user.role=='admin' and request.form.get('global_event') else current_user.id,
-            event_date=datetime.strptime(request.form['event_date'],'%Y-%m-%d').date(),
-            title=request.form['title'], event_type=request.form.get('event_type','กิจกรรมโรงเรียน'), note=request.form.get('note','')
+            event_date=datetime.strptime(request.form.get('event_date',''),'%Y-%m-%d').date(),
+            title=request.form.get('title',''), event_type=request.form.get('event_type','กิจกรรมโรงเรียน'), note=request.form.get('note','')
         ))
         db.session.commit(); flash('เพิ่มรายการปฏิทินแล้ว', 'success'); return redirect(url_for('calendar_events', semester_id=selected_semester.id if selected_semester else None) + '#calendar-preview')
     q = CalendarEvent.query if current_user.role=='admin' else CalendarEvent.query.filter((CalendarEvent.teacher_id==current_user.id) | (CalendarEvent.teacher_id==None))
@@ -4251,7 +4269,7 @@ def calendar_edit(event_id):
     event = CalendarEvent.query.get_or_404(event_id)
     if current_user.role!='admin' and event.teacher_id not in (current_user.id, None): return deny_redirect('calendar_events')
     if request.method == 'POST':
-        event.event_date=datetime.strptime(request.form['event_date'],'%Y-%m-%d').date(); event.title=request.form['title']; event.event_type=request.form.get('event_type','กิจกรรมโรงเรียน'); event.note=request.form.get('note','')
+        event.event_date=datetime.strptime(request.form.get('event_date',''),'%Y-%m-%d').date(); event.title=request.form.get('title',''); event.event_type=request.form.get('event_type','กิจกรรมโรงเรียน'); event.note=request.form.get('note','')
         db.session.commit(); flash('แก้ไขปฏิทินแล้ว', 'success'); return redirect(url_for('calendar_events'))
     semesters = Semester.query.order_by(Semester.start_date.desc()).all()
     selected_semester = get_active_semester()
@@ -4767,7 +4785,7 @@ def attendance(subject_id, classroom_id):
     from_schedule_id = request.args.get('schedule_id', type=int)
     period_block = schedule_period_block(from_schedule_id, subject.id, room.id, period_no)
     if request.method == 'POST':
-        att_date = datetime.strptime(request.form['date'], '%Y-%m-%d').date()
+        att_date = datetime.strptime(request.form.get('date',''), '%Y-%m-%d').date()
         period_no = request.form.get('period_no', type=int) or period_no
         from_schedule_id = request.form.get('schedule_id', type=int) or from_schedule_id
         form_periods = [int(x) for x in request.form.getlist('periods') if str(x).isdigit()]
@@ -4916,7 +4934,7 @@ def attendance_delete_day(subject_id, classroom_id):
     substitute_mode = request.form.get('substitute') == '1'
     if not substitute_mode and (not owns_subject(subject) or not owns_classroom(room)):
         return deny_redirect('records_center')
-    att_date = datetime.strptime(request.form['date'], '%Y-%m-%d').date()
+    att_date = datetime.strptime(request.form.get('date',''), '%Y-%m-%d').date()
     periods = [int(x) for x in request.form.getlist('periods') if str(x).isdigit()]
     q = Attendance.query.filter_by(subject_id=subject.id, classroom_id=room.id, date=att_date)
     if periods:
