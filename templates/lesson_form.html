@@ -26,7 +26,7 @@
   <input type="file" name="lesson_files" multiple accept=".pdf,.png,.jpg,.jpeg,.doc,.docx,.ppt,.pptx,.mp4,.webm,.mov">
   <p class="hint">รองรับ PDF, PNG, JPG, Word, PowerPoint, MP4, WebM, MOV อัปโหลดได้หลายไฟล์พร้อมกัน</p>
 
-  <button>บันทึกบทเรียน</button>
+  <button type="submit">บันทึกบทเรียน</button>
 </form>
 </section>
 
@@ -42,8 +42,8 @@
       </div>
       <div>
         <a class="btn small" href="{{ url_for('uploaded_file', filename=f.file_path) }}" target="_blank">เปิดไฟล์</a>
-        <form method="post" action="{{ url_for('lesson_file_delete', file_id=f.id) }}" class="inline" onsubmit="return confirm('ลบไฟล์นี้?')">
-          <button class="danger-btn small">ลบ</button>
+        <form method="post" action="{{ url_for('lesson_file_delete', file_id=f.id) }}" class="inline js-confirm-form" data-confirm="ยืนยันลบไฟล์ประกอบบทเรียนนี้?">
+          <button type="submit" class="danger-btn small">ลบ</button>
         </form>
       </div>
     </div>

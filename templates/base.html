@@ -119,10 +119,12 @@
     form.removeAttribute('onsubmit');
     if(submitter){
       submitter.removeAttribute('onclick');
-      if(submitter.formAction) form.action = submitter.formAction;
-      if(submitter.formMethod) form.method = submitter.formMethod;
-      if(submitter.formEnctype) form.enctype = submitter.formEnctype;
-      if(submitter.formTarget) form.target = submitter.formTarget;
+      // ใช้ค่า form* เฉพาะกรณีปุ่มมี attribute นั้นจริง ๆ
+      // ไม่อย่างนั้น browser บางตัวจะคืน formMethod เป็น get แล้วทำให้ POST กลายเป็น GET จนเกิด Method Not Allowed
+      if(submitter.hasAttribute('formaction')) form.action = submitter.getAttribute('formaction');
+      if(submitter.hasAttribute('formmethod')) form.method = submitter.getAttribute('formmethod');
+      if(submitter.hasAttribute('formenctype')) form.enctype = submitter.getAttribute('formenctype');
+      if(submitter.hasAttribute('formtarget')) form.target = submitter.getAttribute('formtarget');
     }
     // ใช้ submit() เพื่อข้าม validation ของช่องอื่นในฟอร์ม เวลากดลบ/ยืนยันงานเฉพาะจุด
     if(typeof form.submit === 'function') form.submit();

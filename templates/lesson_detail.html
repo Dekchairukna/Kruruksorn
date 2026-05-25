@@ -46,7 +46,12 @@
           <span class="badge-soft">{{ f.file_type }}</span>
         </div>
 
-        {% if f.file_type == 'image' %}
+        {% if not (f.file_path|upload_file_exists) %}
+          <div class="file-preview-card missing-file-preview">
+            <div class="file-icon">!</div>
+            <p>ไฟล์นี้ไม่พบในเครื่อง/เซิร์ฟเวอร์แล้ว แต่ยังมีรายการค้างในระบบ กดลบรายการนี้ออกได้</p>
+          </div>
+        {% elif f.file_type == 'image' %}
           <img class="lesson-image-full" src="{{ file_url }}" alt="สื่อประกอบบทเรียน">
         {% elif f.file_type == 'pdf' %}
           <iframe class="lesson-pdf-frame" src="{{ file_url }}#toolbar=1&navpanes=0" title="สื่อประกอบบทเรียน"></iframe>
@@ -70,8 +75,15 @@
         {% endif %}
 
         <div class="lesson-file-actions">
-          <a class="btn small secondary" href="{{ file_url }}" target="_blank">เปิดแยก</a>
-          <a class="btn small" href="{{ file_url }}" download>ดาวน์โหลด</a>
+          {% if f.file_path|upload_file_exists %}
+            <a class="btn small secondary" href="{{ file_url }}" target="_blank">เปิดแยก</a>
+            <a class="btn small" href="{{ file_url }}" download>ดาวน์โหลด</a>
+          {% endif %}
+          {% if current_user.role in ['teacher','admin'] %}
+            <form method="post" action="{{ url_for('lesson_file_delete', file_id=f.id) }}" class="inline js-confirm-form" data-confirm="ยืนยันลบไฟล์/รายการสื่อประกอบบทเรียนนี้?">
+              <button type="submit" class="danger-btn small">ลบไฟล์นี้</button>
+            </form>
+          {% endif %}
         </div>
       </article>
     {% endfor %}

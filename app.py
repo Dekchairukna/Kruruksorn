@@ -169,6 +169,24 @@ def safe_remove_upload_file(file_path):
     return False
 
 
+def upload_file_exists(file_path):
+    """ตรวจว่าไฟล์แนบยังอยู่จริงหรือไม่ ใช้กันภาพ/ไฟล์หายแต่ข้อมูลค้างในฐานข้อมูล"""
+    if not file_path:
+        return False
+    try:
+        upload_root = os.path.abspath(app.config['UPLOAD_FOLDER'])
+        abs_path = os.path.abspath(os.path.join(upload_root, file_path))
+        if not abs_path.startswith(upload_root):
+            return False
+        return os.path.exists(abs_path) and os.path.isfile(abs_path)
+    except Exception:
+        return False
+
+@app.template_filter('upload_file_exists')
+def upload_file_exists_filter(file_path):
+    return upload_file_exists(file_path)
+
+
 
 def infer_subject_level(subject_name=''):
     """เดาระดับชั้นจากชื่อวิชาหรือรหัสวิชา เช่น ว21102 = ม.1, ว22102 = ม.2"""
@@ -3120,7 +3138,7 @@ def lesson_edit(lesson_id):
     files = LessonFile.query.filter_by(lesson_id=lesson.id).order_by(LessonFile.created_at.desc()).all()
     return render_template('lesson_form.html', unit=lesson.unit, lesson=lesson, files=files)
 
-@app.route('/lesson_file/<int:file_id>/delete', methods=['POST'])
+@app.route('/lesson_file/<int:file_id>/delete', methods=['GET','POST'])
 @login_required
 @role_required('teacher','admin')
 def lesson_file_delete(file_id):
