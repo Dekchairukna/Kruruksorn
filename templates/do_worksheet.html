@@ -4,10 +4,10 @@
 <div class="card worksheet-source-card">
   <p>{{worksheet.description}}</p>
   {% if worksheet.file_path %}
-    <a class="btn small" href="{{ url_for('uploaded_file', filename=worksheet.file_path) }}" target="_blank">เปิดไฟล์ใบงานจากครู</a>
+    <a class="btn small" href="{{ url_for('worksheet_file', worksheet_id=worksheet.id) }}" target="_blank">เปิดไฟล์ใบงานจากครู</a>
     {% set ext = worksheet.file_path.rsplit('.',1)[-1].lower() %}
     {% if ext in ['png','jpg','jpeg'] %}
-      <div class="worksheet-preview"><img src="{{ url_for('uploaded_file', filename=worksheet.file_path) }}" alt="{{ worksheet.original_file_name }}"></div>
+      <div class="worksheet-preview"><img src="{{ url_for('worksheet_file', worksheet_id=worksheet.id) }}" alt="{{ worksheet|worksheet_display_name }}"></div>
     {% endif %}
   {% endif %}
 </div>
@@ -37,7 +37,7 @@
     <label>ข้อ {{q.number}}: {{q.question_text}}</label>
     {% if worksheet.worksheet_type=='upload' or q.answer_type=='file' %}
       <input type="file" name="file_{{q.id}}" accept=".pdf,.png,.jpg,.jpeg">
-      {% if old_files.get(q.id) %}<p class="muted">ไฟล์เดิม: <a href="{{ url_for('uploaded_file', filename=old_files.get(q.id).file_path) }}" target="_blank">{{ old_files.get(q.id).original_file_name }}</a></p>{% endif %}
+      {% if old_files.get(q.id) %}<p class="muted">ไฟล์คำตอบเดิม: <a href="{{ url_for('uploaded_file', filename=old_files.get(q.id).file_path) }}" target="_blank">เปิดไฟล์ที่ส่งไว้</a></p>{% endif %}
       <textarea name="q_{{q.id}}" placeholder="หมายเหตุเพิ่มเติม ถ้ามี">{{old.get(q.id,'')}}</textarea>
     {% else %}
       <textarea name="q_{{q.id}}">{{old.get(q.id,'')}}</textarea>

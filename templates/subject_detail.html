@@ -198,15 +198,6 @@
   const bulkForm = document.getElementById('bulk-delete-units-form');
   if(bulkForm){
     bulkForm.addEventListener('submit', function(e){
-      const directDelete = e.submitter && e.submitter.classList.contains('js-direct-delete');
-      if(directDelete){
-        const msg = e.submitter.getAttribute('data-confirm') || 'ยืนยันลบรายการนี้?';
-        if(!confirm(msg)){
-          e.preventDefault();
-          e.stopImmediatePropagation();
-        }
-        return;
-      }
       if(checks.filter(c => c.checked).length === 0){
         e.preventDefault();
         e.stopImmediatePropagation();

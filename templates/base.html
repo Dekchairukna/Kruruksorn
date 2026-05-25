@@ -76,27 +76,84 @@
   const ok = document.getElementById('confirm-modal-ok');
   const cancel = document.getElementById('confirm-modal-cancel');
   let pendingForm = null;
-  function openModal(form){
+  let pendingSubmitter = null;
+
+  function extractConfirmMessage(text){
+    if(!text) return '';
+    const m = text.match(/confirm\((['"])([\s\S]*?)\1\)/);
+    return m ? m[2] : '';
+  }
+  function needsConfirm(form, submitter){
+    if(!form) return '';
+    if(form.classList && form.classList.contains('js-confirm-form')){
+      return form.getAttribute('data-confirm') || 'ต้องการดำเนินการต่อหรือไม่?';
+    }
+    const formMsg = extractConfirmMessage(form.getAttribute('onsubmit') || '');
+    if(formMsg) return formMsg;
+    if(submitter){
+      const btnMsg = extractConfirmMessage(submitter.getAttribute('onclick') || '');
+      if(btnMsg) return btnMsg;
+      if(submitter.classList && (submitter.classList.contains('danger-btn') || submitter.classList.contains('warning-btn'))){
+        return submitter.getAttribute('data-confirm') || 'ยืนยันการลบ/เปลี่ยนแปลงข้อมูลนี้?';
+      }
+    }
+    return '';
+  }
+  function openModal(form, submitter, message){
     pendingForm = form;
-    msg.textContent = form.getAttribute('data-confirm') || 'ต้องการดำเนินการต่อหรือไม่?';
+    pendingSubmitter = submitter || null;
+    msg.textContent = message || 'ต้องการดำเนินการต่อหรือไม่?';
     modal.classList.add('show');
     modal.setAttribute('aria-hidden', 'false');
+    setTimeout(() => ok && ok.focus && ok.focus(), 50);
   }
   function closeModal(){
     modal.classList.remove('show');
     modal.setAttribute('aria-hidden', 'true');
     pendingForm = null;
+    pendingSubmitter = null;
   }
-  document.addEventListener('submit', function(e){
-    const form = e.target.closest && e.target.closest('.js-confirm-form');
-    if(!form || form.dataset.confirmed === '1') return;
+  function submitConfirmed(form, submitter){
+    if(!form) return;
+    // ข้าม native confirm เดิมทั้งหมด เพื่อไม่ให้ขึ้นกล่องเล็กของ browser อีก
+    form.removeAttribute('onsubmit');
+    if(submitter){
+      submitter.removeAttribute('onclick');
+      if(submitter.formAction) form.action = submitter.formAction;
+      if(submitter.formMethod) form.method = submitter.formMethod;
+      if(submitter.formEnctype) form.enctype = submitter.formEnctype;
+      if(submitter.formTarget) form.target = submitter.formTarget;
+    }
+    // ใช้ submit() เพื่อข้าม validation ของช่องอื่นในฟอร์ม เวลากดลบ/ยืนยันงานเฉพาะจุด
+    if(typeof form.submit === 'function') form.submit();
+    else HTMLFormElement.prototype.submit.call(form);
+  }
+
+  document.addEventListener('click', function(e){
+    const submitter = e.target.closest && e.target.closest('button, input[type="submit"], input[type="image"]');
+    if(!submitter) return;
+    const form = submitter.form || e.target.closest('form');
+    const message = needsConfirm(form, submitter);
+    if(!message) return;
     e.preventDefault();
-    openModal(form);
+    e.stopImmediatePropagation();
+    openModal(form, submitter, message);
   }, true);
+
+  document.addEventListener('submit', function(e){
+    const form = e.target;
+    const message = needsConfirm(form, null);
+    if(!message) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    openModal(form, null, message);
+  }, true);
+
   ok.addEventListener('click', function(){
-    if(!pendingForm) return closeModal();
-    pendingForm.dataset.confirmed = '1';
-    pendingForm.requestSubmit ? pendingForm.requestSubmit() : pendingForm.submit();
+    const form = pendingForm;
+    const submitter = pendingSubmitter;
+    closeModal();
+    submitConfirmed(form, submitter);
   });
   cancel.addEventListener('click', closeModal);
   modal.addEventListener('click', function(e){ if(e.target === modal) closeModal(); });

@@ -42,14 +42,14 @@
       {% set file_url = url_for('uploaded_file', filename=f.file_path) %}
       <article class="lesson-embedded-item">
         <div class="lesson-file-head">
-          <b>{{ f.original_file_name }}</b>
+          <b>สื่อประกอบบทเรียน {{ loop.index }}</b>
           <span class="badge-soft">{{ f.file_type }}</span>
         </div>
 
         {% if f.file_type == 'image' %}
-          <img class="lesson-image-full" src="{{ file_url }}" alt="{{ f.original_file_name }}">
+          <img class="lesson-image-full" src="{{ file_url }}" alt="สื่อประกอบบทเรียน">
         {% elif f.file_type == 'pdf' %}
-          <iframe class="lesson-pdf-frame" src="{{ file_url }}#toolbar=1&navpanes=0" title="{{ f.original_file_name }}"></iframe>
+          <iframe class="lesson-pdf-frame" src="{{ file_url }}#toolbar=1&navpanes=0" title="สื่อประกอบบทเรียน"></iframe>
         {% elif f.file_type == 'video' %}
           <video class="lesson-video-player" controls preload="metadata">
             <source src="{{ file_url }}">
@@ -94,7 +94,7 @@
     <h3>{{ w.title }}</h3>
     <p><b>ประเภท:</b> {% if w.worksheet_type=='petanque_score' %}ใบงานเปตอง{% elif w.worksheet_type=='upload' %}อัปโหลดไฟล์{% else %}ใบงานวิชาการ{% endif %}</p>
     <p class="preserve-lines">{{ w.description or "" }}</p>
-    {% if w.file_path %}<p><a class="btn small" href="{{ url_for('uploaded_file', filename=w.file_path) }}" target="_blank">เปิดไฟล์ใบงาน</a></p>{% endif %}
+    {% if w.file_path %}<p><a class="btn small" href="{{ url_for('worksheet_file', worksheet_id=w.id) }}" target="_blank">เปิดไฟล์ใบงาน</a></p>{% endif %}
     {% if current_user.role == 'student' and lesson_status %}
       <a class="btn" href="{{ url_for('do_worksheet', status_id=lesson_status.id, worksheet_id=w.id) }}">ทำใบงาน</a>
     {% endif %}

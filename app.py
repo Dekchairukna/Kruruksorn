@@ -1,4 +1,5 @@
 import os
+import re
 import uuid
 from datetime import datetime, date, time, timedelta
 import calendar as py_calendar
@@ -129,6 +130,65 @@ def save_uploaded_file(file_obj, subdir='worksheets'):
     filename = f"{stamp}_{safe}"
     file_obj.save(os.path.join(target_dir, filename))
     return f"{subdir}/{filename}", original
+
+
+
+def infer_subject_level(subject_name=''):
+    """เดาระดับชั้นจากชื่อวิชาหรือรหัสวิชา เช่น ว21102 = ม.1, ว22102 = ม.2"""
+    text = str(subject_name or '')
+    m = re.search(r'ม\.\s*([1-6])', text)
+    if m:
+        return f"ม.{m.group(1)}"
+    m = re.search(r'ว\s*2([1-6])', text)
+    if m:
+        return f"ม.{m.group(1)}"
+    return 'ชั้นเรียน'
+
+
+def lesson_period_no(lesson):
+    """หาลำดับคาบของบทเรียนภายในรายวิชา โดยเรียงตามหน่วยและบทเรียน"""
+    try:
+        subject_id = lesson.unit.subject_id
+        lessons = (
+            Lesson.query.join(Unit, Lesson.unit_id == Unit.id)
+            .filter(Unit.subject_id == subject_id)
+            .order_by(Unit.id.asc(), Lesson.id.asc())
+            .all()
+        )
+        for i, item in enumerate(lessons, start=1):
+            if item.id == lesson.id:
+                return i
+    except Exception:
+        pass
+    return lesson.id if lesson else ''
+
+
+def clean_download_text(text):
+    text = re.sub(r'[\\/:*?"<>|]+', '-', str(text or '').strip())
+    text = re.sub(r'\s+', ' ', text).strip()
+    return text[:160] or 'ไฟล์'
+
+
+def worksheet_display_name(worksheet, with_ext=False):
+    """ชื่อไฟล์/ชื่อแสดงผลแบบอ่านง่าย ไม่โชว์ชื่อไฟล์จริงที่ระบบเก็บ"""
+    try:
+        subject = worksheet.lesson.unit.subject.name
+        level = infer_subject_level(subject)
+        period = lesson_period_no(worksheet.lesson)
+        title = worksheet.title or 'ใบงาน'
+        name = f"ใบงานครูรัก {subject} {level} คาบ {period} - {title}"
+    except Exception:
+        name = 'ใบงานครูรัก'
+    name = clean_download_text(name)
+    if with_ext and worksheet and worksheet.file_path and '.' in worksheet.file_path:
+        ext = worksheet.file_path.rsplit('.', 1)[1].lower()
+        name = f"{name}.{ext}"
+    return name
+
+
+@app.template_filter('worksheet_display_name')
+def worksheet_display_name_filter(worksheet):
+    return worksheet_display_name(worksheet, with_ext=False)
 
 
 def allowed_image_file(filename):
@@ -1117,6 +1177,33 @@ def logout():
 @login_required
 def uploaded_file(filename):
     return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
+
+
+@app.route('/worksheet/<int:worksheet_id>/file')
+@login_required
+def worksheet_file(worksheet_id):
+    worksheet = Worksheet.query.get_or_404(worksheet_id)
+    if not worksheet.file_path:
+        flash('ใบงานนี้ยังไม่มีไฟล์แนบ', 'warning')
+        return redirect(url_for('lesson_detail', lesson_id=worksheet.lesson_id))
+    # ครู/แอดมินต้องเป็นเจ้าของรายวิชา ส่วนนักเรียนต้องเข้าถึงผ่านงานของตนเองเท่านั้น
+    if current_user.role in ['teacher', 'admin']:
+        if not owns_lesson(worksheet.lesson):
+            return deny_redirect('subjects')
+    elif current_user.role == 'student':
+        room_ids = [x.classroom_id for x in ClassroomStudent.query.filter_by(student_id=current_user.id).all()]
+        ok = AssignmentStatus.query.join(Assignment).filter(
+            AssignmentStatus.student_id == current_user.id,
+            Assignment.lesson_id == worksheet.lesson_id
+        ).first()
+        if not ok:
+            flash('ยังไม่มีสิทธิ์เปิดไฟล์ใบงานนี้', 'danger')
+            return redirect(url_for('student_dashboard'))
+    path = os.path.join(app.config['UPLOAD_FOLDER'], worksheet.file_path)
+    if not os.path.exists(path):
+        flash('ไม่พบไฟล์ใบงาน', 'danger')
+        return redirect(url_for('lesson_detail', lesson_id=worksheet.lesson_id))
+    return send_file(path, as_attachment=False, download_name=worksheet_display_name(worksheet, with_ext=True))
 
 
 @app.route('/school-settings', methods=['GET', 'POST'])

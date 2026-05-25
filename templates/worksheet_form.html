@@ -18,7 +18,7 @@
   <label>แนบไฟล์ใบงานจากครู</label>
   <input type="file" name="worksheet_file" accept=".pdf,.png,.jpg,.jpeg">
   {% if worksheet and worksheet.file_path %}
-    <p class="muted">ไฟล์เดิม: <a href="{{ url_for('uploaded_file', filename=worksheet.file_path) }}" target="_blank">{{ worksheet.original_file_name or 'เปิดไฟล์ใบงาน' }}</a></p>
+    <p class="muted">ไฟล์เดิม: <a href="{{ url_for('worksheet_file', worksheet_id=worksheet.id) }}" target="_blank">{{ worksheet|worksheet_display_name }}</a></p>
   {% endif %}
 
   <label>คำชี้แจง</label>
