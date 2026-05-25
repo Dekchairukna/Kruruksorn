@@ -1853,6 +1853,189 @@ def cell(row, headers, *names, default=''):
             return row[i]
     return default
 
+def safe_int(value, default=0):
+    try:
+        if value in (None, ''):
+            return default
+        return int(float(value))
+    except Exception:
+        return default
+
+
+def safe_float(value, default=0):
+    try:
+        if value in (None, ''):
+            return default
+        return float(value)
+    except Exception:
+        return default
+
+
+def designtech_subject_display_name(course_code, course_name, grade_level):
+    """ตั้งชื่อรายวิชาให้ไม่ซ้ำกันระหว่าง ม.1/ม.2/ม.3"""
+    parts = [str(course_code or '').strip(), str(course_name or '').strip(), str(grade_level or '').strip()]
+    return ' '.join([x for x in parts if x]).strip()
+
+
+def import_design_technology_curriculum(wb):
+    """นำเข้าไฟล์หลักสูตร การออกแบบและเทคโนโลยี ม.1-3 ที่จัดชีตเป็น *_import"""
+    report = []
+    course_subjects = {}
+    unit_lookup = {}
+
+    n = 0
+    rows, h = sheet_rows(wb, ['courses_import', 'CoursesImport', 'DesignTechnologyCourses', 'หลักสูตรรายวิชา'])
+    for r in rows:
+        course_key = str(cell(r, h, 'course_key', 'รหัสชุดข้อมูล') or '').strip()
+        course_code = str(cell(r, h, 'course_code', 'subject_code', 'รหัสวิชา') or '').strip()
+        course_name = str(cell(r, h, 'course_name', 'subject_name', 'ชื่อวิชา', 'รายวิชา') or '').strip()
+        grade_level = str(cell(r, h, 'grade_level', 'ชั้น') or '').strip()
+        if not course_key and not course_name:
+            continue
+        display_name = designtech_subject_display_name(course_code, course_name, grade_level) or course_key
+        credit = safe_float(cell(r, h, 'credit', 'หน่วยกิต', default=0.5), 0.5)
+        periods = safe_int(cell(r, h, 'hours_per_year', 'total_periods', 'ชั่วโมง', 'จำนวนคาบ', default=20), 20)
+        teacher_name = str(cell(r, h, 'teacher_name', 'teacher', 'ครูผู้สอน', default='') or '').strip()
+        teacher = None
+        if teacher_name:
+            teacher = User.query.filter((User.username == teacher_name) | (User.full_name == teacher_name)).first()
+        if teacher:
+            sub = get_or_create_subject_for_teacher(display_name, teacher.id, course_code, f'{course_name} {grade_level}', credit, periods)
+        else:
+            sub = get_or_create_subject(display_name, credit, periods)
+        sub.credit = credit
+        sub.total_periods = periods
+        sub.is_active = True
+        ensure_grade_setting(sub.id)
+        if course_key:
+            course_subjects[course_key] = sub
+        n += 1
+    if n:
+        report.append(f'หลักสูตรการออกแบบและเทคโนโลยี: รายวิชา {n} รายการ')
+
+    indicators_by_course = {}
+    rows_i, h_i = sheet_rows(wb, ['indicators_import', 'IndicatorsImport', 'ตัวชี้วัดนำเข้า'])
+    for r in rows_i:
+        ck = str(cell(r, h_i, 'course_key', default='') or '').strip()
+        code = str(cell(r, h_i, 'indicator_code', 'รหัสตัวชี้วัด', default='') or '').strip()
+        text = str(cell(r, h_i, 'indicator_text', 'ตัวชี้วัด', default='') or '').strip()
+        if ck and (code or text):
+            indicators_by_course.setdefault(ck, []).append(' '.join([x for x in [code, text] if x]).strip())
+
+    n = 0
+    rows, h = sheet_rows(wb, ['units_import', 'UnitsImport', 'หน่วยนำเข้า'])
+    for r in rows:
+        ck = str(cell(r, h, 'course_key', default='') or '').strip()
+        sub = course_subjects.get(ck)
+        if not sub:
+            continue
+        unit_no = str(cell(r, h, 'unit_no', 'หน่วยที่', default='') or '').strip()
+        title = str(cell(r, h, 'unit_title', 'unit', 'ชื่อหน่วย', default='') or '').strip()
+        if not title:
+            continue
+        full_title = f'หน่วยที่ {unit_no} {title}'.strip() if unit_no else title
+        u = Unit.query.filter_by(subject_id=sub.id, title=full_title).first()
+        if not u:
+            u = Unit(subject_id=sub.id, title=full_title)
+            db.session.add(u)
+            db.session.flush()
+        indicators = str(cell(r, h, 'indicators', 'ตัวชี้วัด', default='') or '').strip()
+        objectives = str(cell(r, h, 'learning_objectives', 'จุดประสงค์', default='') or '').strip()
+        core_content = str(cell(r, h, 'core_content', 'สาระสำคัญ', 'เนื้อหา', default='') or '').strip()
+        detail_parts = []
+        if indicators:
+            detail_parts.append(indicators)
+        elif ck in indicators_by_course:
+            detail_parts.append('\n'.join(indicators_by_course[ck]))
+        if objectives:
+            detail_parts.append('จุดประสงค์: ' + objectives)
+        if core_content:
+            detail_parts.append('สาระสำคัญ: ' + core_content)
+        u.indicators = '\n'.join(detail_parts)
+        u.required_periods = safe_int(cell(r, h, 'hours', 'required_periods', 'ชั่วโมง', 'จำนวนคาบ', default=1), 1)
+        unit_lookup[(ck, str(unit_no))] = u
+        n += 1
+    if n:
+        report.append(f'หลักสูตรการออกแบบและเทคโนโลยี: หน่วยการเรียนรู้ {n} รายการ')
+
+    db.session.flush()
+
+    n = 0
+    rows, h = sheet_rows(wb, ['lessons_import', 'LessonsImport', 'บทเรียนนำเข้า'])
+    for r in rows:
+        ck = str(cell(r, h, 'course_key', default='') or '').strip()
+        unit_no = str(cell(r, h, 'unit_no', 'หน่วยที่', default='') or '').strip()
+        lesson_no = str(cell(r, h, 'lesson_no', 'บทที่', default='') or '').strip()
+        title = str(cell(r, h, 'lesson_title', 'lesson', 'ชื่อบทเรียน', default='') or '').strip()
+        if not ck or not unit_no or not title:
+            continue
+        u = unit_lookup.get((ck, unit_no))
+        sub = course_subjects.get(ck)
+        if not u and sub:
+            u = Unit.query.filter(Unit.subject_id == sub.id, Unit.title.like(f'หน่วยที่ {unit_no}%')).first()
+        if not u and sub:
+            u = Unit(subject_id=sub.id, title=f'หน่วยที่ {unit_no}')
+            db.session.add(u)
+            db.session.flush()
+        if not u:
+            continue
+        lesson_title = f'{lesson_no} {title}'.strip() if lesson_no else title
+        l = Lesson.query.filter_by(unit_id=u.id, title=lesson_title).first()
+        if not l:
+            l = Lesson(unit_id=u.id, title=lesson_title)
+            db.session.add(l)
+        indicators = str(cell(r, h, 'indicators', 'ตัวชี้วัด', default='') or '').strip()
+        activity_type = str(cell(r, h, 'activity_type', 'ประเภทกิจกรรม', default='') or '').strip()
+        status = str(cell(r, h, 'status', 'สถานะ', default='') or '').strip()
+        source_url = str(cell(r, h, 'source_url', 'แหล่งอ้างอิง', default='') or '').strip()
+        l.objective = indicators
+        l.content = '\n'.join([x for x in [activity_type, status, source_url] if x])
+        l.required_minutes = safe_int(cell(r, h, 'hours', 'ชั่วโมง', default=1), 1) * 50
+        n += 1
+    if n:
+        report.append(f'หลักสูตรการออกแบบและเทคโนโลยี: บทเรียน {n} รายการ')
+
+    rows, h = sheet_rows(wb, ['score_columns_import', 'ScoreColumnsImport', 'คะแนนนำเข้า'])
+    weights = {}
+    for r in rows:
+        ck = str(cell(r, h, 'course_key', default='') or '').strip()
+        col = str(cell(r, h, 'column_name', 'หัวข้อคะแนน', default='') or '').strip()
+        weight = safe_float(cell(r, h, 'weight_percent', 'น้ำหนัก', default=0), 0)
+        if not ck or not col or weight <= 0:
+            continue
+        w = weights.setdefault(ck, {'worksheet':0, 'quiz':0, 'classwork':0, 'attendance':0, 'midterm':0, 'final':0})
+        if 'แบบทดสอบ' in col or 'สอบปลายหน่วย' in col:
+            w['quiz'] += weight
+        elif 'ใบงาน' in col or 'กิจกรรม' in col:
+            w['worksheet'] += weight
+        elif 'กลางภาค' in col:
+            w['midterm'] += weight
+        elif 'ปลายภาค' in col:
+            w['final'] += weight
+        elif 'เช็คชื่อ' in col or 'เข้าเรียน' in col or 'เวลาเรียน' in col:
+            w['attendance'] += weight
+        else:
+            w['classwork'] += weight
+    n = 0
+    for ck, w in weights.items():
+        sub = course_subjects.get(ck)
+        if not sub:
+            continue
+        setting = GradeSetting.query.filter_by(subject_id=sub.id).first()
+        if not setting:
+            setting = GradeSetting(subject_id=sub.id)
+            db.session.add(setting)
+        setting.worksheet_weight = w['worksheet']
+        setting.quiz_weight = w['quiz']
+        setting.classwork_weight = w['classwork']
+        setting.attendance_weight = w['attendance']
+        setting.midterm_weight = w['midterm']
+        setting.final_weight = w['final']
+        n += 1
+    if n:
+        report.append(f'หลักสูตรการออกแบบและเทคโนโลยี: ตั้งค่าน้ำหนักคะแนน {n} รายวิชา')
+    return report
+
 def get_or_create_teacher(username, full_name=None):
     username = str(username).strip()
     u = User.query.filter_by(username=username).first()
@@ -2038,6 +2221,7 @@ IMPORT_MODULES = {
     'quiz_questions': {'title':'นำเข้าข้อสอบ', 'sheet':'QuizQuestions', 'desc':'เพิ่มข้อสอบ ตัวเลือก เฉลย คะแนน'},
     'schedule': {'title':'นำเข้าตารางสอน', 'sheet':'Schedule', 'desc':'เพิ่ม/อัปเดตตารางสอนรายคาบ'},
     'calendar': {'title':'นำเข้าปฏิทิน', 'sheet':'Calendar', 'desc':'เพิ่มวันหยุด กิจกรรม วันทำงาน'},
+    'design_technology': {'title':'นำเข้าหลักสูตร ออกแบบและเทคโนโลยี ม.1-3', 'sheet':'courses_import / units_import / lessons_import', 'desc':'นำเข้ารายวิชา หน่วย ตัวชี้วัด บทเรียน และน้ำหนักคะแนนจากไฟล์ที่จัดไว้'},
 }
 IMPORT_SHEET_ALIASES = {
     'teachers':['Teachers','ครู'],
@@ -2053,6 +2237,7 @@ IMPORT_SHEET_ALIASES = {
     'quiz_questions':['QuizQuestions','ข้อสอบ'],
     'schedule':['Schedule','ตารางสอน'],
     'calendar':['Calendar','ปฏิทิน'],
+    'design_technology':['courses_import','units_import','indicators_import','lessons_import','score_columns_import','README','sources'],
 }
 
 @app.route('/imports')
@@ -2375,6 +2560,8 @@ def import_all():
                     db.session.add(CalendarEvent(teacher_id=None, event_date=d, title=str(title).strip(), event_type=typ, note=note))
                 n += 1
         report.append(f'ปฏิทิน {n} รายการ')
+        designtech_report = import_design_technology_curriculum(wb)
+        report.extend(designtech_report)
         db.session.commit()
         flash('นำเข้าข้อมูลสำเร็จ: ' + ' / '.join(report), 'success')
         if kind:
