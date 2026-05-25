@@ -54,6 +54,38 @@
   </form>
 </section>
 
+<section class="card import-card smart-import-card">
+  <h2>นำเข้าเอกสารบทเรียนทั้งชุดจาก ZIP</h2>
+  <p class="muted">ใช้สำหรับไฟล์ที่มีใบงาน JPG, ใบความรู้ JPG และไฟล์บทเรียน .md ระบบจะจับคู่กับบทเรียนในรายวิชานี้ แล้วลงเนื้อหา/ไฟล์/ใบงานให้อัตโนมัติ</p>
+  <form method="post" action="{{ url_for('subject_import_lesson_docs_zip', subject_id=subject.id) }}" enctype="multipart/form-data" class="stack-form js-confirm-form" data-confirm="ยืนยันนำเข้าเอกสารบทเรียนจาก ZIP? ระบบจะจับคู่ตามชื่อบทเรียนหรือเลขคาบ">
+    <label>เลือกไฟล์ ZIP เอกสารบทเรียน</label>
+    <input type="file" name="docs_zip" accept=".zip" required>
+
+    <div class="import-mode-grid">
+      <label class="mode-card">
+        <input type="radio" name="docs_import_mode" value="update" checked>
+        <b>อัปเดต/เพิ่มเอกสาร</b>
+        <small>อัปเดตเนื้อหาจาก .md และเพิ่ม/อัปเดตใบงานให้ตรงบทเรียน</small>
+      </label>
+      <label class="mode-card">
+        <input type="radio" name="docs_import_mode" value="keep">
+        <b>คงของเดิมไว้</b>
+        <small>ถ้าบทเรียน/ใบงานมีข้อมูลอยู่แล้ว จะไม่ทับข้อมูลเดิม</small>
+      </label>
+      <label class="mode-card warning-mode">
+        <input type="radio" name="docs_import_mode" value="replace">
+        <b>ทำทับเอกสารเดิม</b>
+        <small>แทนที่ไฟล์ใบงานครูรักและใบความรู้เดิมของบทเรียนที่จับคู่ได้</small>
+      </label>
+    </div>
+
+    <div class="actions-row">
+      <button type="submit">นำเข้าเอกสารบทเรียน ZIP</button>
+      <span class="muted">ควรนำเข้าหน่วย/บทเรียนจาก Excel ก่อน แล้วค่อยนำเข้า ZIP เอกสาร</span>
+    </div>
+  </form>
+</section>
+
 <section class="card">
   <h2>เพิ่มหน่วยการเรียนรู้</h2>
   <form method="post" class="stack-form">

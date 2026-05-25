@@ -1,6 +1,8 @@
 import os
 import re
 import uuid
+import zipfile
+from io import BytesIO
 from datetime import datetime, date, time, timedelta
 import calendar as py_calendar
 from functools import wraps
@@ -3071,6 +3073,224 @@ def subject_units_bulk_delete(subject_id):
     flash(f'ลบหน่วยการเรียนรู้ {len(deleted_titles)} หน่วย พร้อมบทเรียน/ใบงาน/แบบทดสอบที่ผูกอยู่แล้ว', 'success')
     return redirect(url_for('subject_detail', subject_id=subject.id))
 
+
+
+def normalize_thai_title(value):
+    """ทำชื่อบทเรียนให้เทียบกันง่ายขึ้น เช่น ตัดช่องว่าง/สัญลักษณ์/คำหน้าท้ายที่ไม่จำเป็น"""
+    txt = str(value or '').strip().lower()
+    txt = re.sub(r'\.(jpg|jpeg|png|webp|gif|pdf|docx?|pptx?|md)$', '', txt, flags=re.I)
+    txt = txt.replace('ใบงานครูรัก', '').replace('ใบความรู้ครูรัก', '').replace('บทเรียนลงระบบ', '')
+    txt = re.sub(r'ม\.?\s*[123]', '', txt)
+    txt = re.sub(r'คาบ\s*\d+', '', txt)
+    txt = re.sub(r'[_\-–—:：|/\\\s]+', '', txt)
+    return txt
+
+
+def detect_subject_level(subject):
+    """เดาระดับชั้นจากชื่อ/รหัสวิชา เพื่อกรองไฟล์ใน ZIP ม.1-ม.3 ให้ตรงรายวิชา"""
+    txt = f"{getattr(subject, 'code', '')} {getattr(subject, 'name', '')}".lower()
+    if re.search(r'ม\.?\s*1|ม\.1|ม1|ว21', txt):
+        return 'ม1'
+    if re.search(r'ม\.?\s*2|ม\.2|ม2|ว22', txt):
+        return 'ม2'
+    if re.search(r'ม\.?\s*3|ม\.3|ม3|ว23', txt):
+        return 'ม3'
+    return ''
+
+
+def parse_lesson_doc_filename(name):
+    """อ่านชื่อไฟล์เอกสารครูรัก เช่น ม.1_คาบ01_เทคโนโลยีคืออะไร_ใบงานครูรัก.jpg"""
+    base = os.path.basename(name)
+    base_no_ext = os.path.splitext(base)[0]
+    level = ''
+    if re.search(r'ม\.?\s*1|ม1', name): level = 'ม1'
+    elif re.search(r'ม\.?\s*2|ม2', name): level = 'ม2'
+    elif re.search(r'ม\.?\s*3|ม3', name): level = 'ม3'
+    m = re.search(r'คาบ\s*0*(\d+)', base_no_ext)
+    period = int(m.group(1)) if m else None
+    kind = 'other'
+    if 'ใบงาน' in base_no_ext:
+        kind = 'worksheet'
+    elif 'ใบความรู้' in base_no_ext:
+        kind = 'knowledge'
+    elif 'บทเรียนลงระบบ' in base_no_ext or base.lower().endswith('.md'):
+        kind = 'lesson_md'
+    title = base_no_ext
+    title = re.sub(r'^ม\.?\s*[123][_-]?', '', title)
+    title = re.sub(r'คาบ\s*0*\d+[_-]?', '', title)
+    title = title.replace('ใบงานครูรัก', '').replace('ใบความรู้ครูรัก', '').replace('บทเรียนลงระบบ', '')
+    title = re.sub(r'[_\-–—]+', ' ', title).strip()
+    return SimpleNamespace(level=level, period=period, title=title, kind=kind, basename=base)
+
+
+def extract_markdown_section(md, heading):
+    """ดึงเนื้อหาใต้หัวข้อ markdown ระดับ ## แบบง่าย"""
+    if not md:
+        return ''
+    pattern = rf'(?ms)^##\s*{re.escape(heading)}\s*\n(.*?)(?=^##\s+|\Z)'
+    m = re.search(pattern, md)
+    return m.group(1).strip() if m else ''
+
+
+def save_bytes_to_upload(data, original_name, subdir):
+    """บันทึกไฟล์จาก ZIP ลง uploads โดยไม่พึ่ง FileStorage"""
+    ext = os.path.splitext(original_name)[1].lower().lstrip('.')
+    if ext not in ALLOWED_WORKSHEET_EXTENSIONS and ext not in ALLOWED_IMAGE_EXTENSIONS and ext not in {'md', 'txt'}:
+        raise ValueError(f'ชนิดไฟล์ไม่รองรับ: {original_name}')
+    target_dir = os.path.join(app.config['UPLOAD_FOLDER'], subdir)
+    os.makedirs(target_dir, exist_ok=True)
+    safe = secure_filename(original_name) or f'upload.{ext or "file"}'
+    stamp = datetime.utcnow().strftime('%Y%m%d%H%M%S%f')
+    filename = f"{stamp}_{safe}"
+    with open(os.path.join(target_dir, filename), 'wb') as out:
+        out.write(data)
+    return f"{subdir}/{filename}", original_name
+
+
+def build_lesson_match_map(subject):
+    lessons = (Lesson.query.join(Unit)
+               .filter(Unit.subject_id == subject.id)
+               .order_by(Unit.id.asc(), Lesson.id.asc())
+               .all())
+    by_norm = {normalize_thai_title(l.title): l for l in lessons if normalize_thai_title(l.title)}
+    by_period = {i: l for i, l in enumerate(lessons, start=1)}
+    return lessons, by_norm, by_period
+
+
+@app.route('/subject/<int:subject_id>/import_lesson_docs_zip', methods=['POST'])
+@login_required
+@role_required('teacher','admin')
+def subject_import_lesson_docs_zip(subject_id):
+    """นำเข้า ZIP เอกสารบทเรียนครูรัก: .md เป็นเนื้อหาบทเรียน, ใบความรู้เป็นไฟล์แนบ, ใบงานเป็น Worksheet"""
+    subject = Subject.query.get_or_404(subject_id)
+    if not owns_subject(subject):
+        return deny_redirect('subjects')
+
+    upload = request.files.get('docs_zip') or request.files.get('file')
+    if not upload or not upload.filename:
+        flash('กรุณาเลือกไฟล์ ZIP เอกสารบทเรียน', 'danger')
+        return redirect(url_for('subject_detail', subject_id=subject.id))
+    if not upload.filename.lower().endswith('.zip'):
+        flash('กรุณาอัปโหลดไฟล์ .zip เท่านั้น', 'danger')
+        return redirect(url_for('subject_detail', subject_id=subject.id))
+
+    mode = request.form.get('docs_import_mode', 'update').strip() or 'update'
+    if mode not in ['update', 'keep', 'replace']:
+        mode = 'update'
+
+    target_level = detect_subject_level(subject)
+    lessons, by_norm, by_period = build_lesson_match_map(subject)
+    matched_lessons = set()
+    updated_content = 0
+    added_files = 0
+    updated_worksheets = 0
+    created_worksheets = 0
+    skipped = []
+
+    try:
+        zdata = BytesIO(upload.read())
+        with zipfile.ZipFile(zdata) as zf:
+            entries = [n for n in zf.namelist() if not n.endswith('/') and not os.path.basename(n).startswith('.')]
+            # กรองระดับชั้นถ้าเดาได้ เช่น รายวิชา ว21102/ม.1 จะอ่านเฉพาะโฟลเดอร์/ไฟล์ ม1
+            if target_level:
+                level_entries = []
+                for n in entries:
+                    meta = parse_lesson_doc_filename(n)
+                    if not meta.level or meta.level == target_level:
+                        # ถ้าใน ZIP รวมหลายชั้น ให้รับเฉพาะไฟล์ที่ชื่อ/โฟลเดอร์ตรงชั้น หรือไฟล์กลาง README/CSV ข้ามอยู่แล้ว
+                        if meta.kind != 'other' and meta.level == target_level:
+                            level_entries.append(n)
+                entries = level_entries
+
+            for name in entries:
+                meta = parse_lesson_doc_filename(name)
+                if meta.kind == 'other':
+                    continue
+                lesson = by_norm.get(normalize_thai_title(meta.title))
+                if not lesson and meta.period:
+                    lesson = by_period.get(meta.period)
+                if not lesson:
+                    skipped.append(meta.basename)
+                    continue
+                matched_lessons.add(lesson.id)
+                raw = zf.read(name)
+
+                if meta.kind == 'lesson_md':
+                    if mode == 'keep' and lesson.content:
+                        continue
+                    try:
+                        md = raw.decode('utf-8-sig')
+                    except UnicodeDecodeError:
+                        md = raw.decode('utf-8', errors='ignore')
+                    objective = extract_markdown_section(md, 'จุดประสงค์การเรียนรู้')
+                    content_parts = []
+                    for h in ['สาระสำคัญ', 'เนื้อหาบทเรียน', 'กิจกรรมการเรียนรู้', 'การวัดและประเมินผล']:
+                        sec = extract_markdown_section(md, h)
+                        if sec:
+                            content_parts.append(f"## {h}\n{sec}")
+                    content = '\n\n'.join(content_parts).strip() or md.strip()
+                    if objective and mode != 'keep':
+                        lesson.objective = objective
+                    if mode in ['update', 'replace'] or not lesson.content:
+                        lesson.content = content
+                        updated_content += 1
+
+                elif meta.kind == 'knowledge':
+                    # ใบความรู้ให้เป็นสื่อประกอบบทเรียน ถ้า replace ให้ลบสื่อเดิมที่ชื่อคล้ายใบความรู้ก่อน
+                    if mode == 'replace':
+                        for old in LessonFile.query.filter_by(lesson_id=lesson.id).all():
+                            if 'ใบความรู้' in (old.original_file_name or '') or 'ความรู้' in (old.original_file_name or ''):
+                                safe_remove_upload_file(old.file_path)
+                                db.session.delete(old)
+                    if mode == 'keep' and LessonFile.query.filter_by(lesson_id=lesson.id, original_file_name=meta.basename).first():
+                        continue
+                    path, original = save_bytes_to_upload(raw, meta.basename, 'lesson_files')
+                    db.session.add(LessonFile(lesson_id=lesson.id, file_path=path, original_file_name=original, file_type=detect_lesson_file_type(path)))
+                    added_files += 1
+
+                elif meta.kind == 'worksheet':
+                    title = f"ใบงานครูรัก {subject.name} คาบ {meta.period or ''} - {lesson.title}".replace('  ', ' ').strip()
+                    existing = Worksheet.query.filter(Worksheet.lesson_id == lesson.id, Worksheet.title.like('ใบงานครูรัก%')).first()
+                    if existing and mode == 'keep':
+                        continue
+                    path, original = save_bytes_to_upload(raw, meta.basename, 'worksheets')
+                    if existing:
+                        if existing.file_path:
+                            safe_remove_upload_file(existing.file_path)
+                        existing.title = title
+                        existing.description = f"ใบงานประกอบบทเรียน {lesson.title} สำหรับรายวิชา {subject.name}"
+                        existing.worksheet_type = 'academic'
+                        existing.file_path = path
+                        existing.original_file_name = original
+                        updated_worksheets += 1
+                    else:
+                        ws = Worksheet(
+                            lesson_id=lesson.id,
+                            title=title,
+                            worksheet_type='academic',
+                            description=f"ใบงานประกอบบทเรียน {lesson.title} สำหรับรายวิชา {subject.name}",
+                            file_path=path,
+                            original_file_name=original,
+                        )
+                        db.session.add(ws)
+                        db.session.flush()
+                        db.session.add(WorksheetQuestion(worksheet_id=ws.id, number=1, question_text='ทำใบงานตามไฟล์แนบ แล้วส่งตามที่ครูกำหนด', answer_type='file', max_score=10))
+                        created_worksheets += 1
+
+        db.session.commit()
+        msg = f'นำเข้าเอกสารบทเรียนสำเร็จ: อัปเดตเนื้อหา {updated_content} บท, แนบใบความรู้ {added_files} ไฟล์, สร้างใบงาน {created_worksheets} ใบ, อัปเดตใบงาน {updated_worksheets} ใบ'
+        if target_level:
+            msg += f' (กรองเฉพาะ {target_level})'
+        if skipped:
+            msg += f' | ข้าม {len(skipped)} ไฟล์ที่จับคู่บทเรียนไม่เจอ'
+        flash(msg, 'success')
+    except zipfile.BadZipFile:
+        db.session.rollback()
+        flash('เปิดไฟล์ ZIP ไม่สำเร็จ กรุณาตรวจไฟล์อีกครั้ง', 'danger')
+    except Exception as e:
+        db.session.rollback()
+        flash(f'นำเข้าเอกสารไม่สำเร็จ: {e}', 'danger')
+    return redirect(url_for('subject_detail', subject_id=subject.id))
 
 def add_lesson_uploads(lesson):
     files = request.files.getlist('lesson_files')
