@@ -127,7 +127,8 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['UPLOAD_FOLDER'] = UPLOAD_DIR
 app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100MB รองรับวิดีโอบทเรียน
 app.config['OPENAI_MODEL'] = os.environ.get('OPENAI_MODEL', 'gpt-4.1-mini')
-# OPENAI_API_KEY ไม่บันทึกลงฐานข้อมูล อ่านจาก Environment Variable เท่านั้น
+app.config['GEMINI_MODEL'] = os.environ.get('GEMINI_MODEL', 'gemini-2.5-flash')
+# AI API Key ไม่บันทึกลงฐานข้อมูล อ่านจาก Environment Variable เท่านั้น
 
 # ลดปัญหาเด้งออกจากระบบบ่อย: ให้ session อยู่ได้นานขึ้นและ refresh ทุกครั้งที่ใช้งาน
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=int(os.environ.get('SESSION_DAYS', '30')))
@@ -1219,6 +1220,62 @@ def openai_masked_status():
     return f"ตั้งค่าแล้ว ({key[:4]}...{key[-4:]})"
 
 
+def gemini_key_ready():
+    return bool((os.environ.get('GEMINI_API_KEY') or os.environ.get('GOOGLE_API_KEY') or '').strip())
+
+
+def gemini_masked_status():
+    key = (os.environ.get('GEMINI_API_KEY') or os.environ.get('GOOGLE_API_KEY') or '').strip()
+    if not key:
+        return 'ยังไม่ได้ตั้งค่า GEMINI_API_KEY'
+    if len(key) <= 10:
+        return 'ตั้งค่าแล้ว'
+    return f"ตั้งค่าแล้ว ({key[:6]}...{key[-4:]})"
+
+
+def ai_selected_provider():
+    raw = (os.environ.get('AI_PROVIDER') or '').strip().lower()
+    if raw in ('gemini', 'google', 'google-gemini'):
+        return 'gemini'
+    if raw in ('openai', 'gpt'):
+        return 'openai'
+    if raw in ('offline', 'template'):
+        return 'offline'
+    # auto mode: ใช้ Gemini ก่อน เพราะมี Free Tier เหมาะกับงานครูเริ่มต้น
+    if gemini_key_ready():
+        return 'gemini'
+    if openai_key_ready():
+        return 'openai'
+    return 'offline'
+
+
+def ai_key_ready():
+    provider = ai_selected_provider()
+    if provider == 'gemini':
+        return gemini_key_ready()
+    if provider == 'openai':
+        return openai_key_ready()
+    return True
+
+
+def ai_status_text():
+    provider = ai_selected_provider()
+    if provider == 'gemini':
+        return 'Gemini: ' + gemini_masked_status()
+    if provider == 'openai':
+        return 'OpenAI: ' + openai_masked_status()
+    return 'Offline Template Mode: ใช้งานได้โดยไม่ใช้ API แต่ไม่ใช่ AI จริง'
+
+
+def ai_model_text():
+    provider = ai_selected_provider()
+    if provider == 'gemini':
+        return os.environ.get('GEMINI_MODEL') or app.config.get('GEMINI_MODEL') or 'gemini-2.5-flash'
+    if provider == 'openai':
+        return os.environ.get('OPENAI_MODEL') or app.config.get('OPENAI_MODEL') or 'gpt-4.1-mini'
+    return 'offline-template'
+
+
 def extract_openai_text(data):
     """รองรับรูปแบบคำตอบของ Responses API หลายแบบ เพื่อไม่ให้หน้า AI พังถ้า API เปลี่ยน field ย่อย"""
     if not isinstance(data, dict):
@@ -1281,6 +1338,84 @@ def call_openai_text(prompt, *, max_output_tokens=2600):
     if not text:
         raise RuntimeError('OpenAI API ตอบกลับมาแล้ว แต่ไม่พบข้อความ output')
     return text
+
+
+def extract_gemini_text(data):
+    if not isinstance(data, dict):
+        return ''
+    parts = []
+    for cand in data.get('candidates', []) or []:
+        content = cand.get('content') or {}
+        for part in content.get('parts', []) or []:
+            text = part.get('text') if isinstance(part, dict) else None
+            if text:
+                parts.append(str(text))
+    return '\n'.join(parts).strip()
+
+
+def call_gemini_text(prompt, *, max_output_tokens=2600):
+    """เรียก Gemini ผ่าน REST API โดยไม่เพิ่ม dependency เพื่อให้ deploy ง่ายบน Railway"""
+    api_key = (os.environ.get('GEMINI_API_KEY') or os.environ.get('GOOGLE_API_KEY') or '').strip()
+    if not api_key:
+        raise RuntimeError('ยังไม่ได้ตั้งค่า GEMINI_API_KEY ใน Environment Variables')
+    model = (os.environ.get('GEMINI_MODEL') or app.config.get('GEMINI_MODEL') or 'gemini-2.5-flash').strip()
+    endpoint = 'https://generativelanguage.googleapis.com/v1beta/models/' + urllib.parse.quote(model, safe='') + ':generateContent?key=' + urllib.parse.quote(api_key, safe='')
+    system_text = (
+        'คุณคือ AI Assistant สำหรับครูไทยในระบบ KRURUKSORN ช่วยสรุปการสอน '
+        'สร้างใบความรู้ และสร้างใบงานเป็นภาษาไทยแบบพร้อมให้ครูตรวจแก้ก่อนบันทึกจริง '
+        'ห้ามสั่งแก้ไขฐานข้อมูล ห้ามอ้างว่าบันทึกให้แล้ว และให้ใช้รูปแบบที่ครูคัดลอกไปใช้ได้ทันที'
+    )
+    payload = {
+        'contents': [
+            {
+                'role': 'user',
+                'parts': [{'text': system_text + '\n\n' + prompt}],
+            }
+        ],
+        'generationConfig': {
+            'temperature': 0.45,
+            'maxOutputTokens': max_output_tokens,
+        },
+    }
+    req = urllib.request.Request(
+        endpoint,
+        data=json.dumps(payload).encode('utf-8'),
+        headers={'Content-Type': 'application/json'},
+        method='POST',
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=70) as resp:
+            raw = resp.read().decode('utf-8')
+            data = json.loads(raw)
+    except urllib.error.HTTPError as e:
+        body = e.read().decode('utf-8', errors='replace') if e.fp else ''
+        raise RuntimeError(f'Gemini API error {e.code}: {body[:700]}')
+    except urllib.error.URLError as e:
+        raise RuntimeError(f'เชื่อมต่อ Gemini API ไม่สำเร็จ: {e}')
+    text = extract_gemini_text(data)
+    if not text:
+        raise RuntimeError('Gemini API ตอบกลับมาแล้ว แต่ไม่พบข้อความ output')
+    return text
+
+
+def offline_template_text(prompt):
+    """โหมดสำรอง: ไม่ใช่ AI จริง แต่ช่วยให้หน้าทำงานได้แม้ยังไม่มี API"""
+    return (
+        'โหมดแม่แบบออฟไลน์ (ยังไม่ได้ใช้ AI จริง)\n\n'
+        'ระบบเตรียมข้อมูลสำหรับครูไว้แล้ว กรุณานำ Prompt ด้านล่างไปปรับใช้หรือตั้งค่า GEMINI_API_KEY เพื่อให้ AI สร้างคำตอบจริง\n\n'
+        '--- Prompt ที่ระบบเตรียมไว้ ---\n'
+        + prompt
+    )
+
+
+def call_ai_text(prompt, *, max_output_tokens=2600):
+    provider = ai_selected_provider()
+    if provider == 'gemini':
+        return call_gemini_text(prompt, max_output_tokens=max_output_tokens)
+    if provider == 'openai':
+        return call_openai_text(prompt, max_output_tokens=max_output_tokens)
+    return offline_template_text(prompt)
+
 
 
 def ai_subjects_for_user():
@@ -1457,7 +1592,7 @@ def ai_assistant():
                 selected_classroom_id or None,
             )
             prompt_text = ai_build_prompt(selected_task, topic=topic, level=level, extra=extra, subject_context=subject_context, recent_context=recent_context)
-            result_text = call_openai_text(prompt_text)
+            result_text = call_ai_text(prompt_text)
             flash('AI สร้างข้อความให้แล้ว กรุณาตรวจแก้และกดบันทึกเองในหน้าที่เกี่ยวข้อง', 'success')
         except PermissionError as e:
             flash(str(e), 'danger')
@@ -1483,6 +1618,10 @@ def ai_assistant():
         openai_ready=openai_key_ready(),
         openai_status=openai_masked_status(),
         openai_model=os.environ.get('OPENAI_MODEL') or app.config.get('OPENAI_MODEL'),
+        ai_ready=ai_key_ready(),
+        ai_status=ai_status_text(),
+        ai_provider=ai_selected_provider(),
+        ai_model=ai_model_text(),
     )
 
 @app.route('/')

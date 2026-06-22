@@ -6,19 +6,20 @@
     <h1>✨ AI Assistant</h1>
     <p class="muted">ผู้ช่วยครูสำหรับสรุปการสอน สร้างใบความรู้ และสร้างใบงาน โดยยังไม่แก้ไขหรือบันทึกข้อมูลแทนครู</p>
   </div>
-  <div class="ai-status-card {{ 'ready' if openai_ready else 'missing' }}">
-    <b>{{ 'พร้อมใช้งาน' if openai_ready else 'ยังไม่พร้อม' }}</b>
-    <span>{{ openai_status }}</span>
-    <small>Model: {{ openai_model }}</small>
+  <div class="ai-status-card {{ 'ready' if ai_ready else 'missing' }}">
+    <b>{{ 'พร้อมใช้งาน' if ai_ready else 'ยังไม่พร้อม' }}</b>
+    <span>{{ ai_status }}</span>
+    <small>Provider: {{ ai_provider }} | Model: {{ ai_model }}</small>
   </div>
 </div>
 
-{% if not openai_ready %}
+{% if not ai_ready %}
 <section class="card ai-warning-card">
-  <h2>ต้องตั้งค่า OPENAI_API_KEY ก่อนใช้งานจริง</h2>
-  <p>ระบบจะอ่านคีย์จาก Environment Variable เท่านั้น ไม่เก็บคีย์ลงฐานข้อมูล</p>
-  <pre>OPENAI_API_KEY=sk-...
-OPENAI_MODEL=gpt-4.1-mini</pre>
+  <h2>ต้องตั้งค่า API Key ก่อนใช้งาน AI จริง</h2>
+  <p>ระบบจะอ่านคีย์จาก Environment Variable เท่านั้น ไม่เก็บคีย์ลงฐานข้อมูล แนะนำใช้ Gemini Free Tier ก่อน</p>
+  <pre>AI_PROVIDER=gemini
+GEMINI_API_KEY=AIza...
+GEMINI_MODEL=gemini-2.5-flash</pre>
   <p class="muted">ถ้าใช้ Railway ให้เพิ่มในหน้า Variables ของ Service เว็บ แล้ว Deploy/Restart อีกครั้ง</p>
 </section>
 {% endif %}
