@@ -139,7 +139,7 @@
   {% endif %}
 </section>
 
-{% if not is_group_attendance %}<section class="card classwork-score-card" id="classwork-score">
+<section class="card classwork-score-card" id="classwork-score">
   <div class="section-head-row">
     <div>
       <h2>คะแนนในคาบเรียน</h2>
@@ -148,7 +148,7 @@
     <a class="btn secondary" href="{{ url_for('grades', subject_id=subject.id, classroom_id=room.id) }}">ไปตั้งค่าน้ำหนักคะแนน</a>
   </div>
 
-  <form method="post" action="{{ url_for('attendance_class_score', subject_id=subject.id, classroom_id=room.id) }}" class="classwork-score-form">
+  <form method="post" action="{% if is_group_attendance %}{{ url_for('attendance_group_class_score', schedule_id=schedule_id) }}{% else %}{{ url_for('attendance_class_score', subject_id=subject.id, classroom_id=room.id) }}{% endif %}" class="classwork-score-form">
     <input type="hidden" name="date" value="{{ att_date.isoformat() if att_date else '' }}">
     <input type="hidden" name="period_no" value="{{ period_no or (period_block[0] if period_block else '') }}">
     <input type="hidden" name="schedule_id" value="{{ schedule_id or '' }}">
@@ -179,7 +179,24 @@
     <button class="btn">บันทึกคะแนนในคาบ</button>
   </form>
 
-  {% if classwork_items %}
+  {% if classwork_items and is_group_attendance %}
+  <h3>คะแนนที่บันทึกไว้ของวันที่นี้</h3>
+  <div class="table-wrap">
+    <table>
+      <tr><th>ห้อง</th><th>คาบ</th><th>หัวข้อ</th><th>คะแนนเต็ม</th><th>จำนวนคะแนนที่บันทึก</th></tr>
+      {% for item in classwork_items %}
+      <tr>
+        <td>{{ item.classroom.name if item.classroom else '-' }}</td>
+        <td>{{ item.period_no or '-' }}</td>
+        <td>{{ item.title }}</td>
+        <td>{{ item.max_score }}</td>
+        <td>{{ classwork_scores.get(item.id, {})|length }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+  <p class="muted">โหมดรวมหลายห้องจะแสดงรายการคะแนนแบบสรุปก่อน หากต้องแก้ละเอียดให้เข้าเช็กชื่อรายห้อง</p>
+  {% elif classwork_items %}
   <h3>คะแนนที่บันทึกไว้ของวันที่นี้</h3>
   {% for item in classwork_items %}
   <form method="post" action="{{ url_for('attendance_class_score', subject_id=subject.id, classroom_id=room.id) }}" class="classwork-score-form saved-score-item">
@@ -217,9 +234,9 @@
   </form>
   {% endfor %}
   {% endif %}
-</section>{% endif %}
+</section>
 
-{% if not is_group_attendance %}<section class="card attendance-report-card">
+<section class="card attendance-report-card">
   <div class="section-head-row">
     <div>
       <h2>สรุปการเช็กชื่อรายวัน</h2>
@@ -291,7 +308,7 @@
       </tbody>
     </table>
   </div>
-</section>{% endif %}
+</section>
 
 <script>
 function setAllAttendance(status) {

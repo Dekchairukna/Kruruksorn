@@ -5981,6 +5981,59 @@ def build_attendance_summary(subject_id, classroom_id, links, start_date=None, e
     return slot_headers, att_data, summary
 
 
+def make_attendance_group_slot_headers(subject_id, classroom_ids, start_date=None, end_date=None):
+    """หัวตารางสรุปการเช็กชื่อสำหรับคาบรวมหลายห้อง
+    รวมวันที่/คาบของทุกห้องในกลุ่มให้แสดงในหน้าเดียว
+    """
+    q = Attendance.query.filter(Attendance.subject_id == subject_id, Attendance.classroom_id.in_(classroom_ids or [-1]))
+    if start_date:
+        q = q.filter(Attendance.date >= start_date)
+    if end_date:
+        q = q.filter(Attendance.date <= end_date)
+    rows = q.order_by(Attendance.date.asc(), Attendance.period_no.asc(), Attendance.classroom_id.asc()).all()
+    seen = []
+    used = set()
+    for a in rows:
+        pno = a.period_no or 0
+        key = (a.date, pno)
+        if key not in used:
+            used.add(key)
+            seen.append({
+                'date': a.date,
+                'period_no': pno,
+                'key': f"{a.date.isoformat()}_{pno}",
+                'iso': a.date.isoformat(),
+                'short': thai_date_short(a.date) + (f" คาบ {pno}" if pno else ''),
+                'label': thai_date_label(a.date) + (f" คาบที่ {pno}" if pno else ''),
+            })
+    return seen, rows
+
+
+def build_attendance_group_summary(subject_id, classroom_ids, links, start_date=None, end_date=None):
+    """สรุปเช็กชื่อสำหรับหน้าเช็กชื่อรวมหลายห้อง
+    ข้อมูลยังแยกตามห้องในฐานข้อมูล แต่รายงานรวมตามรายชื่อนักเรียนในหน้าเดียว
+    """
+    slot_headers, all_attendance = make_attendance_group_slot_headers(subject_id, classroom_ids, start_date, end_date)
+    att_data = {}
+    for a in all_attendance:
+        key = f"{a.date.isoformat()}_{a.period_no or 0}"
+        att_data.setdefault(a.student_id, {})[key] = normalize_attendance_status(a.status)
+    summary = []
+    for link in links:
+        student_map = att_data.get(link.student_id, {})
+        row = {'student': link.student, 'มา': 0, 'สาย': 0, 'ขาด': 0, 'โดดเรียน': 0, 'ลาป่วย': 0, 'ไปกิจกรรม': 0}
+        for h in slot_headers:
+            st = normalize_attendance_status(student_map.get(h['key'], ''))
+            if st in row:
+                row[st] += 1
+        total_checked = len(slot_headers)
+        attended = row['มา'] + row['สาย'] + row['ไปกิจกรรม']
+        row['checked'] = total_checked
+        row['percent'] = round((attended / total_checked * 100), 1) if total_checked else 100
+        summary.append(row)
+    return slot_headers, att_data, summary
+
+
 def build_subject_attendance_summaries(start_date=None, end_date=None):
     """สรุปภาพรวมการเช็กชื่อ แยกเป็นรายวิชา/ห้องเรียน ใช้ในศูนย์บันทึก รายงานพิมพ์ และ Excel"""
     subject_ids = teacher_subject_ids()
@@ -6204,15 +6257,25 @@ def attendance_schedule_group(schedule_id):
         old_q = old_q.filter(Attendance.period_no.in_(period_block))
     for a in old_q.order_by(Attendance.period_no.asc()).all():
         old.setdefault(a.student_id, normalize_attendance_status(a.status))
+    date_headers, att_data, summary = build_attendance_group_summary(subject.id, room_ids, links)
+    score_q = ClassworkScoreItem.query.filter(ClassworkScoreItem.subject_id == subject.id, ClassworkScoreItem.classroom_id.in_(room_ids or [-1]), ClassworkScoreItem.date == att_date)
+    if period_block:
+        score_q = score_q.filter(ClassworkScoreItem.period_no.in_(period_block))
+    classwork_items = score_q.order_by(ClassworkScoreItem.period_no.asc(), ClassworkScoreItem.classroom_id.asc(), ClassworkScoreItem.id.asc()).all()
+    classwork_scores = {}
+    if classwork_items:
+        rows = ClassworkScore.query.filter(ClassworkScore.item_id.in_([x.id for x in classwork_items])).all()
+        for row in rows:
+            classwork_scores.setdefault(row.item_id, {})[row.student_id] = row
     selected_period_text = ', '.join(str(x) for x in period_block if x) if period_block else ''
     return render_template(
         'attendance.html',
         subject=subject, room=pseudo_room, links=links, old=old, att_date=att_date,
         selected_day_label=thai_date_label(att_date), selected_period_text=selected_period_text,
-        summary=[], statuses=ATTENDANCE_STATUSES, period_no=period_no, schedule_id=anchor.id,
+        summary=summary, statuses=ATTENDANCE_STATUSES, period_no=period_no, schedule_id=anchor.id,
         period_block=period_block, substitute_mode=False, sub_teacher_id=None,
-        date_headers=[], att_data={}, status_symbols=ATTENDANCE_SYMBOLS,
-        classwork_items=[], classwork_scores={}, attendance_scope='group',
+        date_headers=date_headers, att_data=att_data, status_symbols=ATTENDANCE_SYMBOLS,
+        classwork_items=classwork_items, classwork_scores=classwork_scores, attendance_scope='group',
         attendance_scope_label=f'รวมหลายห้อง: {pseudo_room.name}', show_classroom_column=True,
         classrooms_all=Classroom.query.filter(db.or_(Classroom.is_active == True, Classroom.is_active.is_(None))).order_by(Classroom.name).all(),
         is_group_attendance=True, group_rows=group_rows, group_room_text=pseudo_room.name
@@ -6290,6 +6353,70 @@ def attendance(subject_id, classroom_id):
         show_classroom_column=show_classroom_column,
         classrooms_all=Classroom.query.filter(db.or_(Classroom.is_active == True, Classroom.is_active.is_(None))).order_by(Classroom.name).all()
     )
+
+
+@app.route('/attendance/group/<int:schedule_id>/class-score', methods=['POST'])
+@login_required
+@role_required('teacher', 'admin')
+def attendance_group_class_score(schedule_id):
+    """บันทึกคะแนนในคาบสำหรับคาบรวมหลายห้อง
+    ระบบสร้างหัวข้อคะแนนแยกตามห้องจริง แต่ครูกรอกหน้าเดียวได้
+    """
+    anchor = TeachingSchedule.query.get_or_404(schedule_id)
+    group_rows = schedule_room_group_rows(anchor) or [anchor]
+    for row in group_rows:
+        if not user_can_open_schedule(row):
+            return deny_redirect('schedule')
+    subject = anchor.subject
+    room_lookup = {r.classroom_id: r for r in group_rows if r.classroom_id}
+    room_ids = list(room_lookup.keys())
+    score_date = datetime.strptime(request.form.get('date', local_today().isoformat()), '%Y-%m-%d').date()
+    period_no = request.form.get('period_no', type=int) or anchor.period_no
+    title = (request.form.get('title') or '').strip() or f'คะแนนในคาบ {period_no or ""}'.strip()
+    try:
+        max_score = float(request.form.get('max_score') or 10)
+    except Exception:
+        max_score = 10
+    max_score = max(0.1, max_score)
+
+    links = ClassroomStudent.query.filter(ClassroomStudent.classroom_id.in_(room_ids or [-1])).join(User, ClassroomStudent.student_id == User.id).join(Classroom, ClassroomStudent.classroom_id == Classroom.id).all()
+    links = sorted(links, key=lambda l: (classroom_natural_sort_key(l.classroom.name if l.classroom else ''), l.student.username or '', l.student.full_name or ''))
+
+    items_by_room = {}
+    for rid, sched in room_lookup.items():
+        lesson_id = sched.lesson_id if sched else None
+        item = ClassworkScoreItem(
+            subject_id=subject.id,
+            classroom_id=rid,
+            schedule_id=sched.id if sched else anchor.id,
+            lesson_id=lesson_id,
+            date=score_date,
+            period_no=period_no,
+            title=title,
+            max_score=max_score,
+            created_by_id=current_user.id,
+        )
+        db.session.add(item)
+        db.session.flush()
+        items_by_room[rid] = item
+
+    for link in links:
+        item = items_by_room.get(link.classroom_id)
+        if not item:
+            continue
+        raw = request.form.get(f'score_{link.student_id}', '').strip()
+        note = request.form.get(f'note_{link.student_id}', '').strip()
+        if raw == '' and not note:
+            continue
+        try:
+            score = float(raw or 0)
+        except Exception:
+            score = 0
+        score = max(0, min(score, max_score))
+        db.session.add(ClassworkScore(item_id=item.id, student_id=link.student_id, score=score, note=note))
+    db.session.commit()
+    flash('บันทึกคะแนนในคาบแบบรวมหลายห้องแล้ว ระบบแยกคะแนนตามห้องจริงให้เรียบร้อย', 'success')
+    return redirect(url_for('attendance_schedule_group', schedule_id=anchor.id, date=score_date.isoformat(), period_no=period_no))
 
 
 @app.route('/attendance/<int:subject_id>/<int:classroom_id>/class-score', methods=['POST'])
