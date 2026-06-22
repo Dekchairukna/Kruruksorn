@@ -2,7 +2,7 @@
 {% block content %}
 <div class="page-head">
   <div>
-    <h1>เช็กชื่อนักเรียน</h1>
+    <h1>เช็กชื่อนักเรียน{% if is_group_attendance %}รวมหลายห้อง{% endif %}</h1>
     <p class="muted">{{ subject.name }} / {{ attendance_scope_label if attendance_scope_label else room.name }}{% if selected_period_text %} · เช็กครั้งเดียวครอบคลุมคาบ {{ selected_period_text }}{% elif period_no %} · คาบ {{ period_no }}{% endif %}{% if substitute_mode %} · โหมดสอนแทน{% endif %}</p>
     <div class="selected-date-badge">วันที่เช็กชื่อ: <b>{{ selected_day_label }}</b></div>
   </div>
@@ -10,11 +10,13 @@
     <a class="btn secondary" href="{{ url_for('schedule') }}">← กลับตารางสอน</a>
     <a class="btn secondary" href="{{ url_for('records_center') }}">ศูนย์บันทึก</a>
     {% if substitute_mode %}<a class="btn secondary" href="{{ url_for('substitute_schedule', teacher_id=sub_teacher_id) }}">← ตารางสอนแทน</a>{% endif %}
+    {% if not is_group_attendance %}
     <a class="btn" href="{{ url_for('export_attendance', subject_id=subject.id, classroom_id=room.id, range='term', substitute='1' if substitute_mode else None) }}">Export รายเทอม</a>
     <a class="btn secondary" href="{{ url_for('attendance_print', subject_id=subject.id, classroom_id=room.id, range='term', substitute='1' if substitute_mode else None) }}" target="_blank">พิมพ์รายเทอม</a>
     <a class="btn secondary" href="{{ url_for('attendance_print', subject_id=subject.id, classroom_id=room.id, range='month', year=att_date.year, month=att_date.month, substitute='1' if substitute_mode else None) }}" target="_blank">พิมพ์รายเดือน</a>
     <a class="btn" href="{{ url_for('export_attendance', subject_id=subject.id, classroom_id=room.id, range='month', year=att_date.year, month=att_date.month, substitute='1' if substitute_mode else None) }}">Excel รายเดือน</a>
     <a class="btn secondary" href="{{ url_for('grades', subject_id=subject.id, classroom_id=room.id) }}">สมุดคะแนน</a>
+    {% endif %}
   </div>
 </div>
 
@@ -36,7 +38,7 @@
     </form>
   </div>
 
-  <details class="quick-student-manager">
+  {% if not is_group_attendance %}<details class="quick-student-manager">
     <summary>👥 เพิ่มชื่อ/ย้ายห้องนักเรียนจากหน้าเช็กชื่อ</summary>
     <div class="quick-student-grid">
       <div class="quick-add-box">
@@ -72,9 +74,10 @@
         </div>
       </div>
     </div>
-  </details>
+  </details>{% endif %}
 
 
+  {% if is_group_attendance %}<div class="selected-date-badge group-attendance-note">โหมดรวมหลายห้อง: ระบบจะบันทึกแยกตามห้องจริง แต่ครูเช็กจากรายชื่อรวมหน้าเดียว ห้องเลขน้อยอยู่ก่อน</div>{% endif %}
   <form method="post" id="attendanceForm">
     <input type="hidden" name="period_no" value="{{ period_no or '' }}">
     <input type="hidden" name="schedule_id" value="{{ schedule_id or '' }}">
@@ -123,6 +126,7 @@
     </div>
   </form>
 
+  {% if not is_group_attendance %}
   <div class="attendance-day-actions danger-zone">
     <a class="btn secondary edit-attendance-today-btn" href="{{ url_for('attendance', subject_id=subject.id, classroom_id=room.id, date=att_date.isoformat() if att_date else None, period_no=period_no if period_no else None, schedule_id=schedule_id if schedule_id else None, substitute='1' if substitute_mode else None, sub_teacher_id=sub_teacher_id if substitute_mode else None) }}#attendanceForm">แก้ไขเช็กชื่อวันที่นี้</a>
     <form method="post" action="{{ url_for('attendance_delete_day', subject_id=subject.id, classroom_id=room.id) }}" onsubmit="return confirm('ลบข้อมูลเช็กชื่อของ {{ selected_day_label }} ?')" class="inline attendance-delete-day-form">
@@ -132,9 +136,10 @@
       <button class="danger-btn">ลบเช็กชื่อวันที่นี้</button>
     </form>
   </div>
+  {% endif %}
 </section>
 
-<section class="card classwork-score-card" id="classwork-score">
+{% if not is_group_attendance %}<section class="card classwork-score-card" id="classwork-score">
   <div class="section-head-row">
     <div>
       <h2>คะแนนในคาบเรียน</h2>
@@ -212,9 +217,9 @@
   </form>
   {% endfor %}
   {% endif %}
-</section>
+</section>{% endif %}
 
-<section class="card attendance-report-card">
+{% if not is_group_attendance %}<section class="card attendance-report-card">
   <div class="section-head-row">
     <div>
       <h2>สรุปการเช็กชื่อรายวัน</h2>
@@ -286,7 +291,7 @@
       </tbody>
     </table>
   </div>
-</section>
+</section>{% endif %}
 
 <script>
 function setAllAttendance(status) {
@@ -311,10 +316,11 @@ document.addEventListener('DOMContentLoaded', () => {
 function parseAttCard(){
   const raw=(document.getElementById('att_card_raw').value||'').trim();
   if(!raw){ alert('วางข้อมูลจากเครื่องอ่านบัตรก่อน'); return; }
-  const parts=(raw.includes('#')?raw.split('#'):raw.split(/
-+/)).map(x=>x.trim()).filter(Boolean);
-  const id=(raw.match(/\d{13}/)||[])[0]; if(id) document.getElementById('att_citizen_id').value=id;
-  const date=(raw.match(/\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4}/)||[])[0]; if(date) document.getElementById('att_birth_date').value=date;
+  const parts=(raw.includes('#')?raw.split('#'):raw.split(/\n+/)).map(x=>x.trim()).filter(Boolean);
+  const id=(raw.match(/\b\d{13}\b/)||[])[0];
+  if(id) document.getElementById('att_citizen_id').value=id;
+  const date=(raw.match(/\b\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4}\b/)||[])[0];
+  if(date) document.getElementById('att_birth_date').value=date;
   const name=parts.find(x=>/(นาย|นางสาว|นาง|เด็กชาย|เด็กหญิง|ด\.ช\.|ด\.ญ\.)/.test(x));
   if(name) document.getElementById('att_full_name').value=name;
 }

@@ -1209,3 +1209,79 @@ button:disabled,.btn[disabled]{opacity:.45;cursor:not-allowed}
 .phase5-hero{background:linear-gradient(135deg,#ecfeff 0%,#eef2ff 50%,#fff7ed 100%);border:1px solid #bae6fd}
 .form-grid .full{grid-column:1/-1}.clean-link{text-decoration:none;color:inherit}.phase5-filter input,.phase5-filter select{min-width:180px}.phase5-detail-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px}.phase5-detail-grid div{border:1px solid #e5e7eb;background:#f8fafc;border-radius:14px;padding:12px}.phase5-detail-grid span{display:block;color:#64748b;font-size:13px;margin-bottom:4px}.phase5-detail-grid b{color:#0f172a}.print-page p{line-height:1.6}
 @media(max-width:720px){.phase5-filter input,.phase5-filter select{min-width:0;width:100%}.form-grid .full{grid-column:auto}}
+
+/* Production Fix Pack 1: รวม School ERP + Phase 1-5 และปุ่มย่อเมนู */
+.sidebar-collapse-btn{position:fixed;left:248px;top:18px;z-index:140;width:42px;height:42px;min-height:42px;border-radius:999px;border:1px solid rgba(148,163,184,.45);background:#fff;color:#0f172a;box-shadow:0 12px 30px rgba(15,23,42,.16);font-size:24px;font-weight:900;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:.2s ease}.sidebar-collapse-btn:hover{transform:translateY(-1px);box-shadow:0 16px 34px rgba(15,23,42,.20)}body.sidebar-collapsed .sidebar{transform:translateX(-105%)!important}body.sidebar-collapsed .main{margin-left:0!important;max-width:none!important}body.sidebar-collapsed .sidebar-collapse-btn{left:14px}.erp-integrated-hero{align-items:stretch}.erp-quick-links{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}.erp-dashboard-stats{grid-template-columns:repeat(auto-fit,minmax(160px,1fr))!important}.erp-phase-hub-card{border-top-color:#14b8a6!important}.erp-phase-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px}.erp-phase-card{display:grid;grid-template-columns:54px 1fr auto;align-items:center;gap:14px;padding:16px;border:1px solid #e2e8f0;border-radius:22px;background:linear-gradient(135deg,#fff,#f8fafc);text-decoration:none;color:#142033;box-shadow:0 10px 24px rgba(15,23,42,.06);transition:.18s ease}.erp-phase-card:hover{transform:translateY(-2px);box-shadow:0 16px 32px rgba(15,23,42,.1);border-color:#14b8a6}.erp-phase-icon{width:54px;height:54px;border-radius:18px;display:flex;align-items:center;justify-content:center;background:#ecfeff;border:1px solid #bae6fd;font-size:26px}.erp-phase-kicker{font-size:12px;font-weight:900;color:#0f766e;margin-bottom:2px}.erp-phase-card h3{margin:0 0 4px!important;font-size:18px}.erp-phase-card p{margin:0;color:#64748b!important;font-size:13px;line-height:1.45}.compact-erp-module-grid .erp-module-card{min-height:170px}.combined-period-btn{background:#0891b2!important;border-color:#0891b2!important;color:#fff!important;font-weight:900!important}.group-attendance-note{margin:8px 0 14px;background:#ecfeff!important;border:1px solid #67e8f9!important;color:#155e75!important}@media(max-width:900px){.sidebar-collapse-btn{display:none!important}body.sidebar-collapsed .sidebar{transform:translateX(-105%)!important}body.sidebar-collapsed .main{margin-left:0!important}.erp-phase-card{grid-template-columns:46px 1fr}.erp-phase-card>b{display:none}}
+
+/* Production Fix Pack 1.1: ย่อ Sidebar ให้เหลือไอคอน ไม่ซ่อนทั้งแถบ */
+.sidebar nav a .nav-icon{display:inline-flex;align-items:center;justify-content:center;min-width:24px;font-size:20px;line-height:1;flex:0 0 24px}
+.sidebar nav a .nav-label{display:inline-block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+@media (min-width:901px){
+  body.sidebar-collapsed .sidebar{
+    width:76px!important;
+    min-width:76px!important;
+    max-width:76px!important;
+    padding:14px 10px!important;
+    transform:none!important;
+    overflow-x:hidden!important;
+    overflow-y:auto!important;
+  }
+  body.sidebar-collapsed .main{
+    margin-left:76px!important;
+    max-width:none!important;
+    padding-left:26px!important;
+  }
+  body.sidebar-collapsed .brand-card{
+    padding:6px 0 12px!important;
+    margin-bottom:10px!important;
+    border-bottom:1px solid rgba(148,163,184,.20)!important;
+  }
+  body.sidebar-collapsed .logo-mark{
+    width:48px!important;
+    height:48px!important;
+    border-radius:16px!important;
+    font-size:15px!important;
+    margin:0 auto!important;
+  }
+  body.sidebar-collapsed .brand,
+  body.sidebar-collapsed .brand-sub,
+  body.sidebar-collapsed .user,
+  body.sidebar-collapsed .nav-label{
+    display:none!important;
+  }
+  body.sidebar-collapsed .sidebar nav{
+    display:flex!important;
+    flex-direction:column!important;
+    gap:8px!important;
+    align-items:center!important;
+  }
+  body.sidebar-collapsed .sidebar nav a{
+    width:52px!important;
+    height:52px!important;
+    min-height:52px!important;
+    padding:0!important;
+    margin:0!important;
+    justify-content:center!important;
+    gap:0!important;
+    border-radius:18px!important;
+    font-size:0!important;
+  }
+  body.sidebar-collapsed .sidebar nav a .nav-icon{
+    min-width:0!important;
+    width:100%!important;
+    font-size:23px!important;
+  }
+  body.sidebar-collapsed .sidebar-collapse-btn{
+    left:54px!important;
+    top:18px!important;
+    width:36px!important;
+    height:36px!important;
+    min-height:36px!important;
+    font-size:26px!important;
+    padding:0!important;
+  }
+}
+@media(max-width:900px){
+  .sidebar nav a .nav-icon{min-width:24px}
+  .sidebar nav a .nav-label{display:inline-block!important}
+}

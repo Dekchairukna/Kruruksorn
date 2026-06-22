@@ -2160,6 +2160,50 @@ def build_school_erp_modules():
     }
 
 
+
+def safe_model_count(model, *filters):
+    try:
+        q = model.query
+        for f in filters:
+            q = q.filter(f)
+        return q.count()
+    except Exception:
+        return 0
+
+
+def build_school_erp_integrated_dashboard(modules, summary):
+    """แดชบอร์ดรวม School ERP + Phase 1-5 ในหน้าเดียว"""
+    today = local_today()
+    stats = [
+        {'label': 'นักเรียน', 'value': safe_model_count(User, User.role == 'student'), 'icon': '👨‍🎓'},
+        {'label': 'ครู/ผู้ใช้', 'value': safe_model_count(User, User.role.in_(['teacher','admin'])), 'icon': '👩‍🏫'},
+        {'label': 'ห้องเรียน', 'value': safe_model_count(Classroom), 'icon': '🏫'},
+        {'label': 'รายวิชา', 'value': safe_model_count(Subject), 'icon': '📚'},
+        {'label': 'เช็กชื่อวันนี้', 'value': safe_model_count(Attendance, Attendance.date == today), 'icon': '✅'},
+        {'label': 'สารบรรณ', 'value': safe_model_count(OfficialDocument) if 'OfficialDocument' in globals() else 0, 'icon': '📨'},
+    ]
+    phase_cards = [
+        {'phase': 'Phase 1', 'title': 'วิชาการหลัก', 'desc': 'ข้อมูลนักเรียน ครู ตารางสอน เช็กชื่อ คะแนน/เกรด และ ปพ.5', 'endpoint': 'phase1_dashboard', 'icon': '🎯', 'status': 'พร้อมทดสอบ'},
+        {'phase': 'Phase 2', 'title': 'ผู้ปกครอง + เอกสารผลการเรียน', 'desc': 'ปพ.6 ปพ.7 Parent Portal และ LINE แจ้งขาดเรียนแบบเตรียมข้อความ', 'endpoint': 'phase2_dashboard', 'icon': '👨‍👩‍👧', 'status': 'พร้อมทดสอบ'},
+        {'phase': 'Phase 3', 'title': 'ดูแลช่วยเหลือนักเรียน', 'desc': 'SDQ ออนไลน์ เยี่ยมบ้านออนไลน์ และเปิด/ติดตามเคสช่วยเหลือ', 'endpoint': 'phase3_dashboard', 'icon': '🧡', 'status': 'พร้อมทดสอบ'},
+        {'phase': 'Phase 4', 'title': 'กิจกรรมพัฒนาผู้เรียน', 'desc': 'ชุมนุมออนไลน์ กิจกรรมลูกเสือ/จิตอาสา และชั่วโมงกิจกรรม', 'endpoint': 'phase4_dashboard', 'icon': '🎯', 'status': 'พร้อมทดสอบ'},
+        {'phase': 'Phase 5', 'title': 'สารบรรณอิเล็กทรอนิกส์', 'desc': 'หนังสือรับ–ส่ง คำสั่ง ประกาศ บันทึกข้อความ และเกษียนออนไลน์', 'endpoint': 'phase5_dashboard', 'icon': '📨', 'status': 'พร้อมทดสอบ'},
+    ]
+    for card in phase_cards:
+        try:
+            card['url'] = url_for(card['endpoint'])
+        except Exception:
+            card['url'] = '#'
+    quick_links = [
+        {'label': 'ตารางสอน', 'url': url_for('schedule'), 'icon': '📅'},
+        {'label': 'เช็กชื่อ/คะแนน', 'url': url_for('records_center'), 'icon': '✅'},
+        {'label': 'นำเข้า Excel', 'url': url_for('import_all'), 'icon': '📦'} if current_user.role == 'admin' else None,
+        {'label': 'AI Assistant', 'url': url_for('ai_assistant'), 'icon': '✨'},
+        {'label': 'ตั้งค่าโรงเรียน', 'url': url_for('school_settings'), 'icon': '⚙️'},
+    ]
+    quick_links = [x for x in quick_links if x]
+    return {'stats': stats, 'phases': phase_cards, 'quick_links': quick_links}
+
 def _resolve_erp_links(modules):
     for module in modules:
         module['href'] = url_for('school_erp_module', module_key=module['key'])
@@ -2180,7 +2224,8 @@ def _resolve_erp_links(modules):
 def school_erp():
     modules, summary = build_school_erp_modules()
     modules = _resolve_erp_links(modules)
-    return render_template('school_erp.html', modules=modules, summary=summary)
+    dashboard = build_school_erp_integrated_dashboard(modules, summary)
+    return render_template('school_erp.html', modules=modules, summary=summary, dashboard=dashboard)
 
 
 @app.route('/school-erp/<module_key>')
@@ -4647,6 +4692,17 @@ def link_subject_classroom(subject_id, classroom_id):
     if subject_id and classroom_id and not SubjectClassroom.query.filter_by(subject_id=subject_id, classroom_id=classroom_id).first():
         db.session.add(SubjectClassroom(subject_id=subject_id, classroom_id=classroom_id))
 
+def classroom_natural_sort_key(value):
+    """เรียงชื่อห้องแบบธรรมชาติ เช่น ม.1/1 มาก่อน ม.1/2 และ ม.2/1"""
+    text = str(value or '')
+    parts = re.split(r'(\d+)', text)
+    return [int(p) if p.isdigit() else p.lower() for p in parts]
+
+
+def schedule_group_sort_rows(rows):
+    return sorted(rows or [], key=lambda r: (classroom_natural_sort_key(r.classroom.name if r.classroom else ''), r.id or 0))
+
+
 def build_schedule_grid(rows):
     """รวมคาบที่ครูสอนเวลาเดียวกันและวิชาเดียวกัน ให้แสดงชื่อห้องหลายห้องในช่องเดียว"""
     grid = {}
@@ -4666,15 +4722,40 @@ def build_schedule_grid(rows):
                 'rows': []
             }
             groups.append(group)
-        if row.classroom and row.classroom.name not in group['classrooms']:
-            group['classrooms'].append(row.classroom.name)
         if row.room_name and row.room_name not in group['places']:
             group['places'].append(row.room_name)
         topic = row.topic or (row.lesson.title if row.lesson else '')
         if topic and topic not in group['topics']:
             group['topics'].append(topic)
         group['rows'].append(row)
+    # จัดห้องให้เรียงตามเลขห้องจริง และทำข้อความห้องรวมสำหรับปุ่มเดียว
+    for groups in grid.values():
+        for group in groups:
+            group['rows'] = schedule_group_sort_rows(group['rows'])
+            room_names = []
+            for row in group['rows']:
+                if row.classroom and row.classroom.name not in room_names:
+                    room_names.append(row.classroom.name)
+            group['classrooms'] = room_names
+            group['room_text'] = ','.join(room_names)
+            group['is_multi_room'] = len(room_names) > 1
     return grid
+
+
+def schedule_room_group_rows(anchor):
+    """คาบที่ควรเปิด/เช็กพร้อมกัน: ครู วัน คาบ เวลา และรายวิชาเดียวกัน"""
+    if not anchor:
+        return []
+    target_key = subject_identity_key(anchor.subject.name if anchor.subject else '')
+    q = TeachingSchedule.query.filter_by(
+        teacher_id=anchor.teacher_id,
+        weekday=anchor.weekday,
+        period_no=anchor.period_no,
+        start_time=anchor.start_time,
+        end_time=anchor.end_time,
+    ).all()
+    rows = [r for r in q if subject_identity_key(r.subject.name if r.subject else '') == target_key]
+    return schedule_group_sort_rows(rows)
 
 
 def user_can_open_schedule(row):
@@ -5840,6 +5921,71 @@ def classroom_day_report_export():
     filename = f"classroom_day_attendance_{room.name}_{report_date.isoformat()}.xlsx".replace('/', '-')
     path = os.path.join(UPLOAD_DIR, filename); wb.save(path)
     return send_file(path, as_attachment=True, download_name=filename)
+
+
+@app.route('/attendance/group/<int:schedule_id>', methods=['GET', 'POST'])
+@login_required
+@role_required('teacher', 'admin')
+def attendance_schedule_group(schedule_id):
+    """เช็กชื่อคาบเดียวกันหลายห้องในหน้าเดียว เช่น ม.1/2 + ม.1/3"""
+    anchor = TeachingSchedule.query.get_or_404(schedule_id)
+    group_rows = schedule_room_group_rows(anchor)
+    if not group_rows:
+        group_rows = [anchor]
+    for row in group_rows:
+        if not user_can_open_schedule(row):
+            return deny_redirect('schedule')
+    subject = anchor.subject
+    room_names = [r.classroom.name for r in group_rows if r.classroom]
+    room_ids = [r.classroom_id for r in group_rows if r.classroom_id]
+    room_lookup = {r.classroom_id: r for r in group_rows if r.classroom_id}
+    pseudo_room = SimpleNamespace(id=anchor.classroom_id, name=','.join(room_names) or (anchor.classroom.name if anchor.classroom else '-'))
+    att_date = datetime.strptime(request.args.get('date', request.form.get('date', local_today().isoformat())), '%Y-%m-%d').date()
+    period_no = request.args.get('period_no', type=int) or request.form.get('period_no', type=int) or anchor.period_no
+    period_block = [int(x) for x in request.form.getlist('periods') if str(x).isdigit()] if request.method == 'POST' else schedule_period_block(anchor.id, subject.id, anchor.classroom_id, period_no)
+    if not period_block:
+        period_block = [period_no] if period_no else [0]
+    links = ClassroomStudent.query.filter(ClassroomStudent.classroom_id.in_(room_ids or [-1])).join(User, ClassroomStudent.student_id == User.id).join(Classroom, ClassroomStudent.classroom_id == Classroom.id).all()
+    links = sorted(links, key=lambda l: (classroom_natural_sort_key(l.classroom.name if l.classroom else ''), l.student.username or '', l.student.full_name or ''))
+    if request.method == 'POST':
+        bulk_status = normalize_attendance_status(request.form.get('bulk_status')) if request.form.get('bulk_status') else None
+        for link in links:
+            st = bulk_status if bulk_status else normalize_attendance_status(request.form.get(f's_{link.student_id}', 'มา'))
+            sched_for_room = room_lookup.get(link.classroom_id, anchor)
+            for pno in period_block:
+                found = Attendance.query.filter_by(subject_id=subject.id, classroom_id=link.classroom_id, student_id=link.student_id, date=att_date, period_no=pno).order_by(Attendance.id.asc()).all()
+                row = found[0] if found else None
+                if not row:
+                    row = Attendance(subject_id=subject.id, classroom_id=link.classroom_id, student_id=link.student_id, date=att_date, period_no=pno)
+                    db.session.add(row)
+                for extra in found[1:]:
+                    db.session.delete(extra)
+                row.status = st
+                row.schedule_id = sched_for_room.id if sched_for_room else anchor.id
+                row.checked_by_id = current_user.id
+        db.session.commit()
+        flash(f'บันทึกเช็กชื่อรวม {pseudo_room.name} เรียบร้อยแล้ว', 'success')
+        return redirect(url_for('attendance_schedule_group', schedule_id=anchor.id, date=att_date.isoformat(), period_no=period_no))
+
+    old = {}
+    old_q = Attendance.query.filter(Attendance.subject_id == subject.id, Attendance.classroom_id.in_(room_ids or [-1]), Attendance.date == att_date)
+    if period_block:
+        old_q = old_q.filter(Attendance.period_no.in_(period_block))
+    for a in old_q.order_by(Attendance.period_no.asc()).all():
+        old.setdefault(a.student_id, normalize_attendance_status(a.status))
+    selected_period_text = ', '.join(str(x) for x in period_block if x) if period_block else ''
+    return render_template(
+        'attendance.html',
+        subject=subject, room=pseudo_room, links=links, old=old, att_date=att_date,
+        selected_day_label=thai_date_label(att_date), selected_period_text=selected_period_text,
+        summary=[], statuses=ATTENDANCE_STATUSES, period_no=period_no, schedule_id=anchor.id,
+        period_block=period_block, substitute_mode=False, sub_teacher_id=None,
+        date_headers=[], att_data={}, status_symbols=ATTENDANCE_SYMBOLS,
+        classwork_items=[], classwork_scores={}, attendance_scope='group',
+        attendance_scope_label=f'รวมหลายห้อง: {pseudo_room.name}', show_classroom_column=True,
+        classrooms_all=Classroom.query.filter(db.or_(Classroom.is_active == True, Classroom.is_active.is_(None))).order_by(Classroom.name).all(),
+        is_group_attendance=True, group_rows=group_rows, group_room_text=pseudo_room.name
+    )
 
 @app.route('/attendance/<int:subject_id>/<int:classroom_id>', methods=['GET','POST'])
 @login_required

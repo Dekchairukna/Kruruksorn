@@ -1,32 +1,57 @@
 {% extends 'base.html' %}
 {% block content %}
-<div class="erp-hero">
+<div class="erp-hero erp-integrated-hero">
   <div>
     <div class="eyebrow">KRURUKSORN SCHOOL ERP</div>
-    <h1>ศูนย์ระบบบริหารโรงเรียน</h1>
-    <p>รวมงานวิชาการ งานกิจการนักเรียน และงานบริหารทั่วไปไว้ในที่เดียว โดยไม่รวม KRURUK SPORTS</p>
+    <h1>แดชบอร์ดระบบบริหารโรงเรียน</h1>
+    <p>รวมระบบบริหารโรงเรียนและงาน Phase 1–5 ไว้ในหน้าเดียว เพื่อลดเมนูซ้ำและให้ครูเริ่มงานได้เร็ว</p>
+    <div class="erp-quick-links">
+      {% for link in dashboard.quick_links %}<a class="btn secondary" href="{{ link.url }}">{{ link.icon }} {{ link.label }}</a>{% endfor %}
+    </div>
   </div>
   <div class="erp-summary-card">
-    <b>ภาพรวมต้นแบบ</b>
+    <b>ภาพรวมระบบ</b>
     <div class="erp-summary-number">{{ summary.total_modules }}</div>
-    <small>โมดูลหลัก / {{ summary.total_features }} หน้าเมนูย่อย</small>
+    <small>หมวดหลัก / {{ summary.total_features }} หน้าเมนูย่อย</small>
   </div>
 </div>
 
-<div class="erp-stat-grid">
-  <div class="erp-mini-stat"><b>{{ summary.linked_features }}</b><span>เชื่อมกับระบบเดิมแล้ว</span></div>
-  <div class="erp-mini-stat"><b>{{ summary.prototype_features }}</b><span>หน้าเตรียมต่อยอด</span></div>
-  <div class="erp-mini-stat"><b>12</b><span>หมวดงานโรงเรียน</span></div>
+<div class="erp-stat-grid erp-dashboard-stats">
+  {% for stat in dashboard.stats %}
+  <div class="erp-mini-stat"><b>{{ stat.value }}</b><span>{{ stat.icon }} {{ stat.label }}</span></div>
+  {% endfor %}
 </div>
+
+<section class="card erp-phase-hub-card">
+  <div class="erp-section-head">
+    <div>
+      <h2>งานหลัก 5 Phase</h2>
+      <p class="muted">กดเข้าแต่ละ Phase จากหน้านี้แทนการแยกเมนูด้านข้าง</p>
+    </div>
+  </div>
+  <div class="erp-phase-grid">
+    {% for phase in dashboard.phases %}
+    <a class="erp-phase-card" href="{{ phase.url }}">
+      <div class="erp-phase-icon">{{ phase.icon }}</div>
+      <div>
+        <div class="erp-phase-kicker">{{ phase.phase }} · {{ phase.status }}</div>
+        <h3>{{ phase.title }}</h3>
+        <p>{{ phase.desc }}</p>
+      </div>
+      <b>เปิด →</b>
+    </a>
+    {% endfor %}
+  </div>
+</section>
 
 <div class="erp-section-head">
   <div>
-    <h2>โมดูลหลัก</h2>
-    <p class="muted">กดเข้าแต่ละหมวดเพื่อดูเมนูย่อยและทางลัดไปยังหน้าที่มีอยู่แล้ว</p>
+    <h2>หมวดงานระบบบริหารโรงเรียน</h2>
+    <p class="muted">หมวดรวมระดับโรงเรียน ยังเปิดดูเมนูย่อยและทางลัดเดิมได้ครบ</p>
   </div>
 </div>
 
-<div class="erp-module-grid">
+<div class="erp-module-grid compact-erp-module-grid">
   {% for module in modules %}
   <a class="erp-module-card {{ module.color }}" href="{{ module.href }}">
     <div class="erp-module-icon">{{ module.icon }}</div>
@@ -40,16 +65,5 @@
     </div>
   </a>
   {% endfor %}
-</div>
-
-<div class="card erp-note-card">
-  <h2>ลำดับทำจริงที่แนะนำ</h2>
-  <div class="erp-roadmap">
-    <div><b>Phase 1</b><span>วิชาการ + เช็กชื่อ + คะแนน + ปพ.5</span></div>
-    <div><b>Phase 2</b><span>ปพ.6/ปพ.7 + ผู้ปกครอง + แจ้งเตือน</span></div>
-    <div><b>Phase 3</b><span>SDQ + เยี่ยมบ้าน + ดูแลช่วยเหลือ</span></div>
-    <div><b>Phase 4</b><span>ชุมนุม + กิจกรรมพัฒนาผู้เรียน</span></div>
-    <div><b>Phase 5</b><span>สารบรรณ + ออมทรัพย์ + การเงินกิจกรรม</span></div>
-  </div>
 </div>
 {% endblock %}

@@ -6,7 +6,7 @@
   <title>{{ school_setting.school_name if school_setting and school_setting.school_name else 'KRURUKSORN' }}</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
-<body>
+<body class="sidebar-open">
 <input type="checkbox" id="nav-toggle" class="nav-toggle">
 <header class="topbar">
   <label for="nav-toggle" class="hamburger">☰</label>
@@ -25,11 +25,6 @@
     <a href="{{ url_for('index') }}">🏠 แดชบอร์ด</a>
     {% if current_user.role in ['admin','teacher'] %}
       <a href="{{ url_for('school_erp') }}">🏢 ระบบบริหารโรงเรียน</a>
-      <a href="{{ url_for('phase1_dashboard') }}">🎯 Phase 1 วิชาการ</a>
-      <a href="{{ url_for('phase2_dashboard') }}">👨‍👩‍👧 Phase 2 ผู้ปกครอง</a>
-      <a href="{{ url_for('phase3_dashboard') }}">🧡 Phase 3 ดูแลช่วยเหลือ</a>
-      <a href="{{ url_for('phase4_dashboard') }}">🎯 Phase 4 กิจกรรมผู้เรียน</a>
-      <a href="{{ url_for('phase5_dashboard') }}">📨 Phase 5 สารบรรณ</a>
     {% endif %}
     {% if current_user.role == 'student' %}
       <a href="{{ url_for('schedule') }}">📅 ตารางเรียนของฉัน</a>
@@ -60,6 +55,7 @@
   </nav>
   {% endif %}
 </aside>
+<button type="button" class="sidebar-collapse-btn" id="sidebarCollapseBtn" aria-label="ย่อ/ขยายเมนูด้านข้าง">☰</button>
 <label for="nav-toggle" class="nav-backdrop" aria-label="ปิดเมนู"></label>
 <main class="main">
   {% with messages=get_flashed_messages(with_categories=true) %}
@@ -173,5 +169,49 @@
 })();
 </script>
 
+<script>
+(function(){
+  const btn = document.getElementById('sidebarCollapseBtn');
+  if(!btn) return;
+  const key = 'kruruksorn_sidebar_collapsed';
+
+  function prepareSidebarLinks(){
+    document.querySelectorAll('.sidebar nav a').forEach(function(link){
+      if(link.querySelector('.nav-icon')) return;
+      const raw = (link.textContent || '').replace(/\s+/g, ' ').trim();
+      if(!raw) return;
+      const parts = raw.split(' ');
+      const icon = parts.shift() || '•';
+      const label = parts.join(' ') || raw;
+      link.setAttribute('title', label);
+      link.setAttribute('aria-label', label);
+      link.innerHTML = '<span class="nav-icon" aria-hidden="true"></span><span class="nav-label"></span>';
+      link.querySelector('.nav-icon').textContent = icon;
+      link.querySelector('.nav-label').textContent = label;
+    });
+  }
+
+  function apply(){
+    prepareSidebarLinks();
+    const collapsed = localStorage.getItem(key) === '1';
+    document.body.classList.toggle('sidebar-collapsed', collapsed);
+    btn.textContent = collapsed ? '›' : '‹';
+    btn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+    btn.setAttribute('title', collapsed ? 'ขยายเมนูด้านข้าง' : 'ย่อเมนูด้านข้าง');
+  }
+
+  btn.addEventListener('click', function(){
+    const collapsed = !(localStorage.getItem(key) === '1');
+    localStorage.setItem(key, collapsed ? '1' : '0');
+    apply();
+  });
+
+  if(document.readyState === 'loading'){
+    document.addEventListener('DOMContentLoaded', apply);
+  }else{
+    apply();
+  }
+})();
+</script>
 </body>
 </html>
