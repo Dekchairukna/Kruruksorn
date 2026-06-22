@@ -1,0 +1,126 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-head ai-page-head">
+  <div>
+    <div class="eyebrow">Phase AI Assistant</div>
+    <h1>✨ AI Assistant</h1>
+    <p class="muted">ผู้ช่วยครูสำหรับสรุปการสอน สร้างใบความรู้ และสร้างใบงาน โดยยังไม่แก้ไขหรือบันทึกข้อมูลแทนครู</p>
+  </div>
+  <div class="ai-status-card {{ 'ready' if openai_ready else 'missing' }}">
+    <b>{{ 'พร้อมใช้งาน' if openai_ready else 'ยังไม่พร้อม' }}</b>
+    <span>{{ openai_status }}</span>
+    <small>Model: {{ openai_model }}</small>
+  </div>
+</div>
+
+{% if not openai_ready %}
+<section class="card ai-warning-card">
+  <h2>ต้องตั้งค่า OPENAI_API_KEY ก่อนใช้งานจริง</h2>
+  <p>ระบบจะอ่านคีย์จาก Environment Variable เท่านั้น ไม่เก็บคีย์ลงฐานข้อมูล</p>
+  <pre>OPENAI_API_KEY=sk-...
+OPENAI_MODEL=gpt-4.1-mini</pre>
+  <p class="muted">ถ้าใช้ Railway ให้เพิ่มในหน้า Variables ของ Service เว็บ แล้ว Deploy/Restart อีกครั้ง</p>
+</section>
+{% endif %}
+
+<section class="card ai-main-card">
+  <form method="post" class="ai-form">
+    <div class="ai-section-title">
+      <h2>ข้อมูลให้ AI ใช้อ้างอิง</h2>
+      <p class="muted">เลือกเท่าที่มี ข้อมูลนี้ใช้สร้างข้อความเท่านั้น ครูยังต้องตรวจและบันทึกเอง</p>
+    </div>
+
+    <div class="form-row">
+      <label>รายวิชา
+        <select name="subject_id" onchange="this.form.method='get'; this.form.submit();">
+          <option value="">ไม่ระบุรายวิชา</option>
+          {% for s in subjects %}
+            <option value="{{ s.id }}" {% if selected_subject_id == s.id|string %}selected{% endif %}>{{ s.name }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>บทเรียน
+        <select name="lesson_id">
+          <option value="">ไม่ระบุบทเรียน</option>
+          {% for l in lessons %}
+            <option value="{{ l.id }}" {% if selected_lesson_id == l.id|string %}selected{% endif %}>
+              {{ l.unit.subject.name if l.unit and l.unit.subject else '' }} — {{ l.title }}
+            </option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>ห้องเรียน
+        <select name="classroom_id">
+          <option value="">ไม่ระบุห้องเรียน</option>
+          {% for c in classrooms %}
+            <option value="{{ c.id }}" {% if selected_classroom_id == c.id|string %}selected{% endif %}>{{ c.name }}</option>
+          {% endfor %}
+        </select>
+      </label>
+    </div>
+
+    <div class="form-row">
+      <label>ระดับชั้น / กลุ่มเป้าหมาย
+        <input name="level" value="{{ level }}" placeholder="เช่น ม.3, ม.1/1, นักเรียนพื้นฐานอ่อน">
+      </label>
+      <label>หัวข้อที่ต้องการ
+        <input name="topic" value="{{ topic }}" placeholder="เช่น ปัญหาหรือความต้องการในงานอาชีพ">
+      </label>
+    </div>
+
+    <label>รายละเอียดเพิ่มเติมจากครู
+      <textarea name="extra" placeholder="เช่น ขอแบบสั้น ใช้ภาษาเด็ก มีกิจกรรมกลุ่ม 10 คะแนน หรือเน้นตัวอย่างใกล้ตัว">{{ extra }}</textarea>
+    </label>
+
+    <div class="ai-action-grid">
+      <button type="submit" name="task" value="summary" class="ai-action-card">
+        <span class="ai-action-icon">📌</span>
+        <b>สรุปว่าสอนถึงไหน</b>
+        <small>ดูจากประวัติบันทึกคาบ/บทเรียนล่าสุด</small>
+      </button>
+      <button type="submit" name="task" value="knowledge" class="ai-action-card">
+        <span class="ai-action-icon">📘</span>
+        <b>สร้างใบความรู้</b>
+        <small>ได้เนื้อหาแบบพร้อมคัดลอกไปตรวจแก้</small>
+      </button>
+      <button type="submit" name="task" value="worksheet" class="ai-action-card">
+        <span class="ai-action-icon">📝</span>
+        <b>สร้างใบงาน</b>
+        <small>มีคำชี้แจง กิจกรรม และเกณฑ์คะแนน</small>
+      </button>
+    </div>
+  </form>
+</section>
+
+<section class="card ai-result-card">
+  <div class="ai-section-title">
+    <h2>ผลลัพธ์จาก AI</h2>
+    <p class="muted">AI ไม่บันทึกข้อมูลเอง ให้ครูตรวจแก้ คัดลอก แล้วนำไปบันทึกในหน้าบทเรียน/ใบงานเอง</p>
+  </div>
+  <textarea id="ai-result" class="ai-result-box" placeholder="ผลลัพธ์จะขึ้นตรงนี้หลังจากกดปุ่ม">{{ result_text }}</textarea>
+  <div class="actions-row">
+    <button type="button" class="secondary" onclick="copyAiResult()">คัดลอกผลลัพธ์</button>
+    <a class="btn" href="{{ url_for('subjects') }}">ไปหน้ารายวิชา/บทเรียน</a>
+    <a class="btn secondary" href="{{ url_for('records_center') }}">ไปหน้าเช็กชื่อ/คะแนน</a>
+  </div>
+</section>
+
+{% if prompt_text %}
+<details class="card ai-prompt-card">
+  <summary><b>ดู Prompt ที่ส่งให้ AI</b></summary>
+  <pre>{{ prompt_text }}</pre>
+</details>
+{% endif %}
+
+<script>
+function copyAiResult(){
+  const box = document.getElementById('ai-result');
+  if(!box || !box.value.trim()) return;
+  box.select();
+  box.setSelectionRange(0, 999999);
+  navigator.clipboard && navigator.clipboard.writeText
+    ? navigator.clipboard.writeText(box.value)
+    : document.execCommand('copy');
+}
+</script>
+{% endblock %}

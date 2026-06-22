@@ -1,0 +1,80 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="muted"><a href="{{ url_for('school_erp') }}">← กลับศูนย์ระบบบริหารโรงเรียน</a></p>
+    <h1>{{ module.icon }} {{ module.title }}</h1>
+    <p>{{ module.subtitle }}</p>
+  </div>
+  <a class="btn secondary" href="{{ url_for('school_erp') }}">ดูทุกโมดูล</a>
+</div>
+
+<div class="erp-workspace">
+  <section class="erp-feature-panel">
+    <div class="erp-section-head compact">
+      <div>
+        <h2>หน้าเมนูในหมวดนี้</h2>
+        <p class="muted">รายการที่มีป้าย “เดิม” จะเปิดไปยังหน้าระบบที่ทำงานอยู่แล้ว ส่วน “ต้นแบบ/ต่อยอด” เป็นหน้าที่เตรียมโครงไว้ให้พัฒนาต่อ</p>
+      </div>
+    </div>
+
+    <div class="erp-feature-list">
+      {% for feature in module.features %}
+      <a class="erp-feature-item" href="{{ feature.url }}">
+        <div class="erp-feature-no">{{ loop.index }}</div>
+        <div class="erp-feature-body">
+          <h3>{{ feature.title }}</h3>
+          <p>{{ feature.detail }}</p>
+        </div>
+        <span class="erp-status {{ 'ready' if feature.tag=='เดิม' else ('next' if feature.status=='ต่อยอด' else 'draft') }}">
+          {{ feature.tag or feature.status }}
+        </span>
+      </a>
+      {% endfor %}
+    </div>
+  </section>
+
+  <aside class="erp-side-panel">
+    <h2>โมดูลอื่น</h2>
+    <div class="erp-side-links">
+      {% for item in modules %}
+      <a class="{{ 'active' if item.key == module.key else '' }}" href="{{ item.href }}">
+        <span>{{ item.icon }}</span>
+        <b>{{ item.title }}</b>
+      </a>
+      {% endfor %}
+    </div>
+  </aside>
+</div>
+
+<div class="card erp-prototype-card">
+  <h2>แนวหน้าจอเมื่อพัฒนาต่อ</h2>
+  <div class="erp-wire-grid">
+    <div>
+      <b>ค้นหา/กรองข้อมูล</b>
+      <input placeholder="ค้นหานักเรียน ห้องเรียน รายการ หรือเลขเอกสาร">
+    </div>
+    <div>
+      <b>ปีการศึกษา</b>
+      <select><option>ปีการศึกษา 2569</option><option>ปีการศึกษา 2570</option></select>
+    </div>
+    <div>
+      <b>ภาคเรียน</b>
+      <select><option>ภาคเรียนที่ 1</option><option>ภาคเรียนที่ 2</option></select>
+    </div>
+  </div>
+  <table class="erp-prototype-table">
+    <thead><tr><th>รายการ</th><th>สถานะ</th><th>ผู้รับผิดชอบ</th><th>การทำงาน</th></tr></thead>
+    <tbody>
+      {% for feature in module.features[:5] %}
+      <tr>
+        <td data-label="รายการ"><b>{{ feature.title }}</b><br><small class="muted">{{ feature.detail }}</small></td>
+        <td data-label="สถานะ"><span class="erp-status {{ 'ready' if feature.tag=='เดิม' else 'draft' }}">{{ feature.tag or feature.status }}</span></td>
+        <td data-label="ผู้รับผิดชอบ">ครู/แอดมิน</td>
+        <td data-label="การทำงาน"><a class="btn small" href="{{ feature.url }}">เปิดหน้า</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

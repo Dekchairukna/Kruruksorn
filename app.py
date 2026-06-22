@@ -2,6 +2,9 @@ import os
 import re
 import uuid
 import zipfile
+import json
+import urllib.request
+import urllib.error
 from io import BytesIO
 from datetime import datetime, date, time, timedelta
 import calendar as py_calendar
@@ -123,6 +126,9 @@ app.config['SQLALCHEMY_DATABASE_URI'] = get_database_uri()
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['UPLOAD_FOLDER'] = UPLOAD_DIR
 app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100MB รองรับวิดีโอบทเรียน
+app.config['OPENAI_MODEL'] = os.environ.get('OPENAI_MODEL', 'gpt-4.1-mini')
+# OPENAI_API_KEY ไม่บันทึกลงฐานข้อมูล อ่านจาก Environment Variable เท่านั้น
+
 # ลดปัญหาเด้งออกจากระบบบ่อย: ให้ session อยู่ได้นานขึ้นและ refresh ทุกครั้งที่ใช้งาน
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=int(os.environ.get('SESSION_DAYS', '30')))
 app.config['REMEMBER_COOKIE_DURATION'] = timedelta(days=int(os.environ.get('REMEMBER_DAYS', '30')))
@@ -1197,6 +1203,288 @@ def get_or_create_lesson_status(lesson, student):
     db.session.commit()
     return st
 
+# -----------------------------
+# Phase AI Assistant
+# -----------------------------
+def openai_key_ready():
+    return bool((os.environ.get('OPENAI_API_KEY') or '').strip())
+
+
+def openai_masked_status():
+    key = (os.environ.get('OPENAI_API_KEY') or '').strip()
+    if not key:
+        return 'ยังไม่ได้ตั้งค่า OPENAI_API_KEY'
+    if len(key) <= 10:
+        return 'ตั้งค่าแล้ว'
+    return f"ตั้งค่าแล้ว ({key[:4]}...{key[-4:]})"
+
+
+def extract_openai_text(data):
+    """รองรับรูปแบบคำตอบของ Responses API หลายแบบ เพื่อไม่ให้หน้า AI พังถ้า API เปลี่ยน field ย่อย"""
+    if not isinstance(data, dict):
+        return ''
+    if data.get('output_text'):
+        return str(data.get('output_text') or '').strip()
+    parts = []
+    for item in data.get('output', []) or []:
+        for content in item.get('content', []) or []:
+            if isinstance(content, dict):
+                text = content.get('text') or content.get('value') or ''
+                if text:
+                    parts.append(str(text))
+    if parts:
+        return '\n'.join(parts).strip()
+    # fallback สำหรับบาง SDK/endpoint ที่อาจคืน choices แบบ Chat Completions
+    choices = data.get('choices') or []
+    if choices:
+        msg = choices[0].get('message') or {}
+        if msg.get('content'):
+            return str(msg.get('content')).strip()
+    return ''
+
+
+def call_openai_text(prompt, *, max_output_tokens=2600):
+    """เรียก OpenAI ผ่าน HTTPS ตรง ๆ ด้วย stdlib เพื่อลด dependency เพิ่มเติมในโปรเจกต์เดิม"""
+    api_key = (os.environ.get('OPENAI_API_KEY') or '').strip()
+    if not api_key:
+        raise RuntimeError('ยังไม่ได้ตั้งค่า OPENAI_API_KEY ใน Environment Variables')
+    model = (os.environ.get('OPENAI_MODEL') or app.config.get('OPENAI_MODEL') or 'gpt-4.1-mini').strip()
+    payload = {
+        'model': model,
+        'instructions': (
+            'คุณคือ AI Assistant สำหรับครูไทยในระบบ KRURUKSORN ช่วยสรุปการสอน '
+            'สร้างใบความรู้ และสร้างใบงานเป็นภาษาไทยแบบพร้อมให้ครูตรวจแก้ก่อนบันทึกจริง '
+            'ห้ามสั่งแก้ไขฐานข้อมูล ห้ามอ้างว่าบันทึกให้แล้ว และให้ใช้รูปแบบที่ครูคัดลอกไปใช้ได้ทันที'
+        ),
+        'input': prompt,
+        'max_output_tokens': max_output_tokens,
+    }
+    req = urllib.request.Request(
+        'https://api.openai.com/v1/responses',
+        data=json.dumps(payload).encode('utf-8'),
+        headers={
+            'Authorization': f'Bearer {api_key}',
+            'Content-Type': 'application/json',
+        },
+        method='POST',
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=70) as resp:
+            raw = resp.read().decode('utf-8')
+            data = json.loads(raw)
+    except urllib.error.HTTPError as e:
+        body = e.read().decode('utf-8', errors='replace') if e.fp else ''
+        raise RuntimeError(f'OpenAI API error {e.code}: {body[:600]}')
+    except urllib.error.URLError as e:
+        raise RuntimeError(f'เชื่อมต่อ OpenAI API ไม่สำเร็จ: {e}')
+    text = extract_openai_text(data)
+    if not text:
+        raise RuntimeError('OpenAI API ตอบกลับมาแล้ว แต่ไม่พบข้อความ output')
+    return text
+
+
+def ai_subjects_for_user():
+    if not current_user.is_authenticated:
+        return []
+    q = Subject.query.filter(db.or_(Subject.is_active == True, Subject.is_active.is_(None)))
+    if current_user.role == 'admin':
+        return q.order_by(Subject.name.asc()).all()
+    ids = teacher_subject_ids() or [-1]
+    return q.filter(Subject.id.in_(ids)).order_by(Subject.name.asc()).all()
+
+
+def ai_classrooms_for_user():
+    if not current_user.is_authenticated:
+        return []
+    q = Classroom.query.filter(db.or_(Classroom.is_active == True, Classroom.is_active.is_(None)))
+    if current_user.role == 'admin':
+        return q.order_by(Classroom.name.asc()).all()
+    ids = teacher_classroom_ids() or [-1]
+    return q.filter(Classroom.id.in_(ids)).order_by(Classroom.name.asc()).all()
+
+
+def ai_lessons_for_user(subject_id=None):
+    q = Lesson.query.join(Unit).join(Subject).filter(db.or_(Subject.is_active == True, Subject.is_active.is_(None)))
+    if subject_id:
+        q = q.filter(Subject.id == int(subject_id))
+    if current_user.role != 'admin':
+        q = q.filter(Subject.id.in_(teacher_subject_ids() or [-1]))
+    return q.order_by(Subject.name.asc(), Unit.id.asc(), Lesson.id.asc()).limit(300).all()
+
+
+def ai_get_selected_context(subject_id=None, lesson_id=None, classroom_id=None):
+    subject = Subject.query.get(int(subject_id)) if subject_id else None
+    lesson = Lesson.query.get(int(lesson_id)) if lesson_id else None
+    classroom = Classroom.query.get(int(classroom_id)) if classroom_id else None
+
+    if subject and not owns_subject(subject):
+        raise PermissionError('ไม่มีสิทธิ์ใช้รายวิชานี้กับ AI')
+    if lesson and not owns_lesson(lesson):
+        raise PermissionError('ไม่มีสิทธิ์ใช้บทเรียนนี้กับ AI')
+    if classroom and current_user.role != 'admin' and not owns_classroom(classroom):
+        raise PermissionError('ไม่มีสิทธิ์ใช้ห้องเรียนนี้กับ AI')
+
+    lines = []
+    if subject:
+        lines.append(f'รายวิชา: {subject.name} | หน่วยกิต {subject.credit} | จำนวนคาบ {subject.total_periods}')
+        units = Unit.query.filter_by(subject_id=subject.id).order_by(Unit.id.asc()).limit(12).all()
+        if units:
+            lines.append('หน่วยการเรียนรู้ในรายวิชา:')
+            for u in units:
+                ind = (u.indicators or '').strip()
+                lines.append(f'- {u.title} ({u.required_periods} คาบ)' + (f' | ตัวชี้วัด: {ind[:160]}' if ind else ''))
+    if lesson:
+        lines.append(f'บทเรียนที่เลือก: {lesson.title}')
+        if lesson.objective:
+            lines.append(f'จุดประสงค์: {lesson.objective[:800]}')
+        if lesson.content:
+            lines.append(f'เนื้อหาเดิม: {lesson.content[:1400]}')
+    if classroom:
+        lines.append(f'ห้องเรียน/กลุ่มผู้เรียน: {classroom.name}')
+    return '\n'.join(lines).strip(), subject, lesson, classroom
+
+
+def ai_recent_teaching_context(subject_id=None, classroom_id=None, limit=18):
+    q = PeriodLessonLog.query.join(TeachingSchedule, PeriodLessonLog.schedule_id == TeachingSchedule.id)
+    if current_user.role != 'admin':
+        q = q.filter(db.or_(PeriodLessonLog.taught_by_id == current_user.id, TeachingSchedule.teacher_id == current_user.id))
+    if subject_id:
+        q = q.filter(TeachingSchedule.subject_id == int(subject_id))
+    if classroom_id:
+        q = q.filter(TeachingSchedule.classroom_id == int(classroom_id))
+    rows = q.order_by(PeriodLessonLog.taught_date.desc(), PeriodLessonLog.taught_at.desc()).limit(limit).all()
+    if not rows:
+        return 'ยังไม่พบประวัติบันทึกการสอนในระบบตามเงื่อนไขที่เลือก'
+    lines = []
+    for row in rows:
+        schedule = row.schedule
+        lesson = row.lesson
+        subject_name = schedule.subject.name if schedule and schedule.subject else '-'
+        room_name = schedule.classroom.name if schedule and schedule.classroom else '-'
+        period_no = schedule.period_no if schedule else '-'
+        note = (row.note or '').strip()
+        lines.append(f'- {row.taught_date.strftime("%d/%m/%Y")} คาบ {period_no} | {subject_name} | {room_name} | {lesson.title if lesson else "-"}' + (f' | หมายเหตุ: {note[:140]}' if note else ''))
+    return '\n'.join(lines)
+
+
+def ai_build_prompt(task, topic='', level='', extra='', subject_context='', recent_context=''):
+    topic = (topic or '').strip()
+    level = (level or '').strip()
+    extra = (extra or '').strip()
+    common = f"""
+ข้อมูลจากระบบ KRURUKSORN
+{subject_context or '-'}
+
+ประวัติ/บริบทการสอนล่าสุด
+{recent_context or '-'}
+
+หัวข้อที่ครูกรอกเพิ่ม: {topic or '-'}
+ระดับชั้น/กลุ่มเป้าหมาย: {level or '-'}
+รายละเอียดเพิ่มเติมจากครู: {extra or '-'}
+""".strip()
+    if task == 'summary':
+        return common + """
+
+งานที่ต้องทำ:
+สรุปให้ครูเห็นว่า "สอนถึงไหนแล้ว" จากข้อมูลที่มี โดยจัดเป็นหัวข้อสั้น อ่านง่าย ประกอบด้วย
+1) สถานะการสอนล่าสุด
+2) บทเรียน/คาบที่สอนไปแล้ว
+3) สิ่งที่ควรสอนต่อในคาบถัดไป
+4) งาน/ใบงาน/คะแนนที่ควรติดตาม
+5) ข้อเสนอแนะสำหรับครู
+ถ้าข้อมูลไม่พอ ให้ระบุว่าข้อมูลส่วนใดขาด ห้ามเดาเป็นข้อเท็จจริง
+"""
+    if task == 'knowledge':
+        return common + """
+
+งานที่ต้องทำ:
+สร้างใบความรู้ภาษาไทยสำหรับนักเรียน แบบพร้อมคัดลอกไปวางในระบบ โดยจัดรูปแบบดังนี้
+- ชื่อใบความรู้
+- รายวิชา/ระดับชั้น
+- จุดประสงค์การเรียนรู้ 3 ข้อ
+- สาระสำคัญแบบเข้าใจง่าย
+- เนื้อหาเป็นหัวข้อย่อย มีตัวอย่างใกล้ตัวนักเรียน
+- คำศัพท์สำคัญ
+- สรุปท้ายบท
+- คำถามชวนคิด 3 ข้อ
+ใช้ภาษาครูไทย อ่านง่าย ไม่ยาวเกินจำเป็น
+"""
+    if task == 'worksheet':
+        return common + """
+
+งานที่ต้องทำ:
+สร้างใบงานภาษาไทย แบบพร้อมคัดลอกไปวางในระบบ โดยจัดรูปแบบดังนี้
+- ชื่อใบงาน
+- รายวิชา/ระดับชั้น
+- จุดประสงค์
+- คำชี้แจง
+- กิจกรรมที่ 1: ตรวจความเข้าใจ 5 ข้อ
+- กิจกรรมที่ 2: วิเคราะห์สถานการณ์ 3 ข้อ
+- กิจกรรมที่ 3: ลงมือปฏิบัติ/ออกแบบ/สรุปคำตอบ 1 งาน
+- เกณฑ์การให้คะแนนรวม 10 คะแนน
+- แนวคำตอบย่อสำหรับครู
+ให้เหมาะกับชั้นเรียนจริง และครูต้องนำไปตรวจแก้ก่อนบันทึก
+"""
+    return common
+
+
+@app.route('/ai', methods=['GET', 'POST'])
+@login_required
+@role_required('admin', 'teacher')
+def ai_assistant():
+    subjects = ai_subjects_for_user()
+    classrooms = ai_classrooms_for_user()
+    selected_subject_id = request.form.get('subject_id') or request.args.get('subject_id') or ''
+    selected_classroom_id = request.form.get('classroom_id') or request.args.get('classroom_id') or ''
+    selected_lesson_id = request.form.get('lesson_id') or request.args.get('lesson_id') or ''
+    lessons = ai_lessons_for_user(selected_subject_id or None)
+    result_text = ''
+    prompt_text = ''
+    selected_task = request.form.get('task') or ''
+    topic = request.form.get('topic', '')
+    level = request.form.get('level', '')
+    extra = request.form.get('extra', '')
+
+    if request.method == 'POST':
+        try:
+            subject_context, subject, lesson, classroom = ai_get_selected_context(
+                selected_subject_id or None,
+                selected_lesson_id or None,
+                selected_classroom_id or None,
+            )
+            recent_context = ai_recent_teaching_context(
+                selected_subject_id or None,
+                selected_classroom_id or None,
+            )
+            prompt_text = ai_build_prompt(selected_task, topic=topic, level=level, extra=extra, subject_context=subject_context, recent_context=recent_context)
+            result_text = call_openai_text(prompt_text)
+            flash('AI สร้างข้อความให้แล้ว กรุณาตรวจแก้และกดบันทึกเองในหน้าที่เกี่ยวข้อง', 'success')
+        except PermissionError as e:
+            flash(str(e), 'danger')
+        except Exception as e:
+            flash(str(e), 'danger')
+            if prompt_text:
+                result_text = 'ยังไม่ได้สร้างผลลัพธ์จาก AI\n\nระบบเตรียม Prompt ไว้ให้ตรวจสอบก่อน:\n\n' + prompt_text
+
+    return render_template(
+        'ai_assistant.html',
+        subjects=subjects,
+        classrooms=classrooms,
+        lessons=lessons,
+        result_text=result_text,
+        prompt_text=prompt_text,
+        selected_task=selected_task,
+        selected_subject_id=str(selected_subject_id or ''),
+        selected_classroom_id=str(selected_classroom_id or ''),
+        selected_lesson_id=str(selected_lesson_id or ''),
+        topic=topic,
+        level=level,
+        extra=extra,
+        openai_ready=openai_key_ready(),
+        openai_status=openai_masked_status(),
+        openai_model=os.environ.get('OPENAI_MODEL') or app.config.get('OPENAI_MODEL'),
+    )
+
 @app.route('/')
 def index():
     if not current_user.is_authenticated:
@@ -1360,6 +1648,250 @@ def build_calendar_dashboard(year=2026, months=(5,6,7,8,9,10), teacher_id=None, 
             'out_of_range': True
         }
     return blocks, upcoming, today_position
+
+
+
+# -----------------------------------------------------------------------------
+# KRURUKSORN SCHOOL ERP HUB
+# ศูนย์รวมโมดูลระบบบริหารโรงเรียน: เพิ่มเป็น prototype แบบไม่รื้อระบบเดิม
+# หมายเหตุ: ไม่ใส่ KRURUK SPORTS ตามที่ผู้ใช้ระบุว่า "13 ไม่เอา"
+# -----------------------------------------------------------------------------
+
+def _erp_feature(title, detail='', status='พร้อมใช้งาน', endpoint=None, href=None, tag=''):
+    return {
+        'title': title,
+        'detail': detail,
+        'status': status,
+        'endpoint': endpoint,
+        'href': href,
+        'tag': tag,
+    }
+
+
+def build_school_erp_modules():
+    """คืนค่าโครงสร้างเมนู School ERP ประมาณ 50 หน้า โดยผูกบางหน้าเข้ากับระบบเดิมแล้ว"""
+    modules = [
+        {
+            'key': 'academic-grading',
+            'icon': '📚',
+            'title': 'งานวิชาการและวัดผล',
+            'subtitle': 'หลักสูตร รายวิชา คะแนน เกรด และเอกสาร ปพ.',
+            'color': 'green',
+            'features': [
+                _erp_feature('รายวิชา/หลักสูตร', 'จัดการรายวิชา หน่วยการเรียนรู้ ตัวชี้วัด และบทเรียน', endpoint='subjects', tag='เดิม'),
+                _erp_feature('บันทึกคะแนน/เช็กชื่อรายวิชา', 'เลือกห้องและรายวิชาเพื่อบันทึกเวลาเรียน คะแนนในคาบ และคะแนนรวม', endpoint='records_center', tag='เดิม'),
+                _erp_feature('สมุดคะแนนและคำนวณเกรด', 'คำนวณจากใบงาน แบบทดสอบ คะแนนในคาบ กลางภาค ปลายภาค และจิตพิสัย', endpoint='records_center', tag='เดิม'),
+                _erp_feature('เอกสาร ปพ.5', 'ต้นแบบหน้ารวมเพื่อพิมพ์สมุดบันทึกผลการพัฒนาคุณภาพผู้เรียน', status='ต้นแบบ'),
+                _erp_feature('เอกสาร ปพ.6', 'ต้นแบบรายงานผลการเรียนรายบุคคลสำหรับผู้ปกครอง', status='ต้นแบบ'),
+                _erp_feature('เอกสาร ปพ.7', 'ต้นแบบหนังสือรับรองผลการศึกษา/สถานภาพนักเรียน', status='ต้นแบบ'),
+                _erp_feature('สถิติผลสัมฤทธิ์', 'ภาพรวมค่าเฉลี่ย เกรด และจำนวนผู้เรียนรายห้อง/รายวิชา', endpoint='records_center', tag='เดิม'),
+            ],
+        },
+        {
+            'key': 'teacher-work',
+            'icon': '👨‍🏫',
+            'title': 'ระบบครูผู้สอน',
+            'subtitle': 'ตารางสอน แผนการสอน ใบงาน แบบทดสอบ และงานที่สั่ง',
+            'color': 'blue',
+            'features': [
+                _erp_feature('ตารางสอน', 'ตารางสอนครูและห้องเรียน 8 คาบ/วัน', endpoint='schedule', tag='เดิม'),
+                _erp_feature('สอนแทน', 'ดูคาบที่ต้องสอนแทนและบันทึกการเข้าสอน', endpoint='substitute_schedule', tag='เดิม'),
+                _erp_feature('ใบความรู้/บทเรียน', 'จัดการบทเรียน สื่อ วิดีโอ PDF รูปภาพ และเอกสารประกอบ', endpoint='subjects', tag='เดิม'),
+                _erp_feature('ใบงานออนไลน์', 'สร้างใบงาน ตรวจงาน และให้คะแนน', endpoint='subjects', tag='เดิม'),
+                _erp_feature('แบบทดสอบออนไลน์', 'สร้างแบบทดสอบและตรวจคะแนนอัตโนมัติ', endpoint='subjects', tag='เดิม'),
+                _erp_feature('สั่งงานนักเรียน', 'มอบหมายงานรายห้อง/รายวิชา', endpoint='assign', tag='เดิม'),
+            ],
+        },
+        {
+            'key': 'student-care',
+            'icon': '🫶',
+            'title': 'งานกิจการนักเรียนและระบบดูแลช่วยเหลือ',
+            'subtitle': 'ประวัตินักเรียน SDQ เยี่ยมบ้าน พฤติกรรม และกลุ่มเสี่ยง',
+            'color': 'pink',
+            'features': [
+                _erp_feature('ฐานข้อมูลนักเรียน', 'ข้อมูลพื้นฐาน นักเรียน ผู้ปกครอง สุขภาพ และข้อมูลติดต่อ', endpoint='classrooms', tag='เดิม'),
+                _erp_feature('เช็กชื่อเข้าเรียน', 'มา สาย ลา ขาด ไปกิจกรรม พร้อมรายงานรายวัน', endpoint='attendance_dashboard', tag='เดิม'),
+                _erp_feature('แจ้งเตือนผู้ปกครอง', 'เตรียมต่อ LINE/Email จากข้อมูลการขาดเรียนและสาย', status='ต่อยอด'),
+                _erp_feature('เยี่ยมบ้านออนไลน์', 'แบบฟอร์มครูและผู้ปกครอง พร้อมรูปบ้านและแผนที่', status='ต้นแบบ'),
+                _erp_feature('แบบประเมิน SDQ', 'นักเรียน ผู้ปกครอง และครูทำแบบประเมินออนไลน์', status='ต้นแบบ'),
+                _erp_feature('พฤติกรรม/ความประพฤติ', 'บันทึกความดี ความผิด คะแนนพฤติกรรม และหมายเหตุรายบุคคล', status='ต้นแบบ'),
+                _erp_feature('ทุนการศึกษา/กลุ่มช่วยเหลือ', 'จัดกลุ่มนักเรียนที่ต้องติดตามและช่วยเหลือ', status='ต้นแบบ'),
+            ],
+        },
+        {
+            'key': 'parent-portal',
+            'icon': '👪',
+            'title': 'ระบบผู้ปกครอง',
+            'subtitle': 'ผู้ปกครองดูคะแนน การมาเรียน การบ้าน และประกาศ',
+            'color': 'orange',
+            'features': [
+                _erp_feature('Parent Portal', 'หน้าเข้าสู่ระบบสำหรับผู้ปกครอง', status='ต้นแบบ'),
+                _erp_feature('ดูผลการเรียน', 'แสดงคะแนนและเกรดของนักเรียนแบบอ่านง่าย', status='ต้นแบบ'),
+                _erp_feature('ดูการมาเรียน', 'สรุปมา สาย ลา ขาด และไปกิจกรรม', status='ต้นแบบ'),
+                _erp_feature('ดูการบ้าน/งานค้าง', 'ติดตามงานที่ครูสั่งและสถานะการส่งงาน', status='ต้นแบบ'),
+                _erp_feature('แจ้งเตือน LINE', 'แจ้งขาดเรียน งานค้าง คะแนนต่ำ และประกาศใหม่', status='ต่อยอด'),
+            ],
+        },
+        {
+            'key': 'student-activities',
+            'icon': '🎯',
+            'title': 'กิจกรรมพัฒนาผู้เรียน',
+            'subtitle': 'ชุมนุม ลูกเสือ เนตรนารี จิตอาสา และกิจกรรมโรงเรียน',
+            'color': 'purple',
+            'features': [
+                _erp_feature('ลงทะเบียนชุมนุม/ชมรม', 'นักเรียนเลือกชุมนุมผ่านเว็บ จำกัดจำนวน และตรวจสอบสิทธิ์', status='ต้นแบบ'),
+                _erp_feature('รายชื่อนักเรียนในชุมนุม', 'ครูที่ปรึกษาดูรายชื่อและส่งออก Excel', status='ต้นแบบ'),
+                _erp_feature('บันทึกกิจกรรมลูกเสือ/เนตรนารี', 'บันทึกการเข้าร่วมรายวัน/รายกิจกรรม', status='ต้นแบบ'),
+                _erp_feature('กิจกรรมเพื่อสังคม/จิตอาสา', 'เก็บชั่วโมงกิจกรรมและรายงานนักเรียน', status='ต้นแบบ'),
+                _erp_feature('กิจกรรมประจำห้อง', 'เช็กชื่อกิจกรรมหน้าเสาธง/กิจกรรมพิเศษ', endpoint='classrooms', tag='เดิม'),
+            ],
+        },
+        {
+            'key': 'student-registry',
+            'icon': '🗂️',
+            'title': 'งานทะเบียนนักเรียน',
+            'subtitle': 'รับนักเรียน จัดห้อง ย้ายเข้า ย้ายออก และเอกสารรับรอง',
+            'color': 'green',
+            'features': [
+                _erp_feature('จัดการห้องเรียน', 'สร้างห้อง ครูประจำชั้น และรายชื่อนักเรียน', endpoint='classrooms', tag='เดิม'),
+                _erp_feature('นำเข้านักเรียน', 'นำเข้ารายชื่อนักเรียนจาก Excel', endpoint='import_students', tag='เดิม'),
+                _erp_feature('ย้ายห้อง/เลื่อนชั้น', 'ย้ายห้องรายบุคคลและเตรียมต่อยอดเลื่อนชั้นทั้งระบบ', endpoint='classrooms', tag='เดิม'),
+                _erp_feature('ย้ายเข้า/ย้ายออก', 'แบบฟอร์มทะเบียนรับย้ายและจำหน่ายนักเรียน', status='ต้นแบบ'),
+                _erp_feature('หนังสือรับรองนักเรียน', 'ต้นแบบเอกสารรับรองสถานภาพนักเรียน', status='ต้นแบบ'),
+            ],
+        },
+        {
+            'key': 'savings',
+            'icon': '🏦',
+            'title': 'ระบบออมทรัพย์นักเรียน',
+            'subtitle': 'ฝาก ถอน สมุดบัญชี และรายงานยอดเงิน',
+            'color': 'blue',
+            'features': [
+                _erp_feature('บัญชีออมทรัพย์นักเรียน', 'เปิดบัญชีรายคนและดูยอดคงเหลือ', status='ต้นแบบ'),
+                _erp_feature('บันทึกฝากเงิน', 'บันทึกเงินฝากรายวัน รายห้อง หรือรายบุคคล', status='ต้นแบบ'),
+                _erp_feature('บันทึกถอนเงิน', 'อนุมัติและบันทึกการถอนเงิน', status='ต้นแบบ'),
+                _erp_feature('สมุดบัญชี', 'พิมพ์ประวัติฝากถอนรายคน', status='ต้นแบบ'),
+                _erp_feature('รายงานการเงิน', 'สรุปรายวัน รายเดือน รายห้อง และทั้งโรงเรียน', status='ต้นแบบ'),
+            ],
+        },
+        {
+            'key': 'e-saraban',
+            'icon': '📨',
+            'title': 'ระบบสารบรรณอิเล็กทรอนิกส์',
+            'subtitle': 'หนังสือรับ หนังสือส่ง คำสั่ง ประกาศ บันทึกข้อความ และเกษียน',
+            'color': 'orange',
+            'features': [
+                _erp_feature('ทะเบียนหนังสือรับ', 'ลงรับหนังสือ เลขรับ วันที่รับ และผู้รับผิดชอบ', status='ต้นแบบ'),
+                _erp_feature('ทะเบียนหนังสือส่ง', 'เลขส่ง หน่วยงานปลายทาง และไฟล์แนบ PDF', status='ต้นแบบ'),
+                _erp_feature('คำสั่งโรงเรียน', 'สร้างคำสั่งจาก Template และออกเลขอัตโนมัติ', status='ต้นแบบ'),
+                _erp_feature('ประกาศโรงเรียน', 'ประกาศภายใน/ภายนอก พร้อมไฟล์แนบ', status='ต้นแบบ'),
+                _erp_feature('บันทึกข้อความ', 'ร่างและพิมพ์บันทึกข้อความรูปแบบราชการ', status='ต้นแบบ'),
+                _erp_feature('เกษียนออนไลน์', 'เกษียนบนเอกสารจริงและติดตามสถานะ', status='ต้นแบบ'),
+            ],
+        },
+        {
+            'key': 'personnel',
+            'icon': '🧑‍💼',
+            'title': 'ระบบบุคลากร',
+            'subtitle': 'ข้อมูลครู ภาระงาน เวรประจำวัน ไปราชการ และลางาน',
+            'color': 'pink',
+            'features': [
+                _erp_feature('ข้อมูลครูและบุคลากร', 'บัญชีครู ตำแหน่ง และสิทธิ์การใช้งาน', endpoint='users', tag='เดิม'),
+                _erp_feature('มอบหมายครู', 'ผูกครูกับรายวิชาและห้องเรียน', endpoint='teacher_assignments', tag='เดิม'),
+                _erp_feature('ภาระงานสอน', 'ดึงข้อมูลจากตารางสอนและรายวิชา', endpoint='schedule', tag='เดิม'),
+                _erp_feature('เวรประจำวัน', 'ต้นแบบจัดเวรครูและพิมพ์ตารางเวร', status='ต้นแบบ'),
+                _erp_feature('ไปราชการ/ลางาน', 'บันทึกวันลาและวันไปราชการ', status='ต้นแบบ'),
+            ],
+        },
+        {
+            'key': 'executive-dashboard',
+            'icon': '📊',
+            'title': 'ระบบผู้บริหาร',
+            'subtitle': 'Dashboard และรายงานภาพรวมโรงเรียน',
+            'color': 'purple',
+            'features': [
+                _erp_feature('Dashboard ผู้บริหาร', 'นักเรียน ครู ห้องเรียน รายวิชา และกิจกรรมวันนี้', endpoint='admin_dashboard', tag='เดิม'),
+                _erp_feature('สถิติการมาเรียน', 'ภาพรวมมา สาย ลา ขาด แยกห้อง/รายวัน', endpoint='attendance_dashboard', tag='เดิม'),
+                _erp_feature('สถิติผลสัมฤทธิ์', 'คะแนนเฉลี่ย เกรด และรายงานรายวิชา', endpoint='records_center', tag='เดิม'),
+                _erp_feature('รายงาน PDF/Excel', 'ส่งออกเอกสารสำหรับประชุมและรายงานผู้บริหาร', status='ต่อยอด'),
+                _erp_feature('ปฏิทินบริหารงานโรงเรียน', 'ปฏิทินกิจกรรม วันหยุด และกำหนดการสำคัญ', endpoint='calendar_events', tag='เดิม'),
+            ],
+        },
+        {
+            'key': 'online-exam',
+            'icon': '📝',
+            'title': 'ระบบสอบออนไลน์',
+            'subtitle': 'คลังข้อสอบ สุ่มข้อสอบ ตรวจคะแนน และวิเคราะห์ข้อสอบ',
+            'color': 'green',
+            'features': [
+                _erp_feature('คลังข้อสอบ', 'จัดเก็บข้อสอบตามรายวิชา หน่วย และตัวชี้วัด', endpoint='subjects', tag='เดิม'),
+                _erp_feature('แบบทดสอบออนไลน์', 'สร้างข้อสอบปรนัย/อัตนัยและให้นักเรียนทำผ่านเว็บ', endpoint='subjects', tag='เดิม'),
+                _erp_feature('สุ่มข้อสอบ', 'ตั้งค่าจำนวนข้อและชุดข้อสอบ', status='ต่อยอด'),
+                _erp_feature('ตรวจอัตโนมัติ', 'ตรวจคำตอบปรนัยและรวมคะแนน', endpoint='assignments', tag='เดิม'),
+                _erp_feature('วิเคราะห์ข้อสอบ', 'ความยาก อำนาจจำแนก และข้อที่นักเรียนผิดมาก', status='ต้นแบบ'),
+            ],
+        },
+        {
+            'key': 'activity-finance',
+            'icon': '💳',
+            'title': 'ระบบการเงินกิจกรรม',
+            'subtitle': 'ค่ากิจกรรม ทัศนศึกษา ระดมทรัพยากร และใบเสร็จ',
+            'color': 'blue',
+            'features': [
+                _erp_feature('รายการเก็บเงินกิจกรรม', 'สร้างรายการเก็บเงินตามห้อง/ระดับชั้น', status='ต้นแบบ'),
+                _erp_feature('บันทึกการชำระเงิน', 'รับเงินสด/โอน/แนบสลิป', status='ต้นแบบ'),
+                _erp_feature('ติดตามค้างชำระ', 'แสดงรายชื่อคนยังไม่จ่ายและส่งออก Excel', status='ต้นแบบ'),
+                _erp_feature('ใบเสร็จรับเงิน', 'พิมพ์ใบเสร็จแบบ Manual Payment', status='ต้นแบบ'),
+                _erp_feature('รายงานการเงินกิจกรรม', 'สรุปรายวัน รายห้อง และทั้งกิจกรรม', status='ต้นแบบ'),
+            ],
+        },
+    ]
+    total_features = sum(len(m['features']) for m in modules)
+    linked_features = sum(1 for m in modules for f in m['features'] if f.get('endpoint') or f.get('href'))
+    prototype_features = total_features - linked_features
+    return modules, {
+        'total_modules': len(modules),
+        'total_features': total_features,
+        'linked_features': linked_features,
+        'prototype_features': prototype_features,
+    }
+
+
+def _resolve_erp_links(modules):
+    for module in modules:
+        module['href'] = url_for('school_erp_module', module_key=module['key'])
+        for feature in module['features']:
+            if feature.get('endpoint'):
+                try:
+                    feature['url'] = url_for(feature['endpoint'])
+                except Exception:
+                    feature['url'] = module['href']
+            else:
+                feature['url'] = module['href']
+    return modules
+
+
+@app.route('/school-erp')
+@login_required
+@role_required('admin', 'teacher')
+def school_erp():
+    modules, summary = build_school_erp_modules()
+    modules = _resolve_erp_links(modules)
+    return render_template('school_erp.html', modules=modules, summary=summary)
+
+
+@app.route('/school-erp/<module_key>')
+@login_required
+@role_required('admin', 'teacher')
+def school_erp_module(module_key):
+    modules, summary = build_school_erp_modules()
+    modules = _resolve_erp_links(modules)
+    module = next((m for m in modules if m['key'] == module_key), None)
+    if not module:
+        flash('ไม่พบโมดูลที่เลือก', 'danger')
+        return redirect(url_for('school_erp'))
+    return render_template('school_erp_module.html', module=module, modules=modules, summary=summary)
+
 
 @app.route('/admin')
 @login_required

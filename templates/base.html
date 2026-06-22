@@ -3,26 +3,29 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title></title>
+  <title>{{ school_setting.school_name if school_setting and school_setting.school_name else 'KRURUKSORN' }}</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
 <body>
 <input type="checkbox" id="nav-toggle" class="nav-toggle">
 <header class="topbar">
   <label for="nav-toggle" class="hamburger">☰</label>
-  <div class="topbrand"></div>
+  <div class="topbrand">KRURUKSORN</div>
   {% if current_user.is_authenticated %}<div class="topuser">{{ current_user.full_name }}</div>{% endif %}
 </header>
 <aside class="sidebar">
   <div class="brand-card">
     <div class="logo-mark">ครู</div>
-    <div class="brand"></div>
+    <div class="brand">KRURUKSORN</div>
     <div class="brand-sub">Teaching Management Dashboard</div>
   </div>
   {% if current_user.is_authenticated %}
   <div class="user"><b>{{ current_user.full_name }}</b><br><small>{{ current_user.role }}</small></div>
   <nav>
     <a href="{{ url_for('index') }}">🏠 แดชบอร์ด</a>
+    {% if current_user.role in ['admin','teacher'] %}
+      <a href="{{ url_for('school_erp') }}">🏢 ระบบบริหารโรงเรียน</a>
+    {% endif %}
     {% if current_user.role == 'student' %}
       <a href="{{ url_for('schedule') }}">📅 ตารางเรียนของฉัน</a>
       <a href="{{ url_for('student_assignments') if false else url_for('assignments') }}">📝 งานของฉัน</a>
@@ -36,6 +39,7 @@
       <a href="{{ url_for('substitute_schedule') }}">👨‍🏫 สอนแทน</a>
       <a href="{{ url_for('attendance_dashboard') }}">📊 ภาพรวมวันนี้</a>
       <a href="{{ url_for('records_center') }}">✅ เช็กชื่อ/คะแนน</a>
+      <a href="{{ url_for('ai_assistant') }}">✨ AI Assistant</a>
       <a href="{{ url_for('school_settings') }}">⚙️ ตั้งค่าโรงเรียน</a>
       <a href="{{ url_for('calendar_events') }}">🌤️ ปฏิทิน</a>
       {% if current_user.role=='admin' %}<a href="{{ url_for('semesters') }}">🗓️ ภาคเรียน</a>{% endif %}
