@@ -1,0 +1,75 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="phase1-hero phase5-hero">
+  <div>
+    <div class="eyebrow">Phase 5 · E-Saraban</div>
+    <h1>สารบรรณอิเล็กทรอนิกส์</h1>
+    <p>ลงทะเบียนหนังสือรับ–ส่ง คำสั่ง ประกาศ บันทึกข้อความ แนบไฟล์ และเกษียนออนไลน์ในระบบเดียว</p>
+  </div>
+  <div class="phase1-hero-actions">
+    <a class="btn" href="{{ url_for('phase5_document_new', type='incoming') }}">+ ลงรับหนังสือ</a>
+    <a class="btn secondary" href="{{ url_for('phase5_documents') }}">ทะเบียนทั้งหมด</a>
+  </div>
+</div>
+
+<section class="phase1-stat-grid">
+  <div class="phase1-stat-card"><span>เอกสารทั้งหมด</span><b>{{ stats.total }}</b></div>
+  <div class="phase1-stat-card"><span>รอดำเนินการ</span><b>{{ stats.pending }}</b></div>
+  <div class="phase1-stat-card"><span>ด่วน/ด่วนที่สุด</span><b>{{ stats.urgent }}</b></div>
+  <div class="phase1-stat-card"><span>รายการเกษียน</span><b>{{ stats.endorsements }}</b></div>
+</section>
+
+<section class="card phase1-workflow-card">
+  <div class="section-head-row">
+    <div>
+      <h2>ลำดับทำงาน Phase 5</h2>
+      <p class="muted">ออกเลขทะเบียนก่อน แนบไฟล์ แล้วเกษียน/มอบหมายผู้รับผิดชอบให้ติดตามสถานะได้</p>
+    </div>
+  </div>
+  <div class="phase1-steps">
+    <div><b>1</b><span>ลงทะเบียน</span><small>หนังสือรับ หนังสือส่ง คำสั่ง ประกาศ หรือบันทึกข้อความ</small></div>
+    <div><b>2</b><span>แนบไฟล์</span><small>เก็บ PDF/รูป/เอกสารประกอบไว้กับทะเบียน</small></div>
+    <div><b>3</b><span>เกษียนออนไลน์</span><small>มอบหมาย รับทราบ หรือบันทึกความเห็น</small></div>
+    <div><b>4</b><span>ติดตามสถานะ</span><small>รอดำเนินการ กำลังดำเนินการ เสร็จสิ้น หรือเก็บเรื่อง</small></div>
+  </div>
+</section>
+
+<section class="grid two-col">
+  <div class="card">
+    <div class="section-head-row">
+      <div>
+        <h2>ประเภทเอกสาร</h2>
+        <p class="muted">กดเพื่อดูทะเบียนตามประเภท</p>
+      </div>
+    </div>
+    <div class="phase4-list">
+      {% for key, meta in doc_types.items() %}
+      <a class="phase4-list-item clean-link" href="{{ url_for('phase5_documents', type=key) }}">
+        <div><b>{{ meta.label }}</b><br><small>จำนวน {{ counts[key] }} รายการ</small></div>
+        <span class="status-pill ok">เปิดใช้</span>
+      </a>
+      {% endfor %}
+    </div>
+  </div>
+  <div class="card">
+    <div class="section-head-row">
+      <div>
+        <h2>เอกสารล่าสุด</h2>
+        <p class="muted">เอกสารที่แก้ไขหรือเพิ่มล่าสุด</p>
+      </div>
+      <a class="btn small secondary" href="{{ url_for('phase5_documents') }}">ดูทั้งหมด</a>
+    </div>
+    <div class="phase4-list">
+      {% for doc in recent_docs %}
+      <div class="phase4-list-item">
+        <div>
+          <b>{{ doc.title }}</b><br>
+          <small>{{ doc_type_label(doc.doc_type) }} · {{ doc.register_no or '-' }} · {{ thai_date_short(doc.created_at.date()) if doc.created_at else '' }}</small>
+        </div>
+        <a class="btn small" href="{{ url_for('phase5_document_detail', document_id=doc.id) }}">เปิด</a>
+      </div>
+      {% else %}<p class="muted">ยังไม่มีเอกสาร</p>{% endfor %}
+    </div>
+  </div>
+</section>
+{% endblock %}

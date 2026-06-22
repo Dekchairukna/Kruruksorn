@@ -25,10 +25,16 @@
     <a href="{{ url_for('index') }}">🏠 แดชบอร์ด</a>
     {% if current_user.role in ['admin','teacher'] %}
       <a href="{{ url_for('school_erp') }}">🏢 ระบบบริหารโรงเรียน</a>
+      <a href="{{ url_for('phase1_dashboard') }}">🎯 Phase 1 วิชาการ</a>
+      <a href="{{ url_for('phase2_dashboard') }}">👨‍👩‍👧 Phase 2 ผู้ปกครอง</a>
+      <a href="{{ url_for('phase3_dashboard') }}">🧡 Phase 3 ดูแลช่วยเหลือ</a>
+      <a href="{{ url_for('phase4_dashboard') }}">🎯 Phase 4 กิจกรรมผู้เรียน</a>
+      <a href="{{ url_for('phase5_dashboard') }}">📨 Phase 5 สารบรรณ</a>
     {% endif %}
     {% if current_user.role == 'student' %}
       <a href="{{ url_for('schedule') }}">📅 ตารางเรียนของฉัน</a>
       <a href="{{ url_for('student_assignments') if false else url_for('assignments') }}">📝 งานของฉัน</a>
+      <a href="{{ url_for('student_club_register') }}">🎯 เลือกชุมนุม</a>
     {% endif %}
     {% if current_user.role in ['admin','teacher'] %}
       <a href="{{ url_for('subjects') }}">📚 รายวิชา</a>

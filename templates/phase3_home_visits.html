@@ -1,0 +1,34 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>เยี่ยมบ้านออนไลน์</h1>
+    <p>ครูบันทึกข้อมูลเยี่ยมบ้าน หรือส่งลิงก์ให้ผู้ปกครองกรอกข้อมูลเบื้องต้น</p>
+  </div>
+  <a class="btn secondary" href="{{ url_for('phase3_dashboard') }}">← กลับ Phase 3</a>
+</div>
+
+<section class="card">
+  <div class="table-wrap">
+    <table>
+      <tr><th>ห้อง</th><th>นักเรียน</th><th>เยี่ยมบ้านล่าสุด</th><th>ครูบันทึก</th><th>ลิงก์ผู้ปกครองกรอก</th><th>เคส</th></tr>
+      {% for r in rows %}
+      <tr>
+        <td data-label="ห้อง">{{ r.room.name if r.room else '-' }}</td>
+        <td data-label="นักเรียน"><b>{{ r.student.full_name }}</b><br><small>{{ r.student.username }}</small></td>
+        <td data-label="เยี่ยมบ้านล่าสุด">
+          {% if r.home_visit %}
+            <span class="status-pill ok">มีข้อมูล</span><br><small>{{ thai_date_short(r.home_visit.visit_date) }}{% if r.home_visit.parent_submitted %} · ผู้ปกครองกรอก{% endif %}</small>
+          {% else %}<span class="status-pill warn">ยังไม่มี</span>{% endif %}
+        </td>
+        <td data-label="ครูบันทึก"><a class="btn small" href="{{ url_for('phase3_home_visit_new', student_id=r.student.id) }}">บันทึกเยี่ยมบ้าน</a></td>
+        <td data-label="ลิงก์ผู้ปกครอง"><input class="copy-input" readonly onclick="this.select()" value="{{ home_visit_link_for_student(r.student) }}"></td>
+        <td data-label="เคส"><a class="btn small secondary" href="{{ url_for('phase3_care_record_new', student_id=r.student.id) }}">เปิดเคส</a></td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6">ยังไม่มีนักเรียนในห้องที่รับผิดชอบ</td></tr>
+      {% endfor %}
+    </table>
+  </div>
+</section>
+{% endblock %}

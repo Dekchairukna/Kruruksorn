@@ -1,0 +1,65 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>SDQ ออนไลน์</h1>
+    <p>ส่งลิงก์หรือกรอกแบบประเมินจุดแข็งและจุดอ่อนทางอารมณ์/พฤติกรรม</p>
+  </div>
+  <div class="actions-row">
+    <a class="btn secondary" href="{{ url_for('phase3_dashboard') }}">← กลับ Phase 3</a>
+    <a class="btn" href="{{ url_for('phase3_care_records') }}">เคสดูแลช่วยเหลือ</a>
+  </div>
+</div>
+
+<section class="card">
+  <h2>ส่งลิงก์ / กรอก SDQ</h2>
+  <p class="muted">ลิงก์ผู้ปกครอง/นักเรียนเป็นแบบกรอกออนไลน์ ไม่ต้อง login</p>
+  <div class="table-wrap">
+    <table>
+      <tr><th>ห้อง</th><th>นักเรียน</th><th>ผลล่าสุด</th><th>ครูกรอก</th><th>ลิงก์ผู้ปกครอง</th><th>ลิงก์นักเรียน</th></tr>
+      {% for r in rows %}
+      <tr>
+        <td data-label="ห้อง">{{ r.room.name if r.room else '-' }}</td>
+        <td data-label="นักเรียน"><b>{{ r.student.full_name }}</b><br><small>{{ r.student.username }}</small></td>
+        <td data-label="ผลล่าสุด">
+          {% if r.sdq %}
+            <span class="status-pill {% if r.sdq.risk_level == 'ปกติ' %}ok{% elif r.sdq.risk_level == 'เฝ้าระวัง' %}warn{% else %}danger{% endif %}">{{ r.sdq.risk_level }}</span><br>
+            <small>รวม {{ r.sdq.total_difficulties }} · {{ thai_date_short(r.sdq.assessment_date) }}</small>
+          {% else %}<span class="status-pill warn">ยังไม่มี</span>{% endif %}
+        </td>
+        <td data-label="ครูกรอก"><a class="btn small" href="{{ url_for('phase3_sdq_new', student_id=r.student.id) }}">กรอก SDQ</a></td>
+        <td data-label="ลิงก์ผู้ปกครอง"><input class="copy-input" readonly onclick="this.select()" value="{{ sdq_link_for_student(r.student, 'parent') }}"></td>
+        <td data-label="ลิงก์นักเรียน"><input class="copy-input" readonly onclick="this.select()" value="{{ sdq_link_for_student(r.student, 'student') }}"></td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6">ยังไม่มีนักเรียนในห้องที่รับผิดชอบ</td></tr>
+      {% endfor %}
+    </table>
+  </div>
+</section>
+
+{% if assessments %}
+<section class="card">
+  <h2>ประวัติ SDQ ล่าสุด</h2>
+  <div class="table-wrap">
+    <table>
+      <tr><th>วันที่</th><th>นักเรียน</th><th>ผู้ประเมิน</th><th>อารมณ์</th><th>พฤติกรรม</th><th>สมาธิ</th><th>เพื่อน</th><th>จุดแข็ง</th><th>รวม</th><th>ผล</th></tr>
+      {% for a in assessments %}
+      <tr>
+        <td data-label="วันที่">{{ thai_date_short(a.assessment_date) }}</td>
+        <td data-label="นักเรียน">{{ a.student.full_name if a.student else '-' }}</td>
+        <td data-label="ผู้ประเมิน">{{ a.assessor_type }}<br><small>{{ a.assessor_name }}</small></td>
+        <td data-label="อารมณ์">{{ a.emotional_score }}</td>
+        <td data-label="พฤติกรรม">{{ a.conduct_score }}</td>
+        <td data-label="สมาธิ">{{ a.hyperactivity_score }}</td>
+        <td data-label="เพื่อน">{{ a.peer_score }}</td>
+        <td data-label="จุดแข็ง">{{ a.prosocial_score }}</td>
+        <td data-label="รวม"><b>{{ a.total_difficulties }}</b></td>
+        <td data-label="ผล"><span class="status-pill {% if a.risk_level == 'ปกติ' %}ok{% elif a.risk_level == 'เฝ้าระวัง' %}warn{% else %}danger{% endif %}">{{ a.risk_level }}</span></td>
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+</section>
+{% endif %}
+{% endblock %}

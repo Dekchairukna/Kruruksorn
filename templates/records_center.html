@@ -115,6 +115,7 @@ function openSubjectRoomDaily(event) {
     <td>
       <a class="btn small" href="{{ url_for('attendance', subject_id=p.subject_id, classroom_id=p.classroom_id) }}">เช็กชื่อ</a>
       <a class="btn secondary small" href="{{ url_for('grades', subject_id=p.subject_id, classroom_id=p.classroom_id) }}">สมุดคะแนน/ตัดเกรด</a>
+      <a class="btn small" target="_blank" href="{{ url_for('pp5_print', subject_id=p.subject_id, classroom_id=p.classroom_id) }}">ปพ.5</a>
     </td>
   </tr>
   {% else %}

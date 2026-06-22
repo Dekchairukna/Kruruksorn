@@ -1,0 +1,31 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>ตั้งค่าผู้ปกครองและ LINE</h1>
+<p class="muted">กรอกข้อมูลผู้ปกครองและ LINE userId จาก LINE OA/LIFF เท่านั้น ไม่ใช่ @LINE ID</p>
+<div class="action-row">
+  <a class="btn secondary" href="{{ url_for('phase2_dashboard') }}">← กลับ Phase 2</a>
+  <a class="btn" href="{{ url_for('line_absence') }}">ไปหน้าแจ้งขาดเรียน</a>
+</div>
+<section class="card">
+<form method="post">
+  <div class="table-wrap">
+    <table>
+      <tr><th>ห้อง</th><th>นักเรียน</th><th>ชื่อผู้ปกครอง</th><th>เบอร์โทร</th><th>LINE userId</th><th>ลิงก์ผู้ปกครอง</th></tr>
+      {% for link in links %}
+      <tr>
+        <td>{{ link.classroom.name }}</td>
+        <td><b>{{ link.student.full_name }}</b><br><small>{{ link.student.username }}</small></td>
+        <td><input name="guardian_name_{{ link.student.id }}" value="{{ link.student.guardian_name or '' }}"></td>
+        <td><input name="guardian_phone_{{ link.student.id }}" value="{{ link.student.guardian_phone or '' }}"></td>
+        <td><input name="guardian_line_user_id_{{ link.student.id }}" value="{{ link.student.guardian_line_user_id or '' }}" placeholder="Uxxxxxxxxxxxxxxxx"></td>
+        <td><input class="copy-input" readonly onclick="this.select()" value="{{ parent_link_for_student(link.student) }}"></td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6">ยังไม่มีนักเรียน</td></tr>
+      {% endfor %}
+    </table>
+  </div>
+  <button>บันทึกข้อมูลผู้ปกครอง</button>
+</form>
+</section>
+{% endblock %}

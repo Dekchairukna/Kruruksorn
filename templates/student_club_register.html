@@ -1,0 +1,49 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="phase1-hero phase4-hero">
+  <div>
+    <div class="eyebrow">Student · Club Register</div>
+    <h1>เลือกชุมนุม</h1>
+    <p>นักเรียนเลือกชุมนุมได้ 1 ชุมนุม หากชุมนุมเต็มจะถูกบันทึกเป็นรายชื่อสำรอง</p>
+  </div>
+  <div>
+    {% if current %}
+      <span class="status-pill ok">เลือกแล้ว: {{ current.club.name }}</span>
+    {% else %}
+      <span class="status-pill warn">ยังไม่ได้เลือกชุมนุม</span>
+    {% endif %}
+  </div>
+</div>
+
+<section class="phase4-card-grid">
+  {% for club in clubs %}
+  <form method="post" class="card phase4-club-card">
+    <input type="hidden" name="club_id" value="{{ club.id }}">
+    <div class="section-head-row">
+      <div>
+        <h2>{{ club.name }}</h2>
+        <p class="muted">{{ club.teacher.full_name if club.teacher else '-' }}</p>
+      </div>
+      {% if club.registration_open %}<span class="status-pill ok">เปิดรับ</span>{% else %}<span class="status-pill warn">ปิดรับ</span>{% endif %}
+    </div>
+    <p>{{ club.description or 'ไม่มีรายละเอียดเพิ่มเติม' }}</p>
+    <div class="phase4-meta">
+      <span>รับ {{ club_active_enrollment_count(club.id) }}/{{ club.max_students or '-' }}</span>
+      <span>{{ club.grade_scope or 'ทุกระดับชั้น' }}</span>
+      <span>{{ club.meeting_day or '-' }} {{ club.meeting_time or '' }}</span>
+      <span>{{ club.location or '-' }}</span>
+    </div>
+    <div class="phase1-actions">
+      {% if current and current.club_id == club.id and current.status != 'ยกเลิก' %}
+        <button class="btn danger-btn" name="action" value="cancel" type="submit">ยกเลิก</button>
+        <span class="status-pill ok">{{ current.status }}</span>
+      {% else %}
+        <button class="btn" name="action" value="join" type="submit" {% if not club.registration_open or current %}disabled{% endif %}>เลือกชุมนุมนี้</button>
+      {% endif %}
+    </div>
+  </form>
+  {% else %}
+  <div class="card"><p class="muted">ยังไม่มีชุมนุมเปิดใช้งาน</p></div>
+  {% endfor %}
+</section>
+{% endblock %}

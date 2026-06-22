@@ -1,0 +1,61 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>ระบบดูแลช่วยเหลือนักเรียน</h1>
+    <p>เปิดเคส กำหนดแผนช่วยเหลือ วันติดตาม และบันทึกผล</p>
+  </div>
+  <div class="actions-row">
+    <a class="btn secondary" href="{{ url_for('phase3_dashboard') }}">← กลับ Phase 3</a>
+    <a class="btn" href="{{ url_for('phase3_sdq') }}">SDQ</a>
+  </div>
+</div>
+
+<section class="card">
+  <form method="get" class="form-row">
+    <div>
+      <label>กรองตามนักเรียน</label>
+      <select name="student_id">
+        <option value="">ทั้งหมด</option>
+        {% for r in rows %}<option value="{{ r.student.id }}" {% if selected_student_id == r.student.id %}selected{% endif %}>{{ r.room.name if r.room else '-' }} · {{ r.student.full_name }}</option>{% endfor %}
+      </select>
+    </div>
+    <button type="submit">กรอง</button>
+  </form>
+</section>
+
+<section class="card">
+  <div class="table-wrap">
+    <table>
+      <tr><th>นักเรียน</th><th>ประเภท</th><th>ระดับ</th><th>ประเด็น</th><th>แผนช่วยเหลือ</th><th>ติดตาม</th><th>สถานะ</th><th>จัดการ</th></tr>
+      {% for rec in records %}
+      <tr>
+        <td data-label="นักเรียน"><b>{{ rec.student.full_name if rec.student else '-' }}</b></td>
+        <td data-label="ประเภท">{{ rec.category }}</td>
+        <td data-label="ระดับ"><span class="status-pill {% if rec.risk_level == 'สูง' %}danger{% elif rec.risk_level == 'เฝ้าระวัง' %}warn{% else %}ok{% endif %}">{{ rec.risk_level }}</span></td>
+        <td data-label="ประเด็น">{{ rec.issue }}</td>
+        <td data-label="แผนช่วยเหลือ">{{ rec.action_plan }}</td>
+        <td data-label="ติดตาม">{{ thai_date_short(rec.follow_up_date) if rec.follow_up_date else '-' }}</td>
+        <td data-label="สถานะ"><span class="status-pill {% if rec.status == 'ปิดเคส' %}ok{% else %}warn{% endif %}">{{ rec.status }}</span><br><small>{{ rec.result_note }}</small></td>
+        <td data-label="จัดการ"><a class="btn small" href="{{ url_for('phase3_care_record_edit', record_id=rec.id) }}">แก้ไข/ปิดเคส</a></td>
+      </tr>
+      {% else %}
+      <tr><td colspan="8">ยังไม่มีเคสดูแลช่วยเหลือ</td></tr>
+      {% endfor %}
+    </table>
+  </div>
+</section>
+
+<section class="card">
+  <h2>เปิดเคสใหม่จากรายชื่อนักเรียน</h2>
+  <div class="grid compact-cards">
+    {% for r in rows %}
+    <div class="card mini-student-card">
+      <b>{{ r.student.full_name }}</b><br>
+      <small>{{ r.room.name if r.room else '-' }}</small><br>
+      <a class="btn small" href="{{ url_for('phase3_care_record_new', student_id=r.student.id) }}">เปิดเคส</a>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}

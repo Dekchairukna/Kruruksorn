@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Parent Portal</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+<style>body{background:#f5f7fb}.parent-shell{max-width:980px;margin:24px auto;padding:0 14px}.parent-hero{background:linear-gradient(135deg,#ffffff,#ecfdf5);border:1px solid #dbeafe;border-radius:22px;padding:22px;box-shadow:0 10px 28px rgba(15,23,42,.08)}.parent-title{font-size:28px;margin:0}.parent-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin:18px 0}.parent-card{background:#fff;border:1px solid #e5e7eb;border-radius:16px;padding:16px;box-shadow:0 8px 20px rgba(15,23,42,.05)}.parent-card b{font-size:24px}.mini-table{width:100%;border-collapse:collapse;background:#fff;border-radius:12px;overflow:hidden}.mini-table th,.mini-table td{padding:9px;border-bottom:1px solid #eee;text-align:left}.mini-table th{background:#f1f5f9}.right{text-align:right}.invalid{max-width:680px;margin:80px auto;background:#fff;border-radius:20px;padding:30px;text-align:center}</style>
+</head>
+<body>
+{% if invalid %}
+<div class="invalid"><h1>ลิงก์ไม่ถูกต้องหรือหมดอายุ</h1><p>กรุณาติดต่อครูประจำชั้นเพื่อขอลิงก์ใหม่</p></div>
+{% else %}
+<div class="parent-shell">
+  <div class="parent-hero">
+    <p class="eyebrow">KRURUKSORN Parent Portal</p>
+    <h1 class="parent-title">ผลการเรียนและเวลาเรียนของ {{ student.full_name }}</h1>
+    <p class="muted">{{ school.school_name if school and school.school_name else 'โรงเรียน' }} · ห้อง {{ room.name if room else '-' }} · อัปเดต {{ generated_at.strftime('%d/%m/%Y %H:%M') }}</p>
+  </div>
+  <div class="parent-grid">
+    <div class="parent-card"><span>จำนวนรายวิชา</span><br><b>{{ rows|length }}</b></div>
+    <div class="parent-card"><span>คะแนนเฉลี่ย</span><br>{% set ns=namespace(total=0,count=0) %}{% for r in rows %}{% set ns.total=ns.total+r.grade_row.total %}{% set ns.count=ns.count+1 %}{% endfor %}<b>{{ '%.2f'|format((ns.total/ns.count) if ns.count else 0) }}</b></div>
+    <div class="parent-card"><span>สถานะ</span><br><b>ดูได้อย่างเดียว</b></div>
+  </div>
+  <section class="parent-card">
+    <h2>คะแนน/เกรดรายวิชา</h2>
+    <table class="mini-table"><tr><th>รายวิชา</th><th>คะแนนรวม</th><th>เกรด</th></tr>{% for r in rows %}<tr><td>{{ r.subject.name }}</td><td>{{ r.grade_row.total }}</td><td><b>{{ r.grade_row.grade }}</b></td></tr>{% else %}<tr><td colspan="3">ยังไม่มีข้อมูลคะแนน</td></tr>{% endfor %}</table>
+  </section>
+  <section class="parent-card" style="margin-top:14px">
+    <h2>ประวัติเข้าเรียนล่าสุด</h2>
+    <table class="mini-table"><tr><th>วันที่</th><th>รายวิชา</th><th>คาบ</th><th>สถานะ</th></tr>{% for a in attendance_rows %}<tr><td>{{ thai_date_short(a.date) }}</td><td>{{ a.subject.name if a.subject else '-' }}</td><td>{{ a.period_no or '-' }}</td><td><b>{{ a.status }}</b></td></tr>{% else %}<tr><td colspan="4">ยังไม่มีข้อมูลการเข้าเรียน</td></tr>{% endfor %}</table>
+  </section>
+</div>
+{% endif %}
+</body>
+</html>

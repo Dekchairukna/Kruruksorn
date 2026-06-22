@@ -1,0 +1,83 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="phase1-hero phase3-hero">
+  <div>
+    <div class="eyebrow">Phase 3 · Student Care</div>
+    <h1>SDQ ออนไลน์ · เยี่ยมบ้านออนไลน์ · ระบบดูแลช่วยเหลือนักเรียน</h1>
+    <p>รวบรวมข้อมูลคัดกรอง การเยี่ยมบ้าน และแผนติดตามช่วยเหลือนักเรียนไว้ในที่เดียว</p>
+  </div>
+  <div class="phase1-hero-actions">
+    <a class="btn" href="{{ url_for('phase3_sdq') }}">SDQ ออนไลน์</a>
+    <a class="btn secondary" href="{{ url_for('phase3_home_visits') }}">เยี่ยมบ้าน</a>
+    <a class="btn secondary" href="{{ url_for('phase3_care_records') }}">เคสดูแลช่วยเหลือ</a>
+  </div>
+</div>
+
+<section class="phase1-stat-grid">
+  <div class="phase1-stat-card"><span>นักเรียนในระบบ</span><b>{{ stats.students }}</b></div>
+  <div class="phase1-stat-card"><span>ทำ SDQ แล้ว</span><b>{{ stats.sdq_done }}</b></div>
+  <div class="phase1-stat-card"><span>เยี่ยมบ้านแล้ว</span><b>{{ stats.home_done }}</b></div>
+  <div class="phase1-stat-card warning"><span>เปิดเคสติดตาม</span><b>{{ stats.open_cases }}</b></div>
+  <div class="phase1-stat-card danger"><span>ควรติดตาม</span><b>{{ stats.need_follow }}</b></div>
+</section>
+
+<section class="card phase1-workflow-card">
+  <div class="section-head-row">
+    <div>
+      <h2>ลำดับทำงาน Phase 3</h2>
+      <p class="muted">SDQ เป็นข้อมูลคัดกรองเบื้องต้น ไม่ใช่การวินิจฉัย ใช้เพื่อให้ครูติดตามช่วยเหลืออย่างเหมาะสม</p>
+    </div>
+  </div>
+  <div class="phase1-steps">
+    <div><b>1</b><span>ส่ง/กรอก SDQ</span><small>ครู ผู้ปกครอง หรือนักเรียนกรอกออนไลน์</small></div>
+    <div><b>2</b><span>เก็บข้อมูลเยี่ยมบ้าน</span><small>ครูกรอก หรือส่งลิงก์ให้ผู้ปกครองกรอก</small></div>
+    <div><b>3</b><span>เปิดเคสติดตาม</span><small>กำหนดปัญหา แผนช่วยเหลือ และวันติดตาม</small></div>
+    <div><b>4</b><span>ปิดเคสเมื่อช่วยเหลือแล้ว</span><small>บันทึกผลการดำเนินงานไว้เป็นหลักฐาน</small></div>
+  </div>
+</section>
+
+<section class="card">
+  <div class="section-head-row">
+    <div>
+      <h2>ภาพรวมนักเรียนที่ควรติดตาม</h2>
+      <p class="muted">ระบบรวมสัญญาณจาก SDQ คะแนน เวลาเรียน และเคสดูแลช่วยเหลือ</p>
+    </div>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <tr>
+        <th>ห้อง</th><th>นักเรียน</th><th>SDQ ล่าสุด</th><th>เยี่ยมบ้าน</th><th>คะแนนเฉลี่ย</th><th>ขาด/ลา/โดด</th><th>สถานะ</th><th>จัดการ</th>
+      </tr>
+      {% for r in rows %}
+      <tr>
+        <td data-label="ห้อง">{{ r.room.name if r.room else '-' }}</td>
+        <td data-label="นักเรียน"><b>{{ r.student.full_name }}</b><br><small>{{ r.student.username }}</small></td>
+        <td data-label="SDQ ล่าสุด">
+          {% if r.sdq %}
+            <span class="status-pill {% if r.sdq.risk_level == 'ปกติ' %}ok{% elif r.sdq.risk_level == 'เฝ้าระวัง' %}warn{% else %}danger{% endif %}">{{ r.sdq.risk_level }}</span><br>
+            <small>{{ thai_date_short(r.sdq.assessment_date) }} · รวม {{ r.sdq.total_difficulties }}</small>
+          {% else %}<span class="status-pill warn">ยังไม่ทำ</span>{% endif %}
+        </td>
+        <td data-label="เยี่ยมบ้าน">
+          {% if r.home_visit %}<span class="status-pill ok">แล้ว</span><br><small>{{ thai_date_short(r.home_visit.visit_date) }}</small>{% else %}<span class="status-pill warn">ยังไม่มี</span>{% endif %}
+        </td>
+        <td data-label="คะแนนเฉลี่ย">{{ r.avg_score if r.avg_score is not none else '-' }}</td>
+        <td data-label="ขาด/ลา/โดด">{{ r.absent_units }}</td>
+        <td data-label="สถานะ">
+          {% if r.risk_flags %}
+            {% for flag in r.risk_flags %}<span class="tag danger-tag">{{ flag }}</span>{% endfor %}
+          {% else %}<span class="tag ok-tag">ปกติ</span>{% endif %}
+        </td>
+        <td data-label="จัดการ" class="phase1-actions">
+          <a class="btn small" href="{{ url_for('phase3_sdq_new', student_id=r.student.id) }}">SDQ</a>
+          <a class="btn small secondary" href="{{ url_for('phase3_home_visit_new', student_id=r.student.id) }}">เยี่ยมบ้าน</a>
+          <a class="btn small secondary" href="{{ url_for('phase3_care_record_new', student_id=r.student.id) }}">เปิดเคส</a>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="8">ยังไม่มีนักเรียนในห้องที่รับผิดชอบ</td></tr>
+      {% endfor %}
+    </table>
+  </div>
+</section>
+{% endblock %}

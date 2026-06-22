@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <title>{{ doc.title }}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  <style>
+    body{background:#fff}.print-page{max-width:900px;margin:24px auto;padding:28px;border:1px solid #ddd}.print-title{text-align:center}.print-box{border:1px solid #333;padding:12px;margin:12px 0}.print-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}@media print{.no-print{display:none}.print-page{border:0;margin:0;max-width:none}}
+  </style>
+</head>
+<body>
+<div class="no-print" style="padding:12px;text-align:center"><button onclick="window.print()" class="btn">พิมพ์</button></div>
+<div class="print-page">
+  <div class="print-title">
+    <h2>ทะเบียน{{ doc_type_label(doc.doc_type) }}</h2>
+    <p>{{ school_setting.school_name if school_setting else 'KRURUKSORN' }}</p>
+  </div>
+  <div class="print-grid">
+    <div><b>เลขทะเบียน:</b> {{ doc.register_no or '-' }}</div>
+    <div><b>เลขที่หนังสือ:</b> {{ doc.document_no or '-' }}</div>
+    <div><b>ประเภท:</b> {{ doc_type_label(doc.doc_type) }}</div>
+    <div><b>สถานะ:</b> {{ doc.status }}</div>
+    <div><b>จาก:</b> {{ doc.from_org or '-' }}</div>
+    <div><b>ถึง:</b> {{ doc.to_org or '-' }}</div>
+    <div><b>วันที่หนังสือ:</b> {{ thai_date_label(doc.document_date) if doc.document_date else '-' }}</div>
+    <div><b>วันที่รับ/ส่ง:</b> {{ thai_date_label(doc.received_date) if doc.received_date else '-' }}</div>
+  </div>
+  <div class="print-box"><b>เรื่อง:</b><br>{{ doc.title }}</div>
+  <div class="print-box"><b>รายละเอียด:</b><br>{{ doc.detail or '-' }}</div>
+  <div class="print-box"><b>แนวทางดำเนินการ:</b><br>{{ doc.action_note or '-' }}</div>
+  <div class="print-box"><b>เกษียน/ความเห็น:</b><br>
+    {% for e in endorsements %}
+      <p><b>{{ e.action }}</b> — {{ e.author.full_name if e.author else '-' }}: {{ e.comment }}</p>
+    {% else %}-{% endfor %}
+  </div>
+</div>
+</body>
+</html>

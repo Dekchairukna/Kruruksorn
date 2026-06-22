@@ -1,0 +1,72 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="section-head-row">
+  <div>
+    <div class="eyebrow">Phase 5 · E-Saraban</div>
+    <h1>{{ 'แก้ไขเอกสาร' if doc else 'เพิ่มเอกสารสารบรรณ' }}</h1>
+    <p class="muted">กรอกข้อมูลทะเบียน แนบไฟล์ และกำหนดผู้รับผิดชอบ</p>
+  </div>
+  <a class="btn secondary" href="{{ url_for('phase5_documents') }}">← ทะเบียน</a>
+</div>
+
+<form method="post" enctype="multipart/form-data" class="card form-grid">
+  <label>ประเภทเอกสาร
+    <select name="doc_type">
+      {% for key, meta in doc_types.items() %}<option value="{{ key }}" {% if (doc and doc.doc_type==key) or ((not doc) and default_type==key) %}selected{% endif %}>{{ meta.label }}</option>{% endfor %}
+    </select>
+  </label>
+  <label>เลขทะเบียน
+    <input name="register_no" value="{{ doc.register_no if doc else '' }}" placeholder="เว้นว่างเพื่อออกเลขอัตโนมัติ">
+  </label>
+  <label>เลขที่หนังสือ
+    <input name="document_no" value="{{ doc.document_no if doc else '' }}" placeholder="เช่น ศธ 0000/ว123">
+  </label>
+  <label class="full">เรื่อง
+    <input name="title" value="{{ doc.title if doc else '' }}" required>
+  </label>
+  <label>จาก
+    <input name="from_org" value="{{ doc.from_org if doc else '' }}">
+  </label>
+  <label>ถึง
+    <input name="to_org" value="{{ doc.to_org if doc else '' }}">
+  </label>
+  <label>วันที่หนังสือ
+    <input type="date" name="document_date" value="{{ doc.document_date.isoformat() if doc and doc.document_date else '' }}">
+  </label>
+  <label>วันที่รับ/ส่ง
+    <input type="date" name="received_date" value="{{ doc.received_date.isoformat() if doc and doc.received_date else '' }}">
+  </label>
+  <label>กำหนดส่ง/ติดตาม
+    <input type="date" name="due_date" value="{{ doc.due_date.isoformat() if doc and doc.due_date else '' }}">
+  </label>
+  <label>ความเร่งด่วน
+    <select name="priority">{% for p in priorities %}<option value="{{ p }}" {% if doc and doc.priority==p %}selected{% endif %}>{{ p }}</option>{% endfor %}</select>
+  </label>
+  <label>ชั้นความลับ
+    <select name="confidentiality">{% for c in confidentials %}<option value="{{ c }}" {% if doc and doc.confidentiality==c %}selected{% endif %}>{{ c }}</option>{% endfor %}</select>
+  </label>
+  <label>สถานะ
+    <select name="status">{% for s in statuses %}<option value="{{ s }}" {% if doc and doc.status==s %}selected{% endif %}>{{ s }}</option>{% endfor %}</select>
+  </label>
+  <label>ผู้รับผิดชอบ
+    <select name="responsible_teacher_id">
+      <option value="">- ยังไม่มอบหมาย -</option>
+      {% for t in teachers %}<option value="{{ t.id }}" {% if doc and doc.responsible_teacher_id==t.id %}selected{% endif %}>{{ t.full_name }}</option>{% endfor %}
+    </select>
+  </label>
+  <label class="full">รายละเอียด/สรุปเนื้อหา
+    <textarea name="detail" rows="4">{{ doc.detail if doc else '' }}</textarea>
+  </label>
+  <label class="full">แนวทางดำเนินการ
+    <textarea name="action_note" rows="3">{{ doc.action_note if doc else '' }}</textarea>
+  </label>
+  <label class="full">ไฟล์แนบ
+    <input type="file" name="file">
+    {% if doc and doc.file_path %}<small>ไฟล์เดิม: <a href="{{ url_for('uploaded_file', filename=doc.file_path) }}" target="_blank">{{ doc.file_original_name or 'เปิดไฟล์' }}</a></small>{% endif %}
+  </label>
+  <div class="full phase1-actions">
+    <button class="btn" type="submit">บันทึก</button>
+    <a class="btn secondary" href="{{ url_for('phase5_documents') }}">ยกเลิก</a>
+  </div>
+</form>
+{% endblock %}

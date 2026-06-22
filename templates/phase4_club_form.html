@@ -1,0 +1,45 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="section-head-row">
+  <div>
+    <div class="eyebrow">Phase 4 · Club Form</div>
+    <h1>{{ 'แก้ไขชุมนุม' if club and club.id else 'เพิ่มชุมนุม' }}</h1>
+  </div>
+  <a class="btn secondary" href="{{ url_for('phase4_clubs') }}">← กลับ</a>
+</div>
+
+<form class="card form-grid" method="post">
+  <label>ชื่อชุมนุม
+    <input name="name" required value="{{ club.name if club else '' }}" placeholder="เช่น ชุมนุมเปตอง / Coding / ดนตรี">
+  </label>
+  <label>ครูที่ปรึกษา
+    <select name="teacher_id">
+      {% for t in teachers %}<option value="{{ t.id }}" {% if club and club.teacher_id==t.id %}selected{% endif %}>{{ t.full_name }}</option>{% endfor %}
+    </select>
+  </label>
+  <label>จำนวนรับ
+    <input type="number" name="max_students" min="1" value="{{ club.max_students if club else 30 }}">
+  </label>
+  <label>ระดับชั้นที่รับ
+    <input name="grade_scope" value="{{ club.grade_scope if club else 'ทุกระดับชั้น' }}">
+  </label>
+  <label>วันที่เรียน/ทำกิจกรรม
+    <input name="meeting_day" value="{{ club.meeting_day if club else '' }}" placeholder="เช่น วันพุธ คาบ 7">
+  </label>
+  <label>เวลา
+    <input name="meeting_time" value="{{ club.meeting_time if club else '' }}" placeholder="เช่น 15:00-16:00">
+  </label>
+  <label>สถานที่
+    <input name="location" value="{{ club.location if club else '' }}">
+  </label>
+  <label class="checkline"><input type="checkbox" name="registration_open" value="1" {% if not club or club.registration_open %}checked{% endif %}> เปิดรับสมัคร</label>
+  {% if club and club.id %}<label class="checkline"><input type="checkbox" name="is_active" value="1" {% if club.is_active %}checked{% endif %}> เปิดใช้งานชุมนุม</label>{% endif %}
+  <label class="full">รายละเอียด
+    <textarea name="description" rows="5" placeholder="เป้าหมาย กติกา เงื่อนไขรับสมัคร ฯลฯ">{{ club.description if club else '' }}</textarea>
+  </label>
+  <div class="full phase1-actions">
+    <button class="btn" type="submit">บันทึก</button>
+    <a class="btn secondary" href="{{ url_for('phase4_clubs') }}">ยกเลิก</a>
+  </div>
+</form>
+{% endblock %}

@@ -1,0 +1,82 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="phase1-hero phase4-hero">
+  <div>
+    <div class="eyebrow">Phase 4 · Student Activities</div>
+    <h1>ชุมนุมออนไลน์ · กิจกรรมพัฒนาผู้เรียน</h1>
+    <p>เปิดรับสมัครชุมนุม ตรวจรายชื่อ จำกัดจำนวน และบันทึกชั่วโมงกิจกรรมลูกเสือ/เนตรนารี/จิตอาสาในระบบเดียว</p>
+  </div>
+  <div class="phase1-hero-actions">
+    <a class="btn" href="{{ url_for('phase4_clubs') }}">จัดการชุมนุม</a>
+    <a class="btn secondary" href="{{ url_for('phase4_activities') }}">กิจกรรมพัฒนาผู้เรียน</a>
+  </div>
+</div>
+
+<section class="phase1-stat-grid">
+  <div class="phase1-stat-card"><span>ชุมนุมทั้งหมด</span><b>{{ stats.clubs }}</b></div>
+  <div class="phase1-stat-card"><span>เปิดรับสมัคร</span><b>{{ stats.open_clubs }}</b></div>
+  <div class="phase1-stat-card"><span>ลงทะเบียนแล้ว</span><b>{{ stats.enrollments }}</b></div>
+  <div class="phase1-stat-card"><span>กิจกรรมที่สร้าง</span><b>{{ stats.activities }}</b></div>
+  <div class="phase1-stat-card"><span>บันทึกเข้าร่วม</span><b>{{ stats.activity_records }}</b></div>
+</section>
+
+<section class="card phase1-workflow-card">
+  <div class="section-head-row">
+    <div>
+      <h2>ลำดับทำงาน Phase 4</h2>
+      <p class="muted">เริ่มจากเปิดชุมนุมให้นักเรียนเลือก แล้วบันทึกกิจกรรม/ชั่วโมงเข้าร่วมเป็นหลักฐาน</p>
+    </div>
+  </div>
+  <div class="phase1-steps">
+    <div><b>1</b><span>สร้างชุมนุม</span><small>กำหนดครูที่ปรึกษา จำนวนรับ วันเวลา และสถานที่</small></div>
+    <div><b>2</b><span>นักเรียนลงทะเบียน</span><small>เลือกผ่านเว็บ หรือครูจัดรายชื่อให้เอง</small></div>
+    <div><b>3</b><span>ส่งออกรายชื่อ</span><small>Export Excel สำหรับตรวจสอบ/ประกาศรายชื่อ</small></div>
+    <div><b>4</b><span>บันทึกกิจกรรม</span><small>ลูกเสือ เนตรนารี จิตอาสา และกิจกรรมโรงเรียน</small></div>
+  </div>
+</section>
+
+<section class="grid two-col">
+  <div class="card">
+    <div class="section-head-row">
+      <div>
+        <h2>ชุมนุมล่าสุด</h2>
+        <p class="muted">ดูจำนวนรับและสถานะเปิดสมัคร</p>
+      </div>
+      <a class="btn small secondary" href="{{ url_for('phase4_clubs') }}">ดูทั้งหมด</a>
+    </div>
+    <div class="phase4-list">
+      {% for club in clubs[:8] %}
+      <div class="phase4-list-item">
+        <div>
+          <b>{{ club.name }}</b><br>
+          <small>{{ club.teacher.full_name if club.teacher else '-' }} · {{ club.meeting_day or '-' }} {{ club.meeting_time or '' }}</small>
+        </div>
+        <span class="status-pill {% if club.registration_open and club.is_active %}ok{% else %}warn{% endif %}">
+          {{ club_active_enrollment_count(club.id) }}/{{ club.max_students or '-' }}
+        </span>
+      </div>
+      {% else %}<p class="muted">ยังไม่มีชุมนุม</p>{% endfor %}
+    </div>
+  </div>
+  <div class="card">
+    <div class="section-head-row">
+      <div>
+        <h2>กิจกรรมล่าสุด</h2>
+        <p class="muted">บันทึกชั่วโมงกิจกรรมพัฒนาผู้เรียน</p>
+      </div>
+      <a class="btn small secondary" href="{{ url_for('phase4_activities') }}">ดูทั้งหมด</a>
+    </div>
+    <div class="phase4-list">
+      {% for a in activities %}
+      <div class="phase4-list-item">
+        <div>
+          <b>{{ a.title }}</b><br>
+          <small>{{ a.activity_type }} · {{ thai_date_short(a.activity_date) if a.activity_date else '-' }} · {{ a.hours }} ชม.</small>
+        </div>
+        <a class="btn small" href="{{ url_for('phase4_activity_attendance', program_id=a.id) }}">เช็กกิจกรรม</a>
+      </div>
+      {% else %}<p class="muted">ยังไม่มีกิจกรรม</p>{% endfor %}
+    </div>
+  </div>
+</section>
+{% endblock %}

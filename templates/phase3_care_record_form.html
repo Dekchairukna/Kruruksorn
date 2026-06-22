@@ -1,0 +1,49 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>{% if record %}แก้ไข/ปิดเคสดูแลช่วยเหลือ{% else %}เปิดเคสดูแลช่วยเหลือ{% endif %}</h1>
+    <p>{{ student.full_name }}{% if room %} · {{ room.name }}{% endif %}</p>
+  </div>
+  <a class="btn secondary" href="{{ url_for('phase3_care_records', student_id=student.id) }}">← กลับ</a>
+</div>
+
+<form method="post" class="card">
+  <div class="form-row">
+    <div>
+      <label>ประเภทปัญหา/การดูแล</label>
+      <select name="category">
+        {% set cat = record.category if record else '' %}
+        {% for c in ['การเรียน','เวลาเรียน','พฤติกรรม','เศรษฐกิจ','ครอบครัว','สุขภาพ','อารมณ์/สังคม','ทั่วไป'] %}
+          <option value="{{ c }}" {% if cat == c %}selected{% endif %}>{{ c }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label>ระดับความเร่งด่วน</label>
+      {% set risk = record.risk_level if record else 'เฝ้าระวัง' %}
+      <select name="risk_level">
+        {% for r in ['เฝ้าระวัง','ปานกลาง','สูง'] %}<option value="{{ r }}" {% if risk == r %}selected{% endif %}>{{ r }}</option>{% endfor %}
+      </select>
+    </div>
+    <div>
+      <label>สถานะ</label>
+      {% set st = record.status if record else 'กำลังติดตาม' %}
+      <select name="status">
+        {% for s in ['กำลังติดตาม','ประสานผู้ปกครอง','ส่งต่อผู้เกี่ยวข้อง','ปิดเคส'] %}<option value="{{ s }}" {% if st == s %}selected{% endif %}>{{ s }}</option>{% endfor %}
+      </select>
+    </div>
+    <div>
+      <label>วันติดตามครั้งถัดไป</label>
+      <input type="date" name="follow_up_date" value="{{ record.follow_up_date.isoformat() if record and record.follow_up_date else '' }}">
+    </div>
+  </div>
+  <label>ประเด็นที่พบ</label>
+  <textarea name="issue" required>{{ record.issue if record else '' }}</textarea>
+  <label>แผนช่วยเหลือ / วิธีดำเนินการ</label>
+  <textarea name="action_plan" required>{{ record.action_plan if record else '' }}</textarea>
+  <label>ผลการติดตาม / หมายเหตุ</label>
+  <textarea name="result_note">{{ record.result_note if record else '' }}</textarea>
+  <button type="submit">บันทึกเคสดูแลช่วยเหลือ</button>
+</form>
+{% endblock %}

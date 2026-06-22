@@ -5,6 +5,8 @@
 <div class="action-row">
   <a class="btn secondary" href="{{ url_for('records_center') }}">← กลับ</a>
   <a class="btn" href="{{ url_for('export_grades', subject_id=subject.id, classroom_id=room.id) }}">Export Excel</a>
+  <a class="btn" target="_blank" href="{{ url_for('pp5_print', subject_id=subject.id, classroom_id=room.id) }}">พิมพ์ ปพ.5</a>
+  <a class="btn secondary" href="{{ url_for('pp5_export', subject_id=subject.id, classroom_id=room.id) }}">Export ปพ.5</a>
   <a class="btn secondary" href="{{ url_for('attendance', subject_id=subject.id, classroom_id=room.id) }}">เช็กชื่อ</a>
 </div>
 <section class="card">

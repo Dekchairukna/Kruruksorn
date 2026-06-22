@@ -1,0 +1,63 @@
+{% extends 'base.html' %}
+{% block content %}
+{% if invalid %}
+<section class="card"><h1>ลิงก์ไม่ถูกต้องหรือหมดอายุ</h1><p class="muted">กรุณาขอลิงก์ใหม่จากครู</p></section>
+{% else %}
+<div class="page-head">
+  <div>
+    <h1>แบบประเมิน SDQ</h1>
+    <p>{{ student.full_name }}{% if room %} · {{ room.name }}{% endif %}</p>
+  </div>
+  {% if not public_mode %}<a class="btn secondary" href="{{ url_for('phase3_sdq') }}">← กลับ</a>{% endif %}
+</div>
+
+<section class="card warning-card">
+  <b>หมายเหตุ:</b> แบบประเมินนี้เป็นเครื่องมือคัดกรองเบื้องต้นเพื่อการดูแลช่วยเหลือนักเรียน ไม่ใช่การวินิจฉัยทางการแพทย์
+</section>
+
+<form method="post" class="card sdq-form-card">
+  <div class="form-row">
+    <div>
+      <label>วันที่ประเมิน</label>
+      <input type="date" name="assessment_date" value="{{ request.form.get('assessment_date') or '' }}">
+    </div>
+    {% if not public_mode %}
+    <div>
+      <label>ผู้ประเมิน</label>
+      <select name="assessor_type">
+        <option value="teacher" {% if assessor_type=='teacher' %}selected{% endif %}>ครู</option>
+        <option value="parent">ผู้ปกครอง</option>
+        <option value="student">นักเรียน</option>
+      </select>
+    </div>
+    {% else %}
+      <input type="hidden" name="assessor_type" value="{{ assessor_type }}">
+    {% endif %}
+    <div>
+      <label>ชื่อผู้ประเมิน</label>
+      <input name="assessor_name" placeholder="เช่น ครูประจำชั้น / ผู้ปกครอง / นักเรียน">
+    </div>
+  </div>
+
+  <div class="sdq-scale-head">
+    <span>0 = ไม่จริง</span><span>1 = จริงบางส่วน</span><span>2 = จริงแน่นอน</span>
+  </div>
+
+  {% for no, text, category, reverse in questions %}
+  <div class="sdq-question-row">
+    <div class="sdq-question-text"><b>{{ no }}.</b> {{ text }}</div>
+    <div class="sdq-options">
+      <label><input type="radio" name="q{{ no }}" value="0" required> 0</label>
+      <label><input type="radio" name="q{{ no }}" value="1" required checked> 1</label>
+      <label><input type="radio" name="q{{ no }}" value="2" required> 2</label>
+    </div>
+  </div>
+  {% endfor %}
+
+  <label>หมายเหตุเพิ่มเติม / ผลกระทบต่อการเรียนหรือความสัมพันธ์</label>
+  <textarea name="impact_note" placeholder="บันทึกสิ่งที่ครู/ผู้ปกครองควรรู้เพิ่มเติม"></textarea>
+
+  <button type="submit">บันทึกแบบประเมิน SDQ</button>
+</form>
+{% endif %}
+{% endblock %}

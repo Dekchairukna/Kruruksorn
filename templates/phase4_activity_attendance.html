@@ -1,0 +1,37 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="section-head-row">
+  <div>
+    <div class="eyebrow">Phase 4 · Activity Attendance</div>
+    <h1>บันทึกการเข้าร่วม: {{ program.title }}</h1>
+    <p class="muted">{{ program.activity_type }} · {{ thai_date_short(program.activity_date) if program.activity_date else '-' }} · {{ program.hours }} ชั่วโมง</p>
+  </div>
+  <div class="phase1-actions">
+    <a class="btn secondary" href="{{ url_for('phase4_activity_export', program_id=program.id) }}">Export Excel</a>
+    <a class="btn secondary" href="{{ url_for('phase4_activities') }}">← กิจกรรม</a>
+  </div>
+</div>
+
+<form method="post" class="card">
+  <div class="table-wrap">
+    <table>
+      <tr><th>ห้อง</th><th>นักเรียน</th><th>สถานะ</th><th>ชั่วโมง</th><th>หมายเหตุ</th></tr>
+      {% for r in rows %}
+        {% set rec = records.get(r.student.id) %}
+        <tr>
+          <td data-label="ห้อง">{{ r.room.name if r.room else '-' }}</td>
+          <td data-label="นักเรียน"><b>{{ r.student.full_name }}</b><br><small>{{ r.student.username }}</small></td>
+          <td data-label="สถานะ">
+            <select name="status_{{ r.student.id }}">
+              {% for st in ['เข้าร่วม','ขาด','ลา','ยกเว้น'] %}<option value="{{ st }}" {% if rec and rec.status==st %}selected{% endif %}>{{ st }}</option>{% endfor %}
+            </select>
+          </td>
+          <td data-label="ชั่วโมง">{{ rec.hours if rec else 0 }}</td>
+          <td data-label="หมายเหตุ"><input name="note_{{ r.student.id }}" value="{{ rec.note if rec else '' }}"></td>
+        </tr>
+      {% else %}<tr><td colspan="5">ยังไม่มีนักเรียนสำหรับกิจกรรมนี้</td></tr>{% endfor %}
+    </table>
+  </div>
+  <div class="phase1-actions" style="margin-top:16px"><button class="btn" type="submit">บันทึกการเข้าร่วม</button></div>
+</form>
+{% endblock %}

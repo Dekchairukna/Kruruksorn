@@ -1,0 +1,44 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>LINE แจ้งขาดเรียน</h1>
+<p class="muted">แสดงเฉพาะสถานะ “ขาด” และ “โดดเรียน” ของวันที่เลือก ระบบจะส่งได้เมื่อมี LINE_CHANNEL_ACCESS_TOKEN และ LINE userId ของผู้ปกครอง</p>
+<div class="action-row">
+  <a class="btn secondary" href="{{ url_for('phase2_dashboard') }}">← กลับ Phase 2</a>
+  <a class="btn" href="{{ url_for('phase2_guardian_settings') }}">ตั้งค่า LINE ผู้ปกครอง</a>
+</div>
+<section class="card">
+  <form method="get" class="inline-form">
+    <label>วันที่ <input type="date" name="date" value="{{ report_date.isoformat() }}"></label>
+    <button>ค้นหา</button>
+  </form>
+  {% if not line_ready %}
+    <div class="alert warning">ยังไม่ได้ตั้งค่า LINE_CHANNEL_ACCESS_TOKEN ส่งจริงไม่ได้ แต่ยังคัดลอกข้อความไปส่งเองได้</div>
+  {% endif %}
+</section>
+<section class="card">
+<form method="post">
+  <input type="hidden" name="date" value="{{ report_date.isoformat() }}">
+  <div class="section-head-row">
+    <div><h2>รายการขาด/โดดเรียน วันที่ {{ thai_date_label(report_date) }}</h2><p class="muted">เลือกนักเรียนแล้วกดส่ง หรือคัดลอกข้อความจากช่องตัวอย่าง</p></div>
+    <button {% if not line_ready %}disabled{% endif %}>ส่ง LINE ที่เลือก</button>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <tr><th>เลือก</th><th>ห้อง</th><th>นักเรียน</th><th>ผู้ปกครอง/LINE</th><th>รายละเอียด</th><th>ข้อความที่จะส่ง</th></tr>
+      {% for row in rows %}
+      <tr>
+        <td>{% if row.has_line %}<input type="checkbox" name="student_ids" value="{{ row.student.id }}" checked>{% else %}-{% endif %}</td>
+        <td>{{ row.room.name if row.room else '-' }}</td>
+        <td><b>{{ row.student.full_name }}</b></td>
+        <td>{{ row.student.guardian_name or '-' }}<br><small>{{ row.student.guardian_phone or '' }}</small><br>{% if row.has_line %}<span class="status-pill ok">มี LINE userId</span>{% else %}<span class="status-pill warn">ยังไม่มี LINE userId</span>{% endif %}</td>
+        <td>{% for a in row.items %}<div>คาบ {{ a.period_no or '-' }} · {{ a.subject.name if a.subject else '-' }} · <b>{{ a.status }}</b></div>{% endfor %}</td>
+        <td><textarea class="copy-area" readonly onclick="this.select()">{{ row.message }}</textarea></td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6">ไม่พบรายการขาด/โดดเรียนในวันที่เลือก</td></tr>
+      {% endfor %}
+    </table>
+  </div>
+</form>
+</section>
+{% endblock %}

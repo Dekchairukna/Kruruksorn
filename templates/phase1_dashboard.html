@@ -1,0 +1,91 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="phase1-hero">
+  <div>
+    <div class="eyebrow">Phase 1 · Academic Core</div>
+    <h1>ข้อมูลนักเรียน · เช็กชื่อ · คะแนน/เกรด · ปพ.5</h1>
+    <p>หน้ากลางสำหรับงานที่ครูใช้จริงทุกวัน เลือกวิชา/ห้องแล้วไปทำงานต่อได้ทันที</p>
+    {% if active_semester %}<p class="muted">ภาคเรียนที่ใช้งาน: {{ active_semester.name }}</p>{% endif %}
+  </div>
+  <div class="phase1-hero-actions">
+    <a class="btn" href="{{ url_for('classrooms') }}">จัดการนักเรียน</a>
+    <a class="btn secondary" href="{{ url_for('records_center') }}">ศูนย์เช็กชื่อ/คะแนน</a>
+  </div>
+</div>
+
+<section class="phase1-stat-grid">
+  <div class="phase1-stat-card"><span>ห้องเรียน</span><b>{{ stats.classrooms }}</b></div>
+  <div class="phase1-stat-card"><span>รายวิชา</span><b>{{ stats.subjects }}</b></div>
+  <div class="phase1-stat-card"><span>นักเรียน</span><b>{{ stats.students }}</b></div>
+  <div class="phase1-stat-card"><span>วิชา/ห้อง</span><b>{{ stats.pairs }}</b></div>
+  <div class="phase1-stat-card"><span>ครั้งที่เช็กชื่อ</span><b>{{ stats.attendance_slots }}</b></div>
+  <div class="phase1-stat-card warning"><span>คะแนนต่ำกว่า 50</span><b>{{ stats.risk_count }}</b></div>
+  <div class="phase1-stat-card danger"><span>มาเรียนน้อยกว่า 80%</span><b>{{ stats.low_attendance }}</b></div>
+</section>
+
+<section class="card phase1-workflow-card">
+  <div class="section-head-row">
+    <div>
+      <h2>ลำดับทำงาน Phase 1</h2>
+      <p class="muted">ทำตามลำดับนี้จะได้ข้อมูลครบสำหรับ ปพ.5 และตัดเกรด</p>
+    </div>
+  </div>
+  <div class="phase1-steps">
+    <div><b>1</b><span>เพิ่ม/นำเข้านักเรียน</span><small>ห้องเรียน → นักเรียนในห้อง</small></div>
+    <div><b>2</b><span>เช็กชื่อรายคาบ</span><small>บันทึก มา/สาย/ขาด/ลา/กิจกรรม</small></div>
+    <div><b>3</b><span>กรอกคะแนน</span><small>คะแนนในคาบ + กลางภาค + ปลายภาค</small></div>
+    <div><b>4</b><span>พิมพ์ ปพ.5</span><small>ตรวจแล้วพิมพ์/ส่งออก Excel</small></div>
+  </div>
+</section>
+
+<section class="card">
+  <div class="section-head-row">
+    <div>
+      <h2>รายการวิชา/ห้องที่พร้อมใช้งาน</h2>
+      <p class="muted">ปุ่มหลักจะพาไปยังข้อมูลนักเรียน เช็กชื่อ สมุดคะแนน และ ปพ.5</p>
+    </div>
+  </div>
+  <div class="table-wrap">
+    <table class="phase1-table">
+      <tr>
+        <th>รายวิชา</th>
+        <th>ห้อง</th>
+        <th>นักเรียน</th>
+        <th>เช็กชื่อแล้ว</th>
+        <th>มีคะแนน</th>
+        <th>เฉลี่ย</th>
+        <th>ต้องติดตาม</th>
+        <th>จัดการ</th>
+      </tr>
+      {% for r in pair_rows %}
+      {% set p = r.pair %}
+      <tr>
+        <td data-label="รายวิชา"><b>{{ p.subject.name }}</b></td>
+        <td data-label="ห้อง">{{ p.classroom.name }}</td>
+        <td data-label="นักเรียน">{{ r.student_count }}</td>
+        <td data-label="เช็กชื่อแล้ว">{{ r.attendance_slots }} ครั้ง</td>
+        <td data-label="มีคะแนน">{{ r.graded_count }}/{{ r.student_count }}</td>
+        <td data-label="เฉลี่ย">{{ r.avg_score }}</td>
+        <td data-label="ต้องติดตาม">
+          {% if r.risk_count or r.low_attendance %}
+            <span class="tag warn-tag">คะแนนต่ำ {{ r.risk_count }}</span>
+            <span class="tag danger-tag">เวลาเรียนต่ำ {{ r.low_attendance }}</span>
+          {% else %}
+            <span class="tag ok-tag">ปกติ</span>
+          {% endif %}
+        </td>
+        <td data-label="จัดการ" class="phase1-actions">
+          <a class="btn small secondary" href="{{ url_for('classroom_students', classroom_id=p.classroom_id) }}">นักเรียน</a>
+          <a class="btn small" href="{{ url_for('attendance', subject_id=p.subject_id, classroom_id=p.classroom_id) }}">เช็กชื่อ</a>
+          <a class="btn small secondary" href="{{ url_for('grades', subject_id=p.subject_id, classroom_id=p.classroom_id) }}">คะแนน/เกรด</a>
+          <a class="btn small" target="_blank" href="{{ url_for('pp5_print', subject_id=p.subject_id, classroom_id=p.classroom_id) }}">ปพ.5</a>
+          <a class="btn small secondary" href="{{ url_for('phase2_dashboard') }}">Phase 2</a>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="8">ยังไม่มีรายวิชาที่ผูกกับห้องเรียน ให้สร้างรายวิชา/ห้องเรียนและมอบหมายก่อน</td></tr>
+      {% endfor %}
+    </table>
+  </div>
+</section>
+{% endblock %}

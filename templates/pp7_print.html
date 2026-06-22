@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<title>ปพ.7 {{ student.full_name }}</title>
+<style>
+@page{size:A4 portrait;margin:18mm}body{font-family:Tahoma,Arial,sans-serif;color:#111;background:#fff;font-size:16px;line-height:1.8}.no-print{text-align:right}.btn{border:1px solid #111;padding:7px 12px;border-radius:6px;text-decoration:none;color:#111;background:#fff}.doc{max-width:760px;margin:0 auto}.center{text-align:center}.title{font-size:24px;font-weight:bold;margin:20px 0}.body-text{text-indent:3em;margin-top:24px}.field{border-bottom:1px dotted #111;padding:0 8px;display:inline-block;min-width:170px;text-align:center}.sign{margin-top:70px;text-align:center;margin-left:auto;width:330px}.sig-line{border-bottom:1px dotted #111;height:34px;margin-bottom:4px}.note{font-size:12px;color:#555;margin-top:50px}@media print{.no-print{display:none}}
+</style>
+</head>
+<body>
+<div class="no-print"><a class="btn" href="javascript:window.print()">พิมพ์ ปพ.7</a></div>
+<div class="doc">
+  <div class="center">
+    <div class="title">หนังสือรับรองการเป็นนักเรียน (ปพ.7)</div>
+    <div>{{ school.school_name if school and school.school_name else 'KRURUKSORN' }}</div>
+  </div>
+  <p class="body-text">หนังสือฉบับนี้ให้ไว้เพื่อรับรองว่า <span class="field">{{ student.full_name }}</span> รหัส/เลขประจำตัว <span class="field">{{ student.username }}</span> เป็นนักเรียนของ <span class="field">{{ school.school_name if school and school.school_name else 'โรงเรียน' }}</span></p>
+  <p class="body-text">กำลังศึกษาอยู่ชั้น/ห้อง <span class="field">{{ room.name if room else '-' }}</span> ภาคเรียน <span class="field">{{ active_semester.name if active_semester else '-' }}</span> โดยมีข้อมูลสถานภาพในระบบเป็นนักเรียนปัจจุบัน</p>
+  <p class="body-text">ออกให้ ณ วันที่ <span class="field">{{ thai_date_label(generated_at.date()) }}</span> เพื่อใช้เป็นหลักฐานตามวัตถุประสงค์ที่เหมาะสม</p>
+  <div class="sign">
+    <div class="sig-line"></div>
+    <div>({{ school.director_name if school and school.director_name else '__________________' }})</div>
+    <div>ผู้อำนวยการโรงเรียน</div>
+  </div>
+  <div class="note">หมายเหตุ: แบบฟอร์มนี้เป็นต้นแบบ ปพ.7 ในระบบ KRURUKSORN Phase 2 สามารถปรับข้อความ/ตราโรงเรียนให้ตรงรูปแบบโรงเรียนได้</div>
+</div>
+</body>
+</html>

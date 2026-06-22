@@ -1,0 +1,42 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="section-head-row">
+  <div>
+    <div class="eyebrow">Phase 4 · Clubs</div>
+    <h1>ชุมนุมออนไลน์</h1>
+    <p class="muted">เปิดรับสมัครชุมนุม จำกัดจำนวน และส่งออกรายชื่อนักเรียน</p>
+  </div>
+  <div class="phase1-actions">
+    <a class="btn secondary" href="{{ url_for('phase4_dashboard') }}">← Phase 4</a>
+    <a class="btn" href="{{ url_for('phase4_club_new') }}">+ เพิ่มชุมนุม</a>
+  </div>
+</div>
+
+<section class="card">
+  <div class="table-wrap">
+    <table>
+      <tr><th>ชุมนุม</th><th>ครูที่ปรึกษา</th><th>วันเวลา/สถานที่</th><th>จำนวน</th><th>สถานะ</th><th>จัดการ</th></tr>
+      {% for club in clubs %}
+      <tr>
+        <td data-label="ชุมนุม"><b>{{ club.name }}</b><br><small>{{ club.description[:120] if club.description else '' }}</small></td>
+        <td data-label="ครูที่ปรึกษา">{{ club.teacher.full_name if club.teacher else '-' }}</td>
+        <td data-label="วันเวลา/สถานที่">{{ club.meeting_day or '-' }} {{ club.meeting_time or '' }}<br><small>{{ club.location or '-' }}</small></td>
+        <td data-label="จำนวน"><b>{{ club_active_enrollment_count(club.id) }}</b> / {{ club.max_students or '-' }}</td>
+        <td data-label="สถานะ">
+          {% if club.is_active and club.registration_open %}<span class="status-pill ok">เปิดรับสมัคร</span>
+          {% elif club.is_active %}<span class="status-pill warn">ปิดรับสมัคร</span>
+          {% else %}<span class="status-pill danger">ปิดใช้งาน</span>{% endif %}
+        </td>
+        <td data-label="จัดการ" class="phase1-actions">
+          <a class="btn small" href="{{ url_for('phase4_club_enrollments', club_id=club.id) }}">รายชื่อ</a>
+          <a class="btn small secondary" href="{{ url_for('phase4_club_edit', club_id=club.id) }}">แก้ไข</a>
+          <a class="btn small secondary" href="{{ url_for('phase4_club_export', club_id=club.id) }}">Excel</a>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6">ยังไม่มีชุมนุม</td></tr>
+      {% endfor %}
+    </table>
+  </div>
+</section>
+{% endblock %}

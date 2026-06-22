@@ -1,0 +1,37 @@
+{% extends 'base.html' %}
+{% block content %}
+{% if invalid %}
+<section class="card"><h1>ลิงก์ไม่ถูกต้องหรือหมดอายุ</h1><p class="muted">กรุณาขอลิงก์ใหม่จากครู</p></section>
+{% else %}
+<div class="page-head">
+  <div>
+    <h1>แบบบันทึกเยี่ยมบ้าน</h1>
+    <p>{{ student.full_name }}{% if room %} · {{ room.name }}{% endif %}</p>
+  </div>
+  {% if not public_mode %}<a class="btn secondary" href="{{ url_for('phase3_home_visits') }}">← กลับ</a>{% endif %}
+</div>
+
+<form method="post" class="card">
+  {% if not public_mode %}
+  <label>วันที่เยี่ยมบ้าน</label>
+  <input type="date" name="visit_date" value="{{ request.form.get('visit_date') or '' }}">
+  {% endif %}
+  <div class="form-row">
+    <div><label>ชื่อผู้ปกครอง/ผู้ให้ข้อมูล</label><input name="guardian_name" value="{{ student.guardian_name or '' }}"></div>
+    <div><label>เกี่ยวข้องเป็น</label><input name="guardian_relation" placeholder="บิดา / มารดา / ปู่ย่า / อื่น ๆ"></div>
+    <div><label>รายได้/สภาพเศรษฐกิจ</label><input name="income_status" placeholder="เช่น พอใช้ / ขาดแคลน / ไม่แน่นอน"></div>
+  </div>
+  <label>สภาพครอบครัว</label>
+  <textarea name="family_status" placeholder="อยู่กับใคร จำนวนสมาชิก ความสัมพันธ์ในครอบครัว"></textarea>
+  <label>สภาพที่อยู่อาศัย</label>
+  <textarea name="house_condition" placeholder="ความมั่นคง ความสะอาด ความปลอดภัย การเดินทาง"></textarea>
+  <label>สภาพแวดล้อมด้านการเรียน</label>
+  <textarea name="learning_environment" placeholder="สถานที่อ่านหนังสือ อินเทอร์เน็ต อุปกรณ์การเรียน ผู้ดูแลการบ้าน"></textarea>
+  <label>ประเด็นเสี่ยง/ข้อสังเกต</label>
+  <textarea name="risk_notes" placeholder="เช่น ขาดเรียนบ่อย สุขภาพ ความปลอดภัย พฤติกรรม สื่อออนไลน์"></textarea>
+  <label>สิ่งที่ต้องการให้โรงเรียนช่วยเหลือ</label>
+  <textarea name="support_needs" placeholder="ทุน อุปกรณ์การเรียน คำปรึกษา ติดตามพฤติกรรม ประสานหน่วยงาน"></textarea>
+  <button type="submit">บันทึกข้อมูลเยี่ยมบ้าน</button>
+</form>
+{% endif %}
+{% endblock %}

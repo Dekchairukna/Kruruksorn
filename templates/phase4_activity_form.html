@@ -1,0 +1,43 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="section-head-row">
+  <div>
+    <div class="eyebrow">Phase 4 · Activity Form</div>
+    <h1>{{ 'แก้ไขกิจกรรม' if program and program.id else 'เพิ่มกิจกรรมพัฒนาผู้เรียน' }}</h1>
+  </div>
+  <a class="btn secondary" href="{{ url_for('phase4_activities') }}">← กลับ</a>
+</div>
+
+<form class="card form-grid" method="post">
+  <label class="full">ชื่อกิจกรรม
+    <input name="title" required value="{{ program.title if program else '' }}" placeholder="เช่น ลูกเสือสามัญรุ่นใหญ่ / จิตอาสาพัฒนาโรงเรียน">
+  </label>
+  <label>ประเภทกิจกรรม
+    <select name="activity_type">
+      {% for t in ['ชุมนุม','ลูกเสือ','เนตรนารี','ยุวกาชาด','จิตอาสา','กิจกรรมโรงเรียน','กิจกรรมแนะแนว','กิจกรรมเพื่อสังคม'] %}
+        <option value="{{ t }}" {% if program and program.activity_type==t %}selected{% endif %}>{{ t }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>วันที่จัดกิจกรรม
+    <input type="date" name="activity_date" value="{{ program.activity_date.isoformat() if program and program.activity_date else '' }}">
+  </label>
+  <label>จำนวนชั่วโมง
+    <input type="number" name="hours" step="0.5" min="0" value="{{ program.hours if program else 1 }}">
+  </label>
+  <label>ห้องเป้าหมาย
+    <select name="classroom_id">
+      <option value="">ทุกห้องที่รับผิดชอบ</option>
+      {% for room in classrooms %}<option value="{{ room.id }}" {% if program and program.classroom_id==room.id %}selected{% endif %}>{{ room.name }}</option>{% endfor %}
+    </select>
+  </label>
+  {% if program and program.id %}<label class="checkline"><input type="checkbox" name="is_active" value="1" {% if program.is_active %}checked{% endif %}> เปิดใช้งานกิจกรรม</label>{% endif %}
+  <label class="full">รายละเอียด
+    <textarea name="description" rows="5">{{ program.description if program else '' }}</textarea>
+  </label>
+  <div class="full phase1-actions">
+    <button class="btn" type="submit">บันทึก</button>
+    <a class="btn secondary" href="{{ url_for('phase4_activities') }}">ยกเลิก</a>
+  </div>
+</form>
+{% endblock %}

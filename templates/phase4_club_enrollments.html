@@ -1,0 +1,37 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="section-head-row">
+  <div>
+    <div class="eyebrow">Phase 4 · Club Enrollment</div>
+    <h1>รายชื่อชุมนุม: {{ club.name }}</h1>
+    <p class="muted">ลงทะเบียนแล้ว {{ count_active }}/{{ club.max_students or '-' }} คน · {{ club.teacher.full_name if club.teacher else '-' }}</p>
+  </div>
+  <div class="phase1-actions">
+    <a class="btn secondary" href="{{ url_for('phase4_club_export', club_id=club.id) }}">Export Excel</a>
+    <a class="btn secondary" href="{{ url_for('phase4_clubs') }}">← ชุมนุม</a>
+  </div>
+</div>
+
+<form method="post" class="card">
+  <div class="table-wrap">
+    <table>
+      <tr><th>ห้อง</th><th>นักเรียน</th><th>สถานะ</th><th>หมายเหตุ</th></tr>
+      {% for r in rows %}
+        {% set e = enroll_map.get(r.student.id) %}
+        <tr>
+          <td data-label="ห้อง">{{ r.room.name if r.room else '-' }}</td>
+          <td data-label="นักเรียน"><b>{{ r.student.full_name }}</b><br><small>{{ r.student.username }}</small></td>
+          <td data-label="สถานะ">
+            <select name="status_{{ r.student.id }}">
+              <option value="" {% if not e %}selected{% endif %}>ยังไม่เลือก</option>
+              {% for st in ['ลงทะเบียน','สำรอง','ยกเลิก'] %}<option value="{{ st }}" {% if e and e.status==st %}selected{% endif %}>{{ st }}</option>{% endfor %}
+            </select>
+          </td>
+          <td data-label="หมายเหตุ"><input name="note_{{ r.student.id }}" value="{{ e.note if e else '' }}"></td>
+        </tr>
+      {% else %}<tr><td colspan="4">ยังไม่มีนักเรียนในห้องที่รับผิดชอบ</td></tr>{% endfor %}
+    </table>
+  </div>
+  <div class="phase1-actions" style="margin-top:16px"><button class="btn" type="submit">บันทึกรายชื่อ</button></div>
+</form>
+{% endblock %}

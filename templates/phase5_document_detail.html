@@ -1,0 +1,66 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="section-head-row">
+  <div>
+    <div class="eyebrow">{{ doc_type_label(doc.doc_type) }} · {{ doc.register_no or '-' }}</div>
+    <h1>{{ doc.title }}</h1>
+    <p class="muted">{{ doc.document_no or '-' }} · สถานะ {{ doc.status }}</p>
+  </div>
+  <div class="phase1-actions">
+    <a class="btn secondary" href="{{ url_for('phase5_documents') }}">← ทะเบียน</a>
+    <a class="btn secondary" href="{{ url_for('phase5_document_edit', document_id=doc.id) }}">แก้ไข</a>
+    <a class="btn" href="{{ url_for('phase5_document_print', document_id=doc.id) }}" target="_blank">พิมพ์</a>
+  </div>
+</div>
+
+<section class="grid two-col">
+  <div class="card">
+    <h2>ข้อมูลเอกสาร</h2>
+    <div class="phase5-detail-grid">
+      <div><span>เลขทะเบียน</span><b>{{ doc.register_no or '-' }}</b></div>
+      <div><span>เลขที่หนังสือ</span><b>{{ doc.document_no or '-' }}</b></div>
+      <div><span>จาก</span><b>{{ doc.from_org or '-' }}</b></div>
+      <div><span>ถึง</span><b>{{ doc.to_org or '-' }}</b></div>
+      <div><span>วันที่หนังสือ</span><b>{{ thai_date_label(doc.document_date) if doc.document_date else '-' }}</b></div>
+      <div><span>วันที่รับ/ส่ง</span><b>{{ thai_date_label(doc.received_date) if doc.received_date else '-' }}</b></div>
+      <div><span>กำหนดติดตาม</span><b>{{ thai_date_label(doc.due_date) if doc.due_date else '-' }}</b></div>
+      <div><span>ผู้รับผิดชอบ</span><b>{{ doc.responsible_teacher.full_name if doc.responsible_teacher else '-' }}</b></div>
+    </div>
+    <hr>
+    <p><b>รายละเอียด:</b><br>{{ doc.detail or '-' }}</p>
+    <p><b>แนวทางดำเนินการ:</b><br>{{ doc.action_note or '-' }}</p>
+    {% if doc.file_path %}<p><b>ไฟล์แนบ:</b> <a href="{{ url_for('uploaded_file', filename=doc.file_path) }}" target="_blank">{{ doc.file_original_name or 'เปิดไฟล์แนบ' }}</a></p>{% endif %}
+  </div>
+
+  <div class="card">
+    <h2>เกษียน / การดำเนินการ</h2>
+    <form method="post" action="{{ url_for('phase5_document_endorse', document_id=doc.id) }}" class="stack-form">
+      <label>การดำเนินการ
+        <select name="action">
+          <option>เกษียน</option><option>มอบหมาย</option><option>รับทราบ</option><option>ปิดเรื่อง</option>
+        </select>
+      </label>
+      <label>ปรับสถานะ
+        <select name="status">
+          {% for s in statuses %}<option value="{{ s }}" {% if doc.status==s %}selected{% endif %}>{{ s }}</option>{% endfor %}
+        </select>
+      </label>
+      <label>ข้อความเกษียน/หมายเหตุ
+        <textarea name="comment" rows="4" placeholder="เช่น มอบงานครูที่เกี่ยวข้องดำเนินการและรายงานผลภายใน..." required></textarea>
+      </label>
+      <button class="btn" type="submit">บันทึกเกษียน</button>
+    </form>
+  </div>
+</section>
+
+<section class="card">
+  <h2>ประวัติการเกษียน</h2>
+  <div class="phase4-list">
+    {% for e in endorsements %}
+    <div class="phase4-list-item">
+      <div><b>{{ e.action }}</b> โดย {{ e.author.full_name if e.author else '-' }}<br><small>{{ thai_date_short(e.created_at.date()) if e.created_at else '' }} {{ e.created_at.strftime('%H:%M') if e.created_at else '' }}</small><br>{{ e.comment }}</div>
+    </div>
+    {% else %}<p class="muted">ยังไม่มีรายการเกษียน</p>{% endfor %}
+  </div>
+</section>
+{% endblock %}

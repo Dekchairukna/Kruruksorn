@@ -1,0 +1,38 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="section-head-row">
+  <div>
+    <div class="eyebrow">Phase 4 · Activities</div>
+    <h1>กิจกรรมพัฒนาผู้เรียน</h1>
+    <p class="muted">ลูกเสือ เนตรนารี จิตอาสา และกิจกรรมโรงเรียน พร้อมบันทึกชั่วโมง</p>
+  </div>
+  <div class="phase1-actions">
+    <a class="btn secondary" href="{{ url_for('phase4_dashboard') }}">← Phase 4</a>
+    <a class="btn" href="{{ url_for('phase4_activity_new') }}">+ เพิ่มกิจกรรม</a>
+  </div>
+</div>
+
+<section class="card">
+  <div class="table-wrap">
+    <table>
+      <tr><th>กิจกรรม</th><th>ประเภท</th><th>วันที่/ชั่วโมง</th><th>กลุ่มเป้าหมาย</th><th>ครูผู้รับผิดชอบ</th><th>จัดการ</th></tr>
+      {% for p in programs %}
+      <tr>
+        <td data-label="กิจกรรม"><b>{{ p.title }}</b><br><small>{{ p.description[:120] if p.description else '' }}</small></td>
+        <td data-label="ประเภท"><span class="tag ok-tag">{{ p.activity_type }}</span></td>
+        <td data-label="วันที่/ชั่วโมง">{{ thai_date_short(p.activity_date) if p.activity_date else '-' }}<br><small>{{ p.hours }} ชั่วโมง</small></td>
+        <td data-label="กลุ่มเป้าหมาย">{{ p.classroom.name if p.classroom else 'ทุกห้องที่รับผิดชอบ' }}</td>
+        <td data-label="ครู">{{ p.teacher.full_name if p.teacher else '-' }}</td>
+        <td data-label="จัดการ" class="phase1-actions">
+          <a class="btn small" href="{{ url_for('phase4_activity_attendance', program_id=p.id) }}">เช็กกิจกรรม</a>
+          <a class="btn small secondary" href="{{ url_for('phase4_activity_edit', program_id=p.id) }}">แก้ไข</a>
+          <a class="btn small secondary" href="{{ url_for('phase4_activity_export', program_id=p.id) }}">Excel</a>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6">ยังไม่มีกิจกรรม</td></tr>
+      {% endfor %}
+    </table>
+  </div>
+</section>
+{% endblock %}

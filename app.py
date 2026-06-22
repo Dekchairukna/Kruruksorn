@@ -19,6 +19,7 @@ from openpyxl import load_workbook, Workbook
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 from sqlalchemy import inspect as sa_inspect
+from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 INSTANCE_DIR = os.path.join(BASE_DIR, 'instance')
@@ -379,7 +380,7 @@ def split_thai_full_name(full_name):
 
 def fill_student_personal_fields(user, form):
     """บันทึกข้อมูลพื้นฐานนักเรียนจากฟอร์ม โดยไม่กระทบประวัติเช็กชื่อ/คะแนน"""
-    for field in ['citizen_id','birth_date','student_no','prefix','first_name','last_name','gender','nationality','ethnicity','religion','blood_type','phone','address','guardian_name','guardian_phone']:
+    for field in ['citizen_id','birth_date','student_no','prefix','first_name','last_name','gender','nationality','ethnicity','religion','blood_type','phone','address','guardian_name','guardian_phone','guardian_line_user_id']:
         if field in form:
             setattr(user, field, (form.get(field) or '').strip())
     # ถ้าแยกชื่อไว้ ให้ประกอบ full_name อัตโนมัติ แต่ยังยอมให้กรอก full_name เองได้
@@ -449,6 +450,7 @@ class User(db.Model, UserMixin):
     address = db.Column(db.Text, default='')
     guardian_name = db.Column(db.String(255), default='')
     guardian_phone = db.Column(db.String(50), default='')
+    guardian_line_user_id = db.Column(db.String(120), default='')
 
     def set_password(self, password):
         self.password_hash = generate_password_hash(str(password))
@@ -481,9 +483,9 @@ def get_school_setting():
 @app.context_processor
 def inject_school_setting():
     try:
-        return {'school_setting': get_school_setting(), 'teacher_position_choices': TEACHER_POSITION_CHOICES}
+        return {'school_setting': get_school_setting(), 'teacher_position_choices': TEACHER_POSITION_CHOICES, 'thai_date_label': thai_date_label, 'thai_date_short': thai_date_short}
     except Exception:
-        return {'school_setting': None, 'teacher_position_choices': TEACHER_POSITION_CHOICES}
+        return {'school_setting': None, 'teacher_position_choices': TEACHER_POSITION_CHOICES, 'thai_date_label': thai_date_label, 'thai_date_short': thai_date_short}
 
 
 class Semester(db.Model):
@@ -746,6 +748,166 @@ class Attendance(db.Model):
     checked_by = db.relationship('User', foreign_keys=[checked_by_id])
     substitute_for_teacher = db.relationship('User', foreign_keys=[substitute_for_teacher_id])
 
+
+# -----------------------------
+# Phase 3: SDQ / Home Visit / Student Care
+# -----------------------------
+class SDQAssessment(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    student_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    assessor_type = db.Column(db.String(30), default='teacher')  # teacher, parent, student
+    assessor_name = db.Column(db.String(255), default='')
+    assessment_date = db.Column(db.Date, default=date.today)
+    answers_json = db.Column(db.Text, default='{}')
+    emotional_score = db.Column(db.Integer, default=0)
+    conduct_score = db.Column(db.Integer, default=0)
+    hyperactivity_score = db.Column(db.Integer, default=0)
+    peer_score = db.Column(db.Integer, default=0)
+    prosocial_score = db.Column(db.Integer, default=0)
+    total_difficulties = db.Column(db.Integer, default=0)
+    risk_level = db.Column(db.String(30), default='ปกติ')
+    impact_note = db.Column(db.Text, default='')
+    created_by_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    student = db.relationship('User', foreign_keys=[student_id])
+    created_by = db.relationship('User', foreign_keys=[created_by_id])
+
+
+class HomeVisit(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    student_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    visit_date = db.Column(db.Date, default=date.today)
+    visitor_teacher_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    guardian_name = db.Column(db.String(255), default='')
+    guardian_relation = db.Column(db.String(100), default='')
+    family_status = db.Column(db.String(255), default='')
+    house_condition = db.Column(db.Text, default='')
+    income_status = db.Column(db.String(255), default='')
+    learning_environment = db.Column(db.Text, default='')
+    risk_notes = db.Column(db.Text, default='')
+    support_needs = db.Column(db.Text, default='')
+    parent_submitted = db.Column(db.Boolean, default=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    student = db.relationship('User', foreign_keys=[student_id])
+    visitor_teacher = db.relationship('User', foreign_keys=[visitor_teacher_id])
+
+
+class StudentCareRecord(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    student_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    category = db.Column(db.String(100), default='ทั่วไป')
+    risk_level = db.Column(db.String(30), default='เฝ้าระวัง')
+    issue = db.Column(db.Text, default='')
+    action_plan = db.Column(db.Text, default='')
+    responsible_teacher_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    follow_up_date = db.Column(db.Date, nullable=True)
+    status = db.Column(db.String(30), default='กำลังติดตาม')
+    result_note = db.Column(db.Text, default='')
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    student = db.relationship('User', foreign_keys=[student_id])
+    responsible_teacher = db.relationship('User', foreign_keys=[responsible_teacher_id])
+
+
+# -----------------------------
+# Phase 4: Clubs / Student Activities
+# -----------------------------
+class Club(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(255), nullable=False)
+    description = db.Column(db.Text, default='')
+    teacher_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    max_students = db.Column(db.Integer, default=30)
+    grade_scope = db.Column(db.String(255), default='ทุกระดับชั้น')
+    meeting_day = db.Column(db.String(50), default='')
+    meeting_time = db.Column(db.String(50), default='')
+    location = db.Column(db.String(255), default='')
+    registration_open = db.Column(db.Boolean, default=True)
+    is_active = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    teacher = db.relationship('User', foreign_keys=[teacher_id])
+
+
+class ClubEnrollment(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    club_id = db.Column(db.Integer, db.ForeignKey('club.id'), nullable=False)
+    student_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    status = db.Column(db.String(30), default='ลงทะเบียน')  # ลงทะเบียน, สำรอง, ยกเลิก
+    joined_at = db.Column(db.DateTime, default=datetime.utcnow)
+    note = db.Column(db.String(255), default='')
+    club = db.relationship('Club')
+    student = db.relationship('User', foreign_keys=[student_id])
+
+
+class StudentActivityProgram(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    title = db.Column(db.String(255), nullable=False)
+    activity_type = db.Column(db.String(80), default='กิจกรรมพัฒนาผู้เรียน')  # ลูกเสือ, เนตรนารี, จิตอาสา, กิจกรรมโรงเรียน
+    activity_date = db.Column(db.Date, nullable=True)
+    hours = db.Column(db.Float, default=1.0)
+    classroom_id = db.Column(db.Integer, db.ForeignKey('classroom.id'), nullable=True)
+    target_scope = db.Column(db.String(80), default='all')  # all, classroom
+    teacher_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    description = db.Column(db.Text, default='')
+    is_active = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    classroom = db.relationship('Classroom')
+    teacher = db.relationship('User', foreign_keys=[teacher_id])
+
+
+class StudentActivityRecord(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    program_id = db.Column(db.Integer, db.ForeignKey('student_activity_program.id'), nullable=False)
+    student_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    status = db.Column(db.String(30), default='เข้าร่วม')  # เข้าร่วม, ขาด, ลา, ยกเว้น
+    hours = db.Column(db.Float, default=0)
+    note = db.Column(db.String(255), default='')
+    checked_by_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    checked_at = db.Column(db.DateTime, default=datetime.utcnow)
+    program = db.relationship('StudentActivityProgram')
+    student = db.relationship('User', foreign_keys=[student_id])
+    checked_by = db.relationship('User', foreign_keys=[checked_by_id])
+
+
+# -----------------------------
+# Phase 5: E-Saraban / Official Documents
+# -----------------------------
+class OfficialDocument(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    doc_type = db.Column(db.String(40), default='incoming')  # incoming, outgoing, order, announcement, memo
+    register_no = db.Column(db.String(80), default='')
+    document_no = db.Column(db.String(120), default='')
+    title = db.Column(db.String(500), nullable=False)
+    from_org = db.Column(db.String(255), default='')
+    to_org = db.Column(db.String(255), default='')
+    document_date = db.Column(db.Date, nullable=True)
+    received_date = db.Column(db.Date, nullable=True)
+    due_date = db.Column(db.Date, nullable=True)
+    priority = db.Column(db.String(40), default='ปกติ')  # ปกติ, ด่วน, ด่วนมาก, ด่วนที่สุด
+    confidentiality = db.Column(db.String(40), default='ปกติ')  # ปกติ, ลับ, ลับมาก
+    status = db.Column(db.String(50), default='รอดำเนินการ')  # รอดำเนินการ, กำลังดำเนินการ, เสร็จสิ้น, เก็บเรื่อง
+    responsible_teacher_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    detail = db.Column(db.Text, default='')
+    action_note = db.Column(db.Text, default='')
+    file_path = db.Column(db.String(500), default='')
+    file_original_name = db.Column(db.String(255), default='')
+    created_by_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    responsible_teacher = db.relationship('User', foreign_keys=[responsible_teacher_id])
+    created_by = db.relationship('User', foreign_keys=[created_by_id])
+
+
+class DocumentEndorsement(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    document_id = db.Column(db.Integer, db.ForeignKey('official_document.id'), nullable=False)
+    author_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    action = db.Column(db.String(80), default='เกษียน')  # เกษียน, มอบหมาย, รับทราบ, ปิดเรื่อง
+    comment = db.Column(db.Text, default='')
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    document = db.relationship('OfficialDocument')
+    author = db.relationship('User', foreign_keys=[author_id])
+
 class GradeSetting(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     subject_id = db.Column(db.Integer, db.ForeignKey('subject.id'), nullable=False)
@@ -971,12 +1133,14 @@ def get_grade_setting(subject_id):
         db.session.commit()
     return setting
 
-def get_manual_score(subject_id, student_id):
+def get_manual_score(subject_id, student_id, create=True):
     row = ManualScore.query.filter_by(subject_id=subject_id, student_id=student_id).first()
-    if not row:
+    if not row and create:
         row = ManualScore(subject_id=subject_id, student_id=student_id)
         db.session.add(row)
         db.session.flush()
+    if not row:
+        return SimpleNamespace(midterm=0, final=0, behavior=0)
     return row
 
 def calculate_classwork_percent(subject_id, classroom_id, student_id):
@@ -997,7 +1161,7 @@ def calculate_classwork_percent(subject_id, classroom_id, student_id):
         raw_total += min(max(float(row.score or 0), 0), float(item.max_score or 0)) if row else 0
     return (raw_total / max_total) * 100, raw_total, max_total
 
-def calculate_grade_row(subject, room, student):
+def calculate_grade_row(subject, room, student, create_manual=True):
     setting = get_grade_setting(subject.id)
     statuses = AssignmentStatus.query.join(Assignment).filter(
         Assignment.subject_id==subject.id,
@@ -1018,7 +1182,7 @@ def calculate_grade_row(subject, room, student):
     total_att = len(atts)
     bad_units = absent + skipped + leave + (late * 0.5)
     attendance_percent = max(0, 100 - (bad_units * 5)) if total_att else 100
-    manual = get_manual_score(subject.id, student.id)
+    manual = get_manual_score(subject.id, student.id, create=create_manual)
     classwork_percent, classwork_raw, classwork_max = calculate_classwork_percent(subject.id, room.id, student.id)
     classwork_weight = float(getattr(setting, 'classwork_weight', 0) or 0)
     worksheet_score = completion_percent * (setting.worksheet_weight / 100)
@@ -1851,10 +2015,10 @@ def build_school_erp_modules():
                 _erp_feature('ฐานข้อมูลนักเรียน', 'ข้อมูลพื้นฐาน นักเรียน ผู้ปกครอง สุขภาพ และข้อมูลติดต่อ', endpoint='classrooms', tag='เดิม'),
                 _erp_feature('เช็กชื่อเข้าเรียน', 'มา สาย ลา ขาด ไปกิจกรรม พร้อมรายงานรายวัน', endpoint='attendance_dashboard', tag='เดิม'),
                 _erp_feature('แจ้งเตือนผู้ปกครอง', 'เตรียมต่อ LINE/Email จากข้อมูลการขาดเรียนและสาย', status='ต่อยอด'),
-                _erp_feature('เยี่ยมบ้านออนไลน์', 'แบบฟอร์มครูและผู้ปกครอง พร้อมรูปบ้านและแผนที่', status='ต้นแบบ'),
-                _erp_feature('แบบประเมิน SDQ', 'นักเรียน ผู้ปกครอง และครูทำแบบประเมินออนไลน์', status='ต้นแบบ'),
+                _erp_feature('เยี่ยมบ้านออนไลน์', 'แบบฟอร์มครูและผู้ปกครอง พร้อมข้อมูลสภาพครอบครัวและความต้องการช่วยเหลือ', endpoint='phase3_home_visits', tag='Phase 3'),
+                _erp_feature('แบบประเมิน SDQ', 'นักเรียน ผู้ปกครอง และครูทำแบบประเมินออนไลน์', endpoint='phase3_sdq', tag='Phase 3'),
                 _erp_feature('พฤติกรรม/ความประพฤติ', 'บันทึกความดี ความผิด คะแนนพฤติกรรม และหมายเหตุรายบุคคล', status='ต้นแบบ'),
-                _erp_feature('ทุนการศึกษา/กลุ่มช่วยเหลือ', 'จัดกลุ่มนักเรียนที่ต้องติดตามและช่วยเหลือ', status='ต้นแบบ'),
+                _erp_feature('ทุนการศึกษา/กลุ่มช่วยเหลือ', 'จัดกลุ่มนักเรียนที่ต้องติดตามและช่วยเหลือ', endpoint='phase3_care_records', tag='Phase 3'),
             ],
         },
         {
@@ -1878,10 +2042,10 @@ def build_school_erp_modules():
             'subtitle': 'ชุมนุม ลูกเสือ เนตรนารี จิตอาสา และกิจกรรมโรงเรียน',
             'color': 'purple',
             'features': [
-                _erp_feature('ลงทะเบียนชุมนุม/ชมรม', 'นักเรียนเลือกชุมนุมผ่านเว็บ จำกัดจำนวน และตรวจสอบสิทธิ์', status='ต้นแบบ'),
-                _erp_feature('รายชื่อนักเรียนในชุมนุม', 'ครูที่ปรึกษาดูรายชื่อและส่งออก Excel', status='ต้นแบบ'),
-                _erp_feature('บันทึกกิจกรรมลูกเสือ/เนตรนารี', 'บันทึกการเข้าร่วมรายวัน/รายกิจกรรม', status='ต้นแบบ'),
-                _erp_feature('กิจกรรมเพื่อสังคม/จิตอาสา', 'เก็บชั่วโมงกิจกรรมและรายงานนักเรียน', status='ต้นแบบ'),
+                _erp_feature('ลงทะเบียนชุมนุม/ชมรม', 'นักเรียนเลือกชุมนุมผ่านเว็บ จำกัดจำนวน และตรวจสอบสิทธิ์', endpoint='phase4_clubs', tag='Phase 4'),
+                _erp_feature('รายชื่อนักเรียนในชุมนุม', 'ครูที่ปรึกษาดูรายชื่อและส่งออก Excel', endpoint='phase4_clubs', tag='Phase 4'),
+                _erp_feature('บันทึกกิจกรรมลูกเสือ/เนตรนารี', 'บันทึกการเข้าร่วมรายวัน/รายกิจกรรม', endpoint='phase4_activities', tag='Phase 4'),
+                _erp_feature('กิจกรรมเพื่อสังคม/จิตอาสา', 'เก็บชั่วโมงกิจกรรมและรายงานนักเรียน', endpoint='phase4_activities', tag='Phase 4'),
                 _erp_feature('กิจกรรมประจำห้อง', 'เช็กชื่อกิจกรรมหน้าเสาธง/กิจกรรมพิเศษ', endpoint='classrooms', tag='เดิม'),
             ],
         },
@@ -1920,12 +2084,12 @@ def build_school_erp_modules():
             'subtitle': 'หนังสือรับ หนังสือส่ง คำสั่ง ประกาศ บันทึกข้อความ และเกษียน',
             'color': 'orange',
             'features': [
-                _erp_feature('ทะเบียนหนังสือรับ', 'ลงรับหนังสือ เลขรับ วันที่รับ และผู้รับผิดชอบ', status='ต้นแบบ'),
-                _erp_feature('ทะเบียนหนังสือส่ง', 'เลขส่ง หน่วยงานปลายทาง และไฟล์แนบ PDF', status='ต้นแบบ'),
-                _erp_feature('คำสั่งโรงเรียน', 'สร้างคำสั่งจาก Template และออกเลขอัตโนมัติ', status='ต้นแบบ'),
-                _erp_feature('ประกาศโรงเรียน', 'ประกาศภายใน/ภายนอก พร้อมไฟล์แนบ', status='ต้นแบบ'),
-                _erp_feature('บันทึกข้อความ', 'ร่างและพิมพ์บันทึกข้อความรูปแบบราชการ', status='ต้นแบบ'),
-                _erp_feature('เกษียนออนไลน์', 'เกษียนบนเอกสารจริงและติดตามสถานะ', status='ต้นแบบ'),
+                _erp_feature('ทะเบียนหนังสือรับ', 'ลงรับหนังสือ เลขรับ วันที่รับ และผู้รับผิดชอบ', endpoint='phase5_documents', tag='Phase 5'),
+                _erp_feature('ทะเบียนหนังสือส่ง', 'เลขส่ง หน่วยงานปลายทาง และไฟล์แนบ PDF', endpoint='phase5_documents', tag='Phase 5'),
+                _erp_feature('คำสั่งโรงเรียน', 'สร้างคำสั่งจาก Template และออกเลขอัตโนมัติ', endpoint='phase5_documents', tag='Phase 5'),
+                _erp_feature('ประกาศโรงเรียน', 'ประกาศภายใน/ภายนอก พร้อมไฟล์แนบ', endpoint='phase5_documents', tag='Phase 5'),
+                _erp_feature('บันทึกข้อความ', 'ร่างและพิมพ์บันทึกข้อความรูปแบบราชการ', endpoint='phase5_documents', tag='Phase 5'),
+                _erp_feature('เกษียนออนไลน์', 'เกษียน/มอบหมาย/รับทราบ และติดตามสถานะ', endpoint='phase5_documents', tag='Phase 5'),
             ],
         },
         {
@@ -5957,6 +6121,1326 @@ def export_grades(subject_id, classroom_id):
     path=os.path.join(UPLOAD_DIR, f'grades_{subject_id}_{classroom_id}.xlsx'); wb.save(path)
     return send_file(path, as_attachment=True)
 
+
+# -----------------------------
+# Phase 1: Academic core dashboard + ปพ.5
+# -----------------------------
+def phase1_subject_room_pairs():
+    """คู่รายวิชา/ห้องเรียนที่ผู้ใช้มีสิทธิ์ดู ใช้เป็นฐานของ Phase 1"""
+    subject_ids = teacher_subject_ids()
+    room_ids = teacher_classroom_ids()
+    return SubjectClassroom.query.filter(
+        SubjectClassroom.subject_id.in_(subject_ids or [-1]),
+        SubjectClassroom.classroom_id.in_(room_ids or [-1])
+    ).join(Subject, SubjectClassroom.subject_id == Subject.id).join(Classroom, SubjectClassroom.classroom_id == Classroom.id).order_by(Subject.name.asc(), Classroom.name.asc()).all()
+
+
+def phase1_pair_status(pair):
+    links = ClassroomStudent.query.filter_by(classroom_id=pair.classroom_id).all()
+    student_count = len(links)
+    attendance_slots, _, attendance_summary = build_attendance_summary(pair.subject_id, pair.classroom_id, links)
+    graded_count = 0
+    rows = []
+    for link in links:
+        row = calculate_grade_row(pair.subject, pair.classroom, link.student)
+        rows.append(row)
+        if (row['manual'].midterm or 0) or (row['manual'].final or 0) or (row['manual'].behavior or 0) or row['total_assignments'] or row['classwork_max']:
+            graded_count += 1
+    avg_score = round(sum(r['total'] for r in rows) / len(rows), 2) if rows else 0
+    risk_count = sum(1 for r in rows if r['total'] < 50)
+    low_attendance = sum(1 for r in attendance_summary if r.get('percent', 100) < 80)
+    return {
+        'student_count': student_count,
+        'attendance_slots': len(attendance_slots),
+        'graded_count': graded_count,
+        'avg_score': avg_score,
+        'risk_count': risk_count,
+        'low_attendance': low_attendance,
+    }
+
+
+@app.route('/phase1')
+@login_required
+@role_required('teacher', 'admin')
+def phase1_dashboard():
+    pairs = phase1_subject_room_pairs()
+    pair_rows = []
+    total_students = User.query.filter_by(role='student', is_active=True).count() if current_user.role == 'admin' else 0
+    for p in pairs:
+        status = phase1_pair_status(p)
+        pair_rows.append({'pair': p, **status})
+        if current_user.role != 'admin':
+            total_students += status['student_count']
+    stats = {
+        'classrooms': Classroom.query.filter_by(is_active=True).count() if current_user.role == 'admin' else len(set([p.classroom_id for p in pairs])),
+        'subjects': Subject.query.filter_by(is_active=True).count() if current_user.role == 'admin' else len(set([p.subject_id for p in pairs])),
+        'students': total_students,
+        'pairs': len(pairs),
+        'attendance_slots': sum(r['attendance_slots'] for r in pair_rows),
+        'risk_count': sum(r['risk_count'] for r in pair_rows),
+        'low_attendance': sum(r['low_attendance'] for r in pair_rows),
+    }
+    active_semester = Semester.query.filter_by(is_active=True).first()
+    return render_template('phase1_dashboard.html', stats=stats, pair_rows=pair_rows, active_semester=active_semester)
+
+
+def build_pp5_rows(subject, room):
+    links = ClassroomStudent.query.filter_by(classroom_id=room.id).join(User, ClassroomStudent.student_id == User.id).order_by(User.username.asc(), User.full_name.asc()).all()
+    rows = []
+    for idx, link in enumerate(links, start=1):
+        r = calculate_grade_row(subject, room, link.student)
+        attended = r['present'] + r['late'] + r['activity']
+        absent_total = r['absent'] + r['skipped'] + r['leave']
+        rows.append({
+            'no': idx,
+            'student': link.student,
+            'student_no': link.student.student_no or idx,
+            'attended': attended,
+            'absent_total': absent_total,
+            'late': r['late'],
+            'activity': r['activity'],
+            'worksheet_score': r['worksheet_score'],
+            'quiz_score': r['quiz_score'],
+            'classwork_score': r['classwork_score'],
+            'attendance_score': r['attendance_score'],
+            'midterm': r['manual'].midterm or 0,
+            'final': r['manual'].final or 0,
+            'behavior': r['manual'].behavior or 0,
+            'total': r['total'],
+            'grade': r['grade'],
+            'grade_row': r,
+        })
+    return rows
+
+
+@app.route('/pp5/<int:subject_id>/<int:classroom_id>')
+@login_required
+@role_required('teacher', 'admin')
+def pp5_print(subject_id, classroom_id):
+    subject = Subject.query.get_or_404(subject_id)
+    room = Classroom.query.get_or_404(classroom_id)
+    if not owns_subject(subject) or not owns_classroom(room):
+        return deny_redirect('records_center')
+    setting = get_grade_setting(subject.id)
+    rows = build_pp5_rows(subject, room)
+    active_semester = Semester.query.filter_by(is_active=True).first()
+    return render_template(
+        'pp5_print.html', subject=subject, room=room, rows=rows,
+        grade_setting=setting, active_semester=active_semester,
+        school=get_school_setting(), signer=current_user,
+        generated_at=local_now()
+    )
+
+
+@app.route('/pp5/<int:subject_id>/<int:classroom_id>/export')
+@login_required
+@role_required('teacher', 'admin')
+def pp5_export(subject_id, classroom_id):
+    subject = Subject.query.get_or_404(subject_id)
+    room = Classroom.query.get_or_404(classroom_id)
+    if not owns_subject(subject) or not owns_classroom(room):
+        return deny_redirect('records_center')
+    rows = build_pp5_rows(subject, room)
+    wb = Workbook()
+    ws = wb.active
+    ws.title = 'ปพ5'
+    school = get_school_setting()
+    active_semester = Semester.query.filter_by(is_active=True).first()
+    ws.append([school.school_name or 'KRURUKSORN'])
+    ws.append(['แบบบันทึกผลการพัฒนาคุณภาพผู้เรียนรายวิชา (ปพ.5)'])
+    ws.append(['รายวิชา', subject.name, 'ห้อง', room.name, 'ภาคเรียน', active_semester.name if active_semester else '-'])
+    ws.append([])
+    headers = ['ที่', 'เลขที่', 'รหัส/username', 'ชื่อ - สกุล', 'มาเรียน', 'ขาด/ลา/โดด', 'สาย', 'กิจกรรม', 'ใบงาน', 'แบบทดสอบ', 'คะแนนในคาบ', 'เวลาเรียน', 'กลางภาค', 'ปลายภาค', 'คุณลักษณะฯ', 'รวม', 'เกรด']
+    ws.append(headers)
+    for r in rows:
+        ws.append([
+            r['no'], r['student_no'], r['student'].username, r['student'].full_name,
+            r['attended'], r['absent_total'], r['late'], r['activity'],
+            r['worksheet_score'], r['quiz_score'], r['classwork_score'], r['attendance_score'],
+            r['midterm'], r['final'], r['behavior'], r['total'], r['grade']
+        ])
+    for col in ws.columns:
+        max_len = max(len(str(c.value or '')) for c in col)
+        ws.column_dimensions[col[0].column_letter].width = min(max(max_len + 2, 10), 42)
+    path = os.path.join(UPLOAD_DIR, f'pp5_{subject_id}_{classroom_id}.xlsx')
+    wb.save(path)
+    return send_file(path, as_attachment=True, download_name=f'pp5_{subject.name}_{room.name}.xlsx')
+
+# -----------------------------
+# Phase 2: ปพ.6 / ปพ.7 / Parent portal / LINE absence
+# -----------------------------
+def phase2_student_links():
+    """รายชื่อนักเรียนตามสิทธิ์ครู/แอดมิน พร้อมห้องเรียน"""
+    if current_user.role == 'admin':
+        q = ClassroomStudent.query.join(User, ClassroomStudent.student_id == User.id).join(Classroom, ClassroomStudent.classroom_id == Classroom.id)
+    else:
+        q = ClassroomStudent.query.filter(ClassroomStudent.classroom_id.in_(teacher_classroom_ids() or [-1])).join(User, ClassroomStudent.student_id == User.id).join(Classroom, ClassroomStudent.classroom_id == Classroom.id)
+    return q.filter(User.role == 'student', db.or_(User.is_active == True, User.is_active.is_(None))).order_by(Classroom.name.asc(), User.username.asc(), User.full_name.asc()).all()
+
+
+def phase2_student_rooms(student_id):
+    return ClassroomStudent.query.filter_by(student_id=student_id).join(Classroom, ClassroomStudent.classroom_id == Classroom.id).order_by(Classroom.name.asc()).all()
+
+
+def phase2_student_pairs(student_id):
+    room_links = phase2_student_rooms(student_id)
+    room_ids = [x.classroom_id for x in room_links]
+    if not room_ids:
+        return []
+    return SubjectClassroom.query.filter(SubjectClassroom.classroom_id.in_(room_ids)).join(Subject, SubjectClassroom.subject_id == Subject.id).join(Classroom, SubjectClassroom.classroom_id == Classroom.id).order_by(Classroom.name.asc(), Subject.name.asc()).all()
+
+
+def build_student_report_rows(student, readonly=False):
+    rows = []
+    for pair in phase2_student_pairs(student.id):
+        r = calculate_grade_row(pair.subject, pair.classroom, student, create_manual=not readonly)
+        rows.append({
+            'subject': pair.subject,
+            'room': pair.classroom,
+            'grade_row': r,
+            'teacher_name': pair.subject.teacher.full_name if pair.subject and pair.subject.teacher else '-',
+        })
+    return rows
+
+
+def student_primary_room(student_id):
+    link = phase2_student_rooms(student_id)[0] if phase2_student_rooms(student_id) else None
+    return link.classroom if link else None
+
+
+def parent_token_serializer():
+    return URLSafeTimedSerializer(app.config['SECRET_KEY'], salt='kruruksorn-parent-portal-v1')
+
+
+def make_parent_token(student_id):
+    return parent_token_serializer().dumps({'sid': int(student_id)})
+
+
+def load_parent_token(token, max_age=60*60*24*365):
+    try:
+        data = parent_token_serializer().loads(token, max_age=max_age)
+        return User.query.filter_by(id=int(data.get('sid')), role='student').first()
+    except (BadSignature, SignatureExpired, ValueError, TypeError):
+        return None
+
+
+def parent_link_for_student(student):
+    return url_for('parent_portal', token=make_parent_token(student.id), _external=True)
+
+
+def line_channel_ready():
+    return bool((os.environ.get('LINE_CHANNEL_ACCESS_TOKEN') or '').strip())
+
+
+def line_push_text(line_user_id, text):
+    token = (os.environ.get('LINE_CHANNEL_ACCESS_TOKEN') or '').strip()
+    if not token:
+        raise RuntimeError('ยังไม่ได้ตั้งค่า LINE_CHANNEL_ACCESS_TOKEN')
+    if not line_user_id:
+        raise RuntimeError('ยังไม่มี LINE userId ของผู้ปกครอง')
+    payload = {
+        'to': line_user_id.strip(),
+        'messages': [{'type': 'text', 'text': text[:4900]}]
+    }
+    req = urllib.request.Request(
+        'https://api.line.me/v2/bot/message/push',
+        data=json.dumps(payload).encode('utf-8'),
+        headers={
+            'Authorization': f'Bearer {token}',
+            'Content-Type': 'application/json',
+        },
+        method='POST'
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            return resp.status
+    except urllib.error.HTTPError as e:
+        body = e.read().decode('utf-8', errors='replace')
+        raise RuntimeError(f'LINE API error {e.code}: {body[:500]}')
+    except Exception as e:
+        raise RuntimeError(f'ส่ง LINE ไม่สำเร็จ: {e}')
+
+
+def build_absence_message(student, rows, report_date):
+    school = get_school_setting()
+    school_name = school.school_name if school and school.school_name else 'โรงเรียน'
+    room = student_primary_room(student.id)
+    items = []
+    for a in rows:
+        p = f'คาบ {a.period_no}' if a.period_no else 'คาบเรียน'
+        items.append(f'- {p} {a.subject.name if a.subject else "รายวิชา"}: {a.status}')
+    return (
+        f'แจ้งผู้ปกครองจาก {school_name}\n'
+        f'วันที่ {thai_date_label(report_date)}\n'
+        f'นักเรียน: {student.full_name}\n'
+        f'ห้อง: {room.name if room else "-"}\n'
+        f'สถานะการเข้าเรียน:\n' + '\n'.join(items) +
+        '\n\nหากข้อมูลไม่ถูกต้อง กรุณาติดต่อครูประจำชั้น/ครูผู้สอน'
+    )
+
+
+def phase2_absence_rows(report_date):
+    q = Attendance.query.filter_by(date=report_date)
+    q = q.filter(Attendance.status.in_(['ขาด', 'โดดเรียน']))
+    if current_user.role != 'admin':
+        q = q.filter(
+            Attendance.subject_id.in_(teacher_subject_ids() or [-1]),
+            Attendance.classroom_id.in_(teacher_classroom_ids() or [-1])
+        )
+    records = q.order_by(Attendance.classroom_id.asc(), Attendance.student_id.asc(), Attendance.period_no.asc()).all()
+    grouped = {}
+    for a in records:
+        grouped.setdefault(a.student_id, []).append(a)
+    rows = []
+    for sid, items in grouped.items():
+        student = items[0].student
+        rows.append({
+            'student': student,
+            'room': student_primary_room(student.id),
+            'items': items,
+            'message': build_absence_message(student, items, report_date),
+            'has_line': bool((getattr(student, 'guardian_line_user_id', '') or '').strip()),
+        })
+    return rows
+
+
+@app.route('/phase2')
+@login_required
+@role_required('teacher', 'admin')
+def phase2_dashboard():
+    links = phase2_student_links()
+    seen = set()
+    students = []
+    for link in links:
+        if link.student_id not in seen:
+            seen.add(link.student_id)
+            students.append({'student': link.student, 'room': link.classroom, 'parent_url': parent_link_for_student(link.student)})
+    today = local_today()
+    absent_rows = phase2_absence_rows(today)
+    stats = {
+        'students': len(students),
+        'parent_ready': sum(1 for x in students if (x['student'].guardian_phone or x['student'].guardian_line_user_id)),
+        'line_ready': sum(1 for x in students if x['student'].guardian_line_user_id),
+        'absent_today': len(absent_rows),
+    }
+    return render_template('phase2_dashboard.html', students=students, stats=stats, today=today, line_ready=line_channel_ready())
+
+
+@app.route('/pp6/<int:student_id>')
+@login_required
+@role_required('teacher', 'admin')
+def pp6_print(student_id):
+    student = User.query.filter_by(id=student_id, role='student').first_or_404()
+    room = student_primary_room(student.id)
+    if current_user.role != 'admin' and (not room or not owns_classroom(room)):
+        return deny_redirect('phase2_dashboard')
+    rows = build_student_report_rows(student)
+    return render_template(
+        'pp6_print.html', student=student, room=room, rows=rows,
+        active_semester=Semester.query.filter_by(is_active=True).first(),
+        school=get_school_setting(), signer=current_user, generated_at=local_now()
+    )
+
+
+@app.route('/pp6/<int:student_id>/export')
+@login_required
+@role_required('teacher', 'admin')
+def pp6_export(student_id):
+    student = User.query.filter_by(id=student_id, role='student').first_or_404()
+    room = student_primary_room(student.id)
+    if current_user.role != 'admin' and (not room or not owns_classroom(room)):
+        return deny_redirect('phase2_dashboard')
+    rows = build_student_report_rows(student)
+    wb = Workbook()
+    ws = wb.active
+    ws.title = 'ปพ6'
+    school = get_school_setting()
+    active_semester = Semester.query.filter_by(is_active=True).first()
+    ws.append([school.school_name or 'KRURUKSORN'])
+    ws.append(['รายงานผลการเรียนรายบุคคล (ปพ.6)'])
+    ws.append(['นักเรียน', student.full_name, 'ห้อง', room.name if room else '-', 'ภาคเรียน', active_semester.name if active_semester else '-'])
+    ws.append([])
+    ws.append(['ที่', 'รายวิชา', 'ห้อง', 'ครูผู้สอน', 'คะแนนรวม', 'เกรด'])
+    for idx, r in enumerate(rows, start=1):
+        ws.append([idx, r['subject'].name, r['room'].name, r['teacher_name'], r['grade_row']['total'], r['grade_row']['grade']])
+    for col in ws.columns:
+        max_len = max(len(str(c.value or '')) for c in col)
+        ws.column_dimensions[col[0].column_letter].width = min(max(max_len + 2, 10), 48)
+    path = os.path.join(UPLOAD_DIR, f'pp6_{student.id}.xlsx')
+    wb.save(path)
+    return send_file(path, as_attachment=True, download_name=f'pp6_{student.full_name}.xlsx')
+
+
+@app.route('/pp7/<int:student_id>')
+@login_required
+@role_required('teacher', 'admin')
+def pp7_print(student_id):
+    student = User.query.filter_by(id=student_id, role='student').first_or_404()
+    room = student_primary_room(student.id)
+    if current_user.role != 'admin' and (not room or not owns_classroom(room)):
+        return deny_redirect('phase2_dashboard')
+    return render_template(
+        'pp7_print.html', student=student, room=room,
+        active_semester=Semester.query.filter_by(is_active=True).first(),
+        school=get_school_setting(), signer=current_user, generated_at=local_now()
+    )
+
+
+@app.route('/parent/<token>')
+def parent_portal(token):
+    student = load_parent_token(token)
+    if not student:
+        return render_template('parent_portal.html', invalid=True)
+    room = student_primary_room(student.id)
+    rows = build_student_report_rows(student, readonly=True)
+    att_rows = Attendance.query.filter_by(student_id=student.id).order_by(Attendance.date.desc(), Attendance.period_no.desc()).limit(30).all()
+    return render_template(
+        'parent_portal.html', invalid=False, student=student, room=room, rows=rows,
+        attendance_rows=att_rows, school=get_school_setting(), generated_at=local_now()
+    )
+
+
+@app.route('/phase2/guardian-settings', methods=['GET', 'POST'])
+@login_required
+@role_required('teacher', 'admin')
+def phase2_guardian_settings():
+    links = phase2_student_links()
+    if request.method == 'POST':
+        for link in links:
+            s = link.student
+            s.guardian_name = (request.form.get(f'guardian_name_{s.id}') or '').strip()
+            s.guardian_phone = (request.form.get(f'guardian_phone_{s.id}') or '').strip()
+            if hasattr(s, 'guardian_line_user_id'):
+                s.guardian_line_user_id = (request.form.get(f'guardian_line_user_id_{s.id}') or '').strip()
+        db.session.commit()
+        flash('บันทึกข้อมูลผู้ปกครอง/LINE แล้ว', 'success')
+        return redirect(url_for('phase2_guardian_settings'))
+    return render_template('phase2_guardian_settings.html', links=links, parent_link_for_student=parent_link_for_student, line_ready=line_channel_ready())
+
+
+@app.route('/phase2/line-absence', methods=['GET', 'POST'])
+@login_required
+@role_required('teacher', 'admin')
+def line_absence():
+    raw_date = request.values.get('date') or local_today().isoformat()
+    try:
+        report_date = datetime.strptime(raw_date, '%Y-%m-%d').date()
+    except Exception:
+        report_date = local_today()
+    rows = phase2_absence_rows(report_date)
+    sent_count = 0
+    errors = []
+    if request.method == 'POST':
+        selected_ids = {int(x) for x in request.form.getlist('student_ids') if str(x).isdigit()}
+        for row in rows:
+            student = row['student']
+            if selected_ids and student.id not in selected_ids:
+                continue
+            line_id = (getattr(student, 'guardian_line_user_id', '') or '').strip()
+            if not line_id:
+                errors.append(f'{student.full_name}: ยังไม่มี LINE userId')
+                continue
+            try:
+                line_push_text(line_id, row['message'])
+                sent_count += 1
+            except Exception as e:
+                errors.append(f'{student.full_name}: {e}')
+        if sent_count:
+            flash(f'ส่งแจ้งเตือน LINE สำเร็จ {sent_count} คน', 'success')
+        if errors:
+            flash(' / '.join(errors[:5]) + (' ...' if len(errors) > 5 else ''), 'danger')
+        return redirect(url_for('line_absence', date=report_date.isoformat()))
+    return render_template('line_absence.html', rows=rows, report_date=report_date, line_ready=line_channel_ready())
+
+# -----------------------------
+# Phase 3: SDQ online / Home visit / Student care system
+# -----------------------------
+SDQ_QUESTIONS = [
+    (1, 'คำนึงถึงความรู้สึกของผู้อื่น', 'prosocial', False),
+    (2, 'อยู่ไม่นิ่ง กระสับกระส่าย หรือว่องไวเกินไป', 'hyperactivity', False),
+    (3, 'มักบ่นว่าปวดศีรษะ ปวดท้อง หรือไม่สบาย', 'emotional', False),
+    (4, 'เต็มใจแบ่งปันกับผู้อื่น', 'prosocial', False),
+    (5, 'มักอารมณ์เสียหรือโมโหง่าย', 'conduct', False),
+    (6, 'ค่อนข้างโดดเดี่ยว ชอบอยู่คนเดียว', 'peer', False),
+    (7, 'เชื่อฟังผู้ใหญ่โดยทั่วไป', 'conduct', True),
+    (8, 'กังวลหลายเรื่อง', 'emotional', False),
+    (9, 'ช่วยเหลือเมื่อมีคนเจ็บป่วยหรือเดือดร้อน', 'prosocial', False),
+    (10, 'ขยุกขยิกหรืออยู่ไม่สุขตลอดเวลา', 'hyperactivity', False),
+    (11, 'มีเพื่อนสนิทอย่างน้อยหนึ่งคน', 'peer', True),
+    (12, 'มักทะเลาะหรือรังแกผู้อื่น', 'conduct', False),
+    (13, 'มักไม่มีความสุข ท้อแท้ หรือร้องไห้ง่าย', 'emotional', False),
+    (14, 'เด็กคนอื่น ๆ มักชอบเขา/เธอ', 'peer', True),
+    (15, 'เสียสมาธิง่าย', 'hyperactivity', False),
+    (16, 'ประหม่า/ติดผู้ใหญ่ในสถานการณ์ใหม่', 'emotional', False),
+    (17, 'ใจดีกับเด็กที่อายุน้อยกว่า', 'prosocial', False),
+    (18, 'มักโกหกหรือหลอกลวง', 'conduct', False),
+    (19, 'ถูกเด็กคนอื่นล้อ แกล้ง หรือรังแก', 'peer', False),
+    (20, 'อาสาช่วยเหลือผู้อื่น', 'prosocial', False),
+    (21, 'คิดก่อนทำ', 'hyperactivity', True),
+    (22, 'ขโมยของที่บ้าน โรงเรียน หรือที่อื่น', 'conduct', False),
+    (23, 'เข้ากับผู้ใหญ่ได้ดีกว่าเด็กวัยเดียวกัน', 'peer', False),
+    (24, 'มีความกลัวหลายอย่าง ตกใจง่าย', 'emotional', False),
+    (25, 'ทำงานได้จนเสร็จ มีสมาธิดี', 'hyperactivity', True),
+]
+
+
+def phase3_token_serializer():
+    return URLSafeTimedSerializer(app.config['SECRET_KEY'], salt='kruruksorn-phase3-v1')
+
+
+def make_phase3_token(student_id, form_type='sdq', assessor_type='parent'):
+    return phase3_token_serializer().dumps({'sid': int(student_id), 'form': form_type, 'assessor': assessor_type})
+
+
+def load_phase3_token(token, form_type=None, max_age=60*60*24*365):
+    try:
+        data = phase3_token_serializer().loads(token, max_age=max_age)
+        if form_type and data.get('form') != form_type:
+            return None, None
+        student = User.query.filter_by(id=int(data.get('sid')), role='student').first()
+        return student, data
+    except (BadSignature, SignatureExpired, ValueError, TypeError):
+        return None, None
+
+
+def sdq_link_for_student(student, assessor_type='parent'):
+    return url_for('public_sdq_form', token=make_phase3_token(student.id, 'sdq', assessor_type), _external=True)
+
+
+def home_visit_link_for_student(student):
+    return url_for('public_home_visit_form', token=make_phase3_token(student.id, 'home_visit', 'parent'), _external=True)
+
+
+def phase3_student_links():
+    return phase2_student_links()
+
+
+def phase3_students():
+    seen = set(); rows = []
+    for link in phase3_student_links():
+        if link.student_id in seen:
+            continue
+        seen.add(link.student_id)
+        rows.append({'student': link.student, 'room': link.classroom})
+    return rows
+
+
+def parse_date_field(name, default=None):
+    raw = (request.form.get(name) or request.args.get(name) or '').strip()
+    if not raw:
+        return default
+    try:
+        return datetime.strptime(raw, '%Y-%m-%d').date()
+    except Exception:
+        return default
+
+
+def calc_sdq_scores(answer_map):
+    scores = {'emotional': 0, 'conduct': 0, 'hyperactivity': 0, 'peer': 0, 'prosocial': 0}
+    for no, _, category, reverse in SDQ_QUESTIONS:
+        value = int(answer_map.get(str(no), 0) or 0)
+        value = max(0, min(2, value))
+        scored = 2 - value if reverse else value
+        scores[category] += scored
+    total = scores['emotional'] + scores['conduct'] + scores['hyperactivity'] + scores['peer']
+    if total >= 17:
+        risk = 'ควรติดตาม'
+    elif total >= 14:
+        risk = 'เฝ้าระวัง'
+    else:
+        risk = 'ปกติ'
+    return scores, total, risk
+
+
+def save_sdq_assessment(student, assessor_type, created_by_id=None):
+    answers = {}
+    for no, *_ in SDQ_QUESTIONS:
+        answers[str(no)] = int(request.form.get(f'q{no}', 0) or 0)
+    scores, total, risk = calc_sdq_scores(answers)
+    row = SDQAssessment(
+        student_id=student.id,
+        assessor_type=assessor_type,
+        assessor_name=(request.form.get('assessor_name') or '').strip(),
+        assessment_date=parse_date_field('assessment_date', local_today()),
+        answers_json=json.dumps(answers, ensure_ascii=False),
+        emotional_score=scores['emotional'],
+        conduct_score=scores['conduct'],
+        hyperactivity_score=scores['hyperactivity'],
+        peer_score=scores['peer'],
+        prosocial_score=scores['prosocial'],
+        total_difficulties=total,
+        risk_level=risk,
+        impact_note=(request.form.get('impact_note') or '').strip(),
+        created_by_id=created_by_id,
+    )
+    db.session.add(row)
+    return row
+
+
+def latest_sdq(student_id):
+    return SDQAssessment.query.filter_by(student_id=student_id).order_by(SDQAssessment.assessment_date.desc(), SDQAssessment.created_at.desc()).first()
+
+
+def latest_home_visit(student_id):
+    return HomeVisit.query.filter_by(student_id=student_id).order_by(HomeVisit.visit_date.desc(), HomeVisit.created_at.desc()).first()
+
+
+def open_care_count(student_id):
+    return StudentCareRecord.query.filter_by(student_id=student_id).filter(StudentCareRecord.status != 'ปิดเคส').count()
+
+
+def phase3_student_snapshot(row):
+    student = row['student']
+    sdq = latest_sdq(student.id)
+    home = latest_home_visit(student.id)
+    care_open = open_care_count(student.id)
+    rooms = phase2_student_pairs(student.id)
+    grade_rows = []
+    for pair in rooms:
+        try:
+            grade_rows.append(calculate_grade_row(pair.subject, pair.classroom, student, create_manual=False))
+        except Exception:
+            pass
+    avg_score = round(sum(r['total'] for r in grade_rows) / len(grade_rows), 2) if grade_rows else None
+    att_rows = Attendance.query.filter_by(student_id=student.id).all()
+    normalized = [normalize_attendance_status(a.status) for a in att_rows]
+    absent_units = sum(1 for st in normalized if st in ['ขาด', 'โดดเรียน', 'ลาป่วย'])
+    risk_flags = []
+    if sdq and sdq.risk_level in ['เฝ้าระวัง', 'ควรติดตาม']:
+        risk_flags.append(f'SDQ {sdq.risk_level}')
+    if avg_score is not None and avg_score < 50:
+        risk_flags.append('คะแนนต่ำ')
+    if absent_units >= 3:
+        risk_flags.append('ขาด/ลา/โดดบ่อย')
+    if care_open:
+        risk_flags.append(f'เปิดเคส {care_open}')
+    return {**row, 'sdq': sdq, 'home_visit': home, 'care_open': care_open, 'avg_score': avg_score, 'absent_units': absent_units, 'risk_flags': risk_flags}
+
+
+@app.route('/phase3')
+@login_required
+@role_required('teacher', 'admin')
+def phase3_dashboard():
+    rows = [phase3_student_snapshot(x) for x in phase3_students()]
+    stats = {
+        'students': len(rows),
+        'sdq_done': sum(1 for r in rows if r['sdq']),
+        'home_done': sum(1 for r in rows if r['home_visit']),
+        'open_cases': sum(r['care_open'] for r in rows),
+        'need_follow': sum(1 for r in rows if r['risk_flags']),
+    }
+    return render_template('phase3_dashboard.html', rows=rows, stats=stats)
+
+
+@app.route('/phase3/sdq')
+@login_required
+@role_required('teacher', 'admin')
+def phase3_sdq():
+    rows = [phase3_student_snapshot(x) for x in phase3_students()]
+    assessments = SDQAssessment.query.order_by(SDQAssessment.assessment_date.desc(), SDQAssessment.created_at.desc()).limit(80).all() if current_user.role == 'admin' else []
+    return render_template('phase3_sdq.html', rows=rows, assessments=assessments, sdq_link_for_student=sdq_link_for_student)
+
+
+@app.route('/phase3/sdq/new/<int:student_id>', methods=['GET', 'POST'])
+@login_required
+@role_required('teacher', 'admin')
+def phase3_sdq_new(student_id):
+    student = User.query.filter_by(id=student_id, role='student').first_or_404()
+    room = student_primary_room(student.id)
+    if current_user.role != 'admin' and (not room or not owns_classroom(room)):
+        return deny_redirect('phase3_dashboard')
+    if request.method == 'POST':
+        save_sdq_assessment(student, request.form.get('assessor_type') or 'teacher', created_by_id=current_user.id)
+        db.session.commit()
+        flash('บันทึกแบบประเมิน SDQ แล้ว', 'success')
+        return redirect(url_for('phase3_sdq'))
+    return render_template('phase3_sdq_form.html', student=student, room=room, questions=SDQ_QUESTIONS, public_mode=False, assessor_type='teacher')
+
+
+@app.route('/sdq/<token>', methods=['GET', 'POST'])
+def public_sdq_form(token):
+    student, data = load_phase3_token(token, 'sdq')
+    if not student:
+        return render_template('phase3_sdq_form.html', invalid=True, public_mode=True, questions=SDQ_QUESTIONS)
+    assessor_type = data.get('assessor') or 'parent'
+    room = student_primary_room(student.id)
+    if request.method == 'POST':
+        save_sdq_assessment(student, assessor_type, created_by_id=None)
+        db.session.commit()
+        return render_template('phase3_public_done.html', title='ส่งแบบประเมิน SDQ แล้ว', message='ขอบคุณสำหรับการกรอกข้อมูล ระบบบันทึกผลเพื่อให้ครูตรวจสอบและติดตามต่อไป')
+    return render_template('phase3_sdq_form.html', student=student, room=room, questions=SDQ_QUESTIONS, public_mode=True, assessor_type=assessor_type)
+
+
+@app.route('/phase3/home-visits')
+@login_required
+@role_required('teacher', 'admin')
+def phase3_home_visits():
+    rows = [phase3_student_snapshot(x) for x in phase3_students()]
+    return render_template('phase3_home_visits.html', rows=rows, home_visit_link_for_student=home_visit_link_for_student)
+
+
+@app.route('/phase3/home-visits/new/<int:student_id>', methods=['GET', 'POST'])
+@login_required
+@role_required('teacher', 'admin')
+def phase3_home_visit_new(student_id):
+    student = User.query.filter_by(id=student_id, role='student').first_or_404()
+    room = student_primary_room(student.id)
+    if current_user.role != 'admin' and (not room or not owns_classroom(room)):
+        return deny_redirect('phase3_dashboard')
+    if request.method == 'POST':
+        row = HomeVisit(
+            student_id=student.id,
+            visit_date=parse_date_field('visit_date', local_today()),
+            visitor_teacher_id=current_user.id,
+            guardian_name=(request.form.get('guardian_name') or '').strip(),
+            guardian_relation=(request.form.get('guardian_relation') or '').strip(),
+            family_status=(request.form.get('family_status') or '').strip(),
+            house_condition=(request.form.get('house_condition') or '').strip(),
+            income_status=(request.form.get('income_status') or '').strip(),
+            learning_environment=(request.form.get('learning_environment') or '').strip(),
+            risk_notes=(request.form.get('risk_notes') or '').strip(),
+            support_needs=(request.form.get('support_needs') or '').strip(),
+            parent_submitted=False,
+        )
+        db.session.add(row); db.session.commit()
+        flash('บันทึกเยี่ยมบ้านแล้ว', 'success')
+        return redirect(url_for('phase3_home_visits'))
+    return render_template('phase3_home_visit_form.html', student=student, room=room, public_mode=False)
+
+
+@app.route('/home-visit/<token>', methods=['GET', 'POST'])
+def public_home_visit_form(token):
+    student, data = load_phase3_token(token, 'home_visit')
+    if not student:
+        return render_template('phase3_home_visit_form.html', invalid=True, public_mode=True)
+    room = student_primary_room(student.id)
+    if request.method == 'POST':
+        row = HomeVisit(
+            student_id=student.id,
+            visit_date=local_today(),
+            visitor_teacher_id=None,
+            guardian_name=(request.form.get('guardian_name') or '').strip(),
+            guardian_relation=(request.form.get('guardian_relation') or '').strip(),
+            family_status=(request.form.get('family_status') or '').strip(),
+            house_condition=(request.form.get('house_condition') or '').strip(),
+            income_status=(request.form.get('income_status') or '').strip(),
+            learning_environment=(request.form.get('learning_environment') or '').strip(),
+            risk_notes=(request.form.get('risk_notes') or '').strip(),
+            support_needs=(request.form.get('support_needs') or '').strip(),
+            parent_submitted=True,
+        )
+        db.session.add(row); db.session.commit()
+        return render_template('phase3_public_done.html', title='ส่งข้อมูลเยี่ยมบ้านแล้ว', message='ขอบคุณสำหรับข้อมูล ครูจะตรวจสอบและใช้ประกอบการดูแลช่วยเหลือนักเรียนต่อไป')
+    return render_template('phase3_home_visit_form.html', student=student, room=room, public_mode=True)
+
+
+@app.route('/phase3/care-records')
+@login_required
+@role_required('teacher', 'admin')
+def phase3_care_records():
+    student_id = request.args.get('student_id', type=int)
+    q = StudentCareRecord.query
+    if student_id:
+        q = q.filter_by(student_id=student_id)
+    elif current_user.role != 'admin':
+        allowed = [x['student'].id for x in phase3_students()]
+        q = q.filter(StudentCareRecord.student_id.in_(allowed or [-1]))
+    records = q.order_by(StudentCareRecord.status.asc(), StudentCareRecord.follow_up_date.asc(), StudentCareRecord.created_at.desc()).all()
+    rows = phase3_students()
+    return render_template('phase3_care_records.html', records=records, rows=rows, selected_student_id=student_id)
+
+
+@app.route('/phase3/care-records/new/<int:student_id>', methods=['GET', 'POST'])
+@login_required
+@role_required('teacher', 'admin')
+def phase3_care_record_new(student_id):
+    student = User.query.filter_by(id=student_id, role='student').first_or_404()
+    room = student_primary_room(student.id)
+    if current_user.role != 'admin' and (not room or not owns_classroom(room)):
+        return deny_redirect('phase3_dashboard')
+    if request.method == 'POST':
+        row = StudentCareRecord(
+            student_id=student.id,
+            category=(request.form.get('category') or 'ทั่วไป').strip(),
+            risk_level=(request.form.get('risk_level') or 'เฝ้าระวัง').strip(),
+            issue=(request.form.get('issue') or '').strip(),
+            action_plan=(request.form.get('action_plan') or '').strip(),
+            responsible_teacher_id=current_user.id,
+            follow_up_date=parse_date_field('follow_up_date', None),
+            status=(request.form.get('status') or 'กำลังติดตาม').strip(),
+            result_note=(request.form.get('result_note') or '').strip(),
+        )
+        db.session.add(row); db.session.commit()
+        flash('เปิด/บันทึกเคสดูแลช่วยเหลือแล้ว', 'success')
+        return redirect(url_for('phase3_care_records', student_id=student.id))
+    return render_template('phase3_care_record_form.html', student=student, room=room, record=None)
+
+
+@app.route('/phase3/care-records/<int:record_id>/edit', methods=['GET', 'POST'])
+@login_required
+@role_required('teacher', 'admin')
+def phase3_care_record_edit(record_id):
+    record = StudentCareRecord.query.get_or_404(record_id)
+    room = student_primary_room(record.student_id)
+    if current_user.role != 'admin' and (not room or not owns_classroom(room)):
+        return deny_redirect('phase3_dashboard')
+    if request.method == 'POST':
+        record.category = (request.form.get('category') or record.category or 'ทั่วไป').strip()
+        record.risk_level = (request.form.get('risk_level') or record.risk_level or 'เฝ้าระวัง').strip()
+        record.issue = (request.form.get('issue') or '').strip()
+        record.action_plan = (request.form.get('action_plan') or '').strip()
+        record.follow_up_date = parse_date_field('follow_up_date', None)
+        record.status = (request.form.get('status') or record.status or 'กำลังติดตาม').strip()
+        record.result_note = (request.form.get('result_note') or '').strip()
+        db.session.commit()
+        flash('อัปเดตเคสแล้ว', 'success')
+        return redirect(url_for('phase3_care_records', student_id=record.student_id))
+    return render_template('phase3_care_record_form.html', student=record.student, room=room, record=record)
+
+
+# -----------------------------
+# Phase 4: Club register / Student activities
+# -----------------------------
+def phase4_student_rows():
+    """นักเรียนตามสิทธิ์ผู้ใช้ปัจจุบัน ไม่ซ้ำคน พร้อมห้องหลัก"""
+    if current_user.is_authenticated and current_user.role == 'student':
+        room = student_primary_room(current_user.id)
+        return [{'student': current_user, 'room': room}]
+    seen = set(); rows = []
+    source = phase2_student_links() if current_user.is_authenticated else []
+    for link in source:
+        if link.student_id in seen:
+            continue
+        seen.add(link.student_id)
+        rows.append({'student': link.student, 'room': link.classroom})
+    return rows
+
+
+def phase4_teacher_clubs_query():
+    q = Club.query
+    if current_user.role != 'admin':
+        q = q.filter(db.or_(Club.teacher_id == current_user.id, Club.teacher_id.is_(None)))
+    return q
+
+
+def club_active_enrollment_count(club_id):
+    return ClubEnrollment.query.filter_by(club_id=club_id, status='ลงทะเบียน').count()
+
+
+def student_current_club(student_id):
+    return (ClubEnrollment.query
+            .filter(ClubEnrollment.student_id == student_id, ClubEnrollment.status.in_(['ลงทะเบียน', 'สำรอง']))
+            .join(Club, ClubEnrollment.club_id == Club.id)
+            .filter(db.or_(Club.is_active == True, Club.is_active.is_(None)))
+            .order_by(ClubEnrollment.joined_at.desc())
+            .first())
+
+
+def phase4_activity_students(program):
+    if program.classroom_id:
+        links = ClassroomStudent.query.filter_by(classroom_id=program.classroom_id).join(User, ClassroomStudent.student_id == User.id).order_by(User.username.asc(), User.full_name.asc()).all()
+        return [{'student': x.student, 'room': x.classroom} for x in links if x.student and x.student.role == 'student' and (x.student.is_active is None or x.student.is_active)]
+    return phase4_student_rows()
+
+
+def activity_record_map(program_id):
+    return {r.student_id: r for r in StudentActivityRecord.query.filter_by(program_id=program_id).all()}
+
+
+@app.route('/phase4')
+@login_required
+@role_required('teacher', 'admin')
+def phase4_dashboard():
+    clubs = phase4_teacher_clubs_query().order_by(Club.is_active.desc(), Club.name.asc()).all()
+    activities_q = StudentActivityProgram.query
+    if current_user.role != 'admin':
+        room_ids = teacher_classroom_ids() or [-1]
+        activities_q = activities_q.filter(db.or_(StudentActivityProgram.teacher_id == current_user.id, StudentActivityProgram.classroom_id.in_(room_ids), StudentActivityProgram.classroom_id.is_(None)))
+    activities = activities_q.order_by(StudentActivityProgram.activity_date.desc(), StudentActivityProgram.created_at.desc()).limit(10).all()
+    stats = {
+        'clubs': len(clubs),
+        'open_clubs': sum(1 for c in clubs if c.registration_open and c.is_active),
+        'enrollments': ClubEnrollment.query.filter(ClubEnrollment.club_id.in_([c.id for c in clubs] or [-1]), ClubEnrollment.status == 'ลงทะเบียน').count(),
+        'activities': activities_q.count(),
+        'activity_records': StudentActivityRecord.query.count() if current_user.role == 'admin' else StudentActivityRecord.query.join(StudentActivityProgram, StudentActivityRecord.program_id == StudentActivityProgram.id).filter(db.or_(StudentActivityProgram.teacher_id == current_user.id, StudentActivityProgram.classroom_id.in_(teacher_classroom_ids() or [-1]))).count(),
+    }
+    return render_template('phase4_dashboard.html', clubs=clubs, activities=activities, stats=stats, club_active_enrollment_count=club_active_enrollment_count)
+
+
+@app.route('/phase4/clubs')
+@login_required
+@role_required('teacher', 'admin')
+def phase4_clubs():
+    clubs = phase4_teacher_clubs_query().order_by(Club.is_active.desc(), Club.registration_open.desc(), Club.name.asc()).all()
+    return render_template('phase4_clubs.html', clubs=clubs, club_active_enrollment_count=club_active_enrollment_count)
+
+
+@app.route('/phase4/clubs/new', methods=['GET', 'POST'])
+@login_required
+@role_required('teacher', 'admin')
+def phase4_club_new():
+    if request.method == 'POST':
+        club = Club(
+            name=(request.form.get('name') or '').strip(),
+            description=(request.form.get('description') or '').strip(),
+            teacher_id=request.form.get('teacher_id', type=int) or current_user.id,
+            max_students=request.form.get('max_students', type=int) or 30,
+            grade_scope=(request.form.get('grade_scope') or 'ทุกระดับชั้น').strip(),
+            meeting_day=(request.form.get('meeting_day') or '').strip(),
+            meeting_time=(request.form.get('meeting_time') or '').strip(),
+            location=(request.form.get('location') or '').strip(),
+            registration_open=bool(request.form.get('registration_open')),
+            is_active=True,
+        )
+        if not club.name:
+            flash('กรุณากรอกชื่อชุมนุม', 'danger')
+            return render_template('phase4_club_form.html', club=club, teachers=active_teachers_query().order_by(User.full_name).all())
+        db.session.add(club); db.session.commit()
+        flash('สร้างชุมนุมแล้ว', 'success')
+        return redirect(url_for('phase4_clubs'))
+    return render_template('phase4_club_form.html', club=None, teachers=active_teachers_query().order_by(User.full_name).all())
+
+
+@app.route('/phase4/clubs/<int:club_id>/edit', methods=['GET', 'POST'])
+@login_required
+@role_required('teacher', 'admin')
+def phase4_club_edit(club_id):
+    club = Club.query.get_or_404(club_id)
+    if current_user.role != 'admin' and club.teacher_id not in [None, current_user.id]:
+        return deny_redirect('phase4_clubs')
+    if request.method == 'POST':
+        club.name = (request.form.get('name') or club.name).strip()
+        club.description = (request.form.get('description') or '').strip()
+        club.teacher_id = request.form.get('teacher_id', type=int) or club.teacher_id or current_user.id
+        club.max_students = request.form.get('max_students', type=int) or club.max_students or 30
+        club.grade_scope = (request.form.get('grade_scope') or 'ทุกระดับชั้น').strip()
+        club.meeting_day = (request.form.get('meeting_day') or '').strip()
+        club.meeting_time = (request.form.get('meeting_time') or '').strip()
+        club.location = (request.form.get('location') or '').strip()
+        club.registration_open = bool(request.form.get('registration_open'))
+        club.is_active = bool(request.form.get('is_active'))
+        db.session.commit()
+        flash('อัปเดตชุมนุมแล้ว', 'success')
+        return redirect(url_for('phase4_clubs'))
+    return render_template('phase4_club_form.html', club=club, teachers=active_teachers_query().order_by(User.full_name).all())
+
+
+@app.route('/phase4/clubs/<int:club_id>/enrollments', methods=['GET', 'POST'])
+@login_required
+@role_required('teacher', 'admin')
+def phase4_club_enrollments(club_id):
+    club = Club.query.get_or_404(club_id)
+    if current_user.role != 'admin' and club.teacher_id not in [None, current_user.id]:
+        return deny_redirect('phase4_clubs')
+    if request.method == 'POST':
+        for row in phase4_student_rows():
+            student = row['student']
+            status = (request.form.get(f'status_{student.id}') or '').strip()
+            note = (request.form.get(f'note_{student.id}') or '').strip()
+            existing = ClubEnrollment.query.filter_by(club_id=club.id, student_id=student.id).first()
+            if status in ['ลงทะเบียน', 'สำรอง', 'ยกเลิก']:
+                if not existing:
+                    existing = ClubEnrollment(club_id=club.id, student_id=student.id)
+                    db.session.add(existing)
+                existing.status = status
+                existing.note = note
+            elif existing:
+                db.session.delete(existing)
+        db.session.commit()
+        flash('บันทึกรายชื่อนักเรียนในชุมนุมแล้ว', 'success')
+        return redirect(url_for('phase4_club_enrollments', club_id=club.id))
+    rows = phase4_student_rows()
+    enroll_map = {e.student_id: e for e in ClubEnrollment.query.filter_by(club_id=club.id).all()}
+    return render_template('phase4_club_enrollments.html', club=club, rows=rows, enroll_map=enroll_map, count_active=club_active_enrollment_count(club.id))
+
+
+@app.route('/phase4/clubs/<int:club_id>/export')
+@login_required
+@role_required('teacher', 'admin')
+def phase4_club_export(club_id):
+    club = Club.query.get_or_404(club_id)
+    if current_user.role != 'admin' and club.teacher_id not in [None, current_user.id]:
+        return deny_redirect('phase4_clubs')
+    wb = Workbook(); ws = wb.active; ws.title = 'Club'
+    ws.append(['รายชื่อชุมนุม', club.name])
+    ws.append(['ครูที่ปรึกษา', club.teacher.full_name if club.teacher else '-'])
+    ws.append([])
+    ws.append(['ลำดับ', 'รหัส', 'ชื่อ-สกุล', 'ห้อง', 'สถานะ', 'หมายเหตุ'])
+    enrollments = (ClubEnrollment.query.filter_by(club_id=club.id)
+                   .join(User, ClubEnrollment.student_id == User.id)
+                   .order_by(ClubEnrollment.status.asc(), User.username.asc(), User.full_name.asc()).all())
+    for i, e in enumerate(enrollments, 1):
+        room = student_primary_room(e.student_id)
+        ws.append([i, e.student.username, e.student.full_name, room.name if room else '-', e.status, e.note or ''])
+    bio = BytesIO(); wb.save(bio); bio.seek(0)
+    filename = f"club_{club.id}_{datetime.now().strftime('%Y%m%d')}.xlsx"
+    return send_file(bio, as_attachment=True, download_name=filename, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
+
+@app.route('/student/clubs', methods=['GET', 'POST'])
+@login_required
+def student_club_register():
+    if current_user.role != 'student':
+        return redirect(url_for('phase4_clubs'))
+    if request.method == 'POST':
+        action = request.form.get('action')
+        club_id = request.form.get('club_id', type=int)
+        club = Club.query.filter_by(id=club_id, is_active=True).first()
+        if not club:
+            flash('ไม่พบชุมนุม', 'danger')
+        elif action == 'join':
+            current = student_current_club(current_user.id)
+            if current and current.club_id != club.id:
+                flash('นักเรียนเลือกชุมนุมไว้แล้ว หากต้องการเปลี่ยนให้ยกเลิกชุมนุมเดิมก่อน', 'danger')
+            elif not club.registration_open:
+                flash('ชุมนุมนี้ยังไม่เปิดรับสมัคร', 'danger')
+            else:
+                e = ClubEnrollment.query.filter_by(club_id=club.id, student_id=current_user.id).first()
+                if not e:
+                    e = ClubEnrollment(club_id=club.id, student_id=current_user.id)
+                    db.session.add(e)
+                e.status = 'ลงทะเบียน' if club_active_enrollment_count(club.id) < (club.max_students or 9999) else 'สำรอง'
+                e.joined_at = datetime.utcnow()
+                db.session.commit()
+                flash('บันทึกการเลือกชุมนุมแล้ว', 'success')
+        elif action == 'cancel':
+            e = ClubEnrollment.query.filter_by(club_id=club.id, student_id=current_user.id).first()
+            if e:
+                e.status = 'ยกเลิก'; db.session.commit(); flash('ยกเลิกการเลือกชุมนุมแล้ว', 'success')
+        return redirect(url_for('student_club_register'))
+    clubs = Club.query.filter_by(is_active=True).order_by(Club.registration_open.desc(), Club.name.asc()).all()
+    current = student_current_club(current_user.id)
+    return render_template('student_club_register.html', clubs=clubs, current=current, club_active_enrollment_count=club_active_enrollment_count)
+
+
+@app.route('/phase4/activities')
+@login_required
+@role_required('teacher', 'admin')
+def phase4_activities():
+    q = StudentActivityProgram.query
+    if current_user.role != 'admin':
+        room_ids = teacher_classroom_ids() or [-1]
+        q = q.filter(db.or_(StudentActivityProgram.teacher_id == current_user.id, StudentActivityProgram.classroom_id.in_(room_ids), StudentActivityProgram.classroom_id.is_(None)))
+    programs = q.order_by(StudentActivityProgram.activity_date.desc(), StudentActivityProgram.created_at.desc()).all()
+    return render_template('phase4_activities.html', programs=programs)
+
+
+@app.route('/phase4/activities/new', methods=['GET', 'POST'])
+@login_required
+@role_required('teacher', 'admin')
+def phase4_activity_new():
+    if request.method == 'POST':
+        classroom_id = request.form.get('classroom_id', type=int)
+        target_scope = 'classroom' if classroom_id else 'all'
+        program = StudentActivityProgram(
+            title=(request.form.get('title') or '').strip(),
+            activity_type=(request.form.get('activity_type') or 'กิจกรรมพัฒนาผู้เรียน').strip(),
+            activity_date=parse_date_field('activity_date', local_today()),
+            hours=request.form.get('hours', type=float) or 1.0,
+            classroom_id=classroom_id,
+            target_scope=target_scope,
+            teacher_id=current_user.id,
+            description=(request.form.get('description') or '').strip(),
+            is_active=True,
+        )
+        if not program.title:
+            flash('กรุณากรอกชื่อกิจกรรม', 'danger')
+            return render_template('phase4_activity_form.html', program=program, classrooms=Classroom.query.order_by(Classroom.name).all())
+        db.session.add(program); db.session.commit()
+        flash('สร้างกิจกรรมแล้ว', 'success')
+        return redirect(url_for('phase4_activity_attendance', program_id=program.id))
+    return render_template('phase4_activity_form.html', program=None, classrooms=Classroom.query.order_by(Classroom.name).all())
+
+
+@app.route('/phase4/activities/<int:program_id>/edit', methods=['GET', 'POST'])
+@login_required
+@role_required('teacher', 'admin')
+def phase4_activity_edit(program_id):
+    program = StudentActivityProgram.query.get_or_404(program_id)
+    if current_user.role != 'admin' and program.teacher_id not in [None, current_user.id]:
+        return deny_redirect('phase4_activities')
+    if request.method == 'POST':
+        program.title = (request.form.get('title') or program.title).strip()
+        program.activity_type = (request.form.get('activity_type') or program.activity_type or 'กิจกรรมพัฒนาผู้เรียน').strip()
+        program.activity_date = parse_date_field('activity_date', program.activity_date)
+        program.hours = request.form.get('hours', type=float) or program.hours or 1.0
+        program.classroom_id = request.form.get('classroom_id', type=int)
+        program.target_scope = 'classroom' if program.classroom_id else 'all'
+        program.description = (request.form.get('description') or '').strip()
+        program.is_active = bool(request.form.get('is_active'))
+        db.session.commit()
+        flash('อัปเดตกิจกรรมแล้ว', 'success')
+        return redirect(url_for('phase4_activities'))
+    return render_template('phase4_activity_form.html', program=program, classrooms=Classroom.query.order_by(Classroom.name).all())
+
+
+@app.route('/phase4/activities/<int:program_id>/attendance', methods=['GET', 'POST'])
+@login_required
+@role_required('teacher', 'admin')
+def phase4_activity_attendance(program_id):
+    program = StudentActivityProgram.query.get_or_404(program_id)
+    if current_user.role != 'admin' and program.teacher_id not in [None, current_user.id]:
+        if program.classroom_id not in (teacher_classroom_ids() or []):
+            return deny_redirect('phase4_activities')
+    rows = phase4_activity_students(program)
+    if request.method == 'POST':
+        for row in rows:
+            student = row['student']
+            status = (request.form.get(f'status_{student.id}') or 'ขาด').strip()
+            note = (request.form.get(f'note_{student.id}') or '').strip()
+            rec = StudentActivityRecord.query.filter_by(program_id=program.id, student_id=student.id).first()
+            if not rec:
+                rec = StudentActivityRecord(program_id=program.id, student_id=student.id)
+                db.session.add(rec)
+            rec.status = status
+            rec.hours = program.hours if status == 'เข้าร่วม' else 0
+            rec.note = note
+            rec.checked_by_id = current_user.id
+            rec.checked_at = datetime.utcnow()
+        db.session.commit()
+        flash('บันทึกการเข้าร่วมกิจกรรมแล้ว', 'success')
+        return redirect(url_for('phase4_activity_attendance', program_id=program.id))
+    records = activity_record_map(program.id)
+    return render_template('phase4_activity_attendance.html', program=program, rows=rows, records=records)
+
+
+@app.route('/phase4/activities/<int:program_id>/export')
+@login_required
+@role_required('teacher', 'admin')
+def phase4_activity_export(program_id):
+    program = StudentActivityProgram.query.get_or_404(program_id)
+    records = activity_record_map(program.id)
+    rows = phase4_activity_students(program)
+    wb = Workbook(); ws = wb.active; ws.title = 'Activity'
+    ws.append(['กิจกรรม', program.title])
+    ws.append(['ประเภท', program.activity_type])
+    ws.append(['วันที่', program.activity_date.isoformat() if program.activity_date else ''])
+    ws.append([])
+    ws.append(['ลำดับ', 'รหัส', 'ชื่อ-สกุล', 'ห้อง', 'สถานะ', 'ชั่วโมง', 'หมายเหตุ'])
+    for i, row in enumerate(rows, 1):
+        student = row['student']; rec = records.get(student.id)
+        ws.append([i, student.username, student.full_name, row['room'].name if row.get('room') else '-', rec.status if rec else '-', rec.hours if rec else 0, rec.note if rec else ''])
+    bio = BytesIO(); wb.save(bio); bio.seek(0)
+    filename = f"activity_{program.id}_{datetime.now().strftime('%Y%m%d')}.xlsx"
+    return send_file(bio, as_attachment=True, download_name=filename, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
+
+# -----------------------------
+# Phase 5: E-Saraban / Official Documents
+# -----------------------------
+PHASE5_DOC_TYPES = {
+    'incoming': {'label': 'หนังสือรับ', 'prefix': 'รับ'},
+    'outgoing': {'label': 'หนังสือส่ง', 'prefix': 'ส่ง'},
+    'order': {'label': 'คำสั่ง', 'prefix': 'คำสั่ง'},
+    'announcement': {'label': 'ประกาศ', 'prefix': 'ประกาศ'},
+    'memo': {'label': 'บันทึกข้อความ', 'prefix': 'บันทึก'},
+}
+PHASE5_PRIORITIES = ['ปกติ', 'ด่วน', 'ด่วนมาก', 'ด่วนที่สุด']
+PHASE5_STATUSES = ['รอดำเนินการ', 'กำลังดำเนินการ', 'เสร็จสิ้น', 'เก็บเรื่อง']
+PHASE5_CONFIDENTIAL = ['ปกติ', 'ลับ', 'ลับมาก']
+
+
+def phase5_doc_type_label(doc_type):
+    return PHASE5_DOC_TYPES.get(doc_type or 'incoming', PHASE5_DOC_TYPES['incoming'])['label']
+
+
+def phase5_next_register_no(doc_type):
+    doc_type = doc_type if doc_type in PHASE5_DOC_TYPES else 'incoming'
+    year = local_today().year + 543
+    prefix = PHASE5_DOC_TYPES[doc_type]['prefix']
+    count = OfficialDocument.query.filter(
+        OfficialDocument.doc_type == doc_type,
+        OfficialDocument.created_at >= datetime(local_today().year, 1, 1)
+    ).count() + 1
+    return f"{prefix}-{year}/{count:04d}"
+
+
+def phase5_document_query():
+    q = OfficialDocument.query
+    if current_user.role != 'admin':
+        q = q.filter(db.or_(OfficialDocument.created_by_id == current_user.id, OfficialDocument.responsible_teacher_id == current_user.id, OfficialDocument.responsible_teacher_id.is_(None)))
+    return q
+
+
+def phase5_doc_counts():
+    base = phase5_document_query()
+    counts = {}
+    for key in PHASE5_DOC_TYPES:
+        counts[key] = base.filter(OfficialDocument.doc_type == key).count()
+    return counts
+
+
+@app.route('/phase5')
+@login_required
+@role_required('teacher', 'admin')
+def phase5_dashboard():
+    counts = phase5_doc_counts()
+    recent_docs = phase5_document_query().order_by(OfficialDocument.updated_at.desc(), OfficialDocument.created_at.desc()).limit(10).all()
+    stats = {
+        'total': sum(counts.values()),
+        'pending': phase5_document_query().filter(OfficialDocument.status.in_(['รอดำเนินการ', 'กำลังดำเนินการ'])).count(),
+        'urgent': phase5_document_query().filter(OfficialDocument.priority.in_(['ด่วนมาก', 'ด่วนที่สุด'])).count(),
+        'endorsements': DocumentEndorsement.query.join(OfficialDocument, DocumentEndorsement.document_id == OfficialDocument.id).count() if current_user.role == 'admin' else DocumentEndorsement.query.filter_by(author_id=current_user.id).count(),
+    }
+    return render_template('phase5_dashboard.html', counts=counts, stats=stats, recent_docs=recent_docs, doc_types=PHASE5_DOC_TYPES, doc_type_label=phase5_doc_type_label)
+
+
+@app.route('/phase5/documents')
+@login_required
+@role_required('teacher', 'admin')
+def phase5_documents():
+    doc_type = (request.args.get('type') or '').strip()
+    status = (request.args.get('status') or '').strip()
+    qtext = (request.args.get('q') or '').strip()
+    q = phase5_document_query()
+    if doc_type in PHASE5_DOC_TYPES:
+        q = q.filter(OfficialDocument.doc_type == doc_type)
+    if status in PHASE5_STATUSES:
+        q = q.filter(OfficialDocument.status == status)
+    if qtext:
+        like = f"%{qtext}%"
+        q = q.filter(db.or_(OfficialDocument.title.ilike(like), OfficialDocument.register_no.ilike(like), OfficialDocument.document_no.ilike(like), OfficialDocument.from_org.ilike(like), OfficialDocument.to_org.ilike(like)))
+    docs = q.order_by(OfficialDocument.created_at.desc()).all()
+    return render_template('phase5_documents.html', docs=docs, doc_types=PHASE5_DOC_TYPES, current_type=doc_type, current_status=status, qtext=qtext, statuses=PHASE5_STATUSES, doc_type_label=phase5_doc_type_label)
+
+
+@app.route('/phase5/documents/new', methods=['GET', 'POST'])
+@login_required
+@role_required('teacher', 'admin')
+def phase5_document_new():
+    doc_type = (request.args.get('type') or request.form.get('doc_type') or 'incoming').strip()
+    if doc_type not in PHASE5_DOC_TYPES:
+        doc_type = 'incoming'
+    if request.method == 'POST':
+        title = (request.form.get('title') or '').strip()
+        if not title:
+            flash('กรุณากรอกเรื่องหนังสือ', 'danger')
+            return render_template('phase5_document_form.html', doc=None, doc_types=PHASE5_DOC_TYPES, teachers=active_teachers_query().order_by(User.full_name).all(), priorities=PHASE5_PRIORITIES, statuses=PHASE5_STATUSES, confidentials=PHASE5_CONFIDENTIAL, default_type=doc_type)
+        doc = OfficialDocument(
+            doc_type=doc_type,
+            register_no=(request.form.get('register_no') or '').strip() or phase5_next_register_no(doc_type),
+            document_no=(request.form.get('document_no') or '').strip(),
+            title=title,
+            from_org=(request.form.get('from_org') or '').strip(),
+            to_org=(request.form.get('to_org') or '').strip(),
+            document_date=parse_date_field('document_date'),
+            received_date=parse_date_field('received_date', local_today() if doc_type == 'incoming' else None),
+            due_date=parse_date_field('due_date'),
+            priority=(request.form.get('priority') or 'ปกติ').strip(),
+            confidentiality=(request.form.get('confidentiality') or 'ปกติ').strip(),
+            status=(request.form.get('status') or 'รอดำเนินการ').strip(),
+            responsible_teacher_id=request.form.get('responsible_teacher_id', type=int),
+            detail=(request.form.get('detail') or '').strip(),
+            action_note=(request.form.get('action_note') or '').strip(),
+            created_by_id=current_user.id,
+        )
+        upload = request.files.get('file')
+        if upload and upload.filename:
+            try:
+                doc.file_path, doc.file_original_name = save_uploaded_file(upload, subdir='documents')
+            except ValueError as e:
+                flash(str(e), 'danger')
+                return render_template('phase5_document_form.html', doc=doc, doc_types=PHASE5_DOC_TYPES, teachers=active_teachers_query().order_by(User.full_name).all(), priorities=PHASE5_PRIORITIES, statuses=PHASE5_STATUSES, confidentials=PHASE5_CONFIDENTIAL, default_type=doc_type)
+        db.session.add(doc); db.session.commit()
+        flash('บันทึกเอกสารสารบรรณแล้ว', 'success')
+        return redirect(url_for('phase5_document_detail', document_id=doc.id))
+    return render_template('phase5_document_form.html', doc=None, doc_types=PHASE5_DOC_TYPES, teachers=active_teachers_query().order_by(User.full_name).all(), priorities=PHASE5_PRIORITIES, statuses=PHASE5_STATUSES, confidentials=PHASE5_CONFIDENTIAL, default_type=doc_type)
+
+
+@app.route('/phase5/documents/<int:document_id>')
+@login_required
+@role_required('teacher', 'admin')
+def phase5_document_detail(document_id):
+    doc = phase5_document_query().filter(OfficialDocument.id == document_id).first_or_404()
+    endorsements = DocumentEndorsement.query.filter_by(document_id=doc.id).order_by(DocumentEndorsement.created_at.asc()).all()
+    return render_template('phase5_document_detail.html', doc=doc, endorsements=endorsements, doc_type_label=phase5_doc_type_label, statuses=PHASE5_STATUSES)
+
+
+@app.route('/phase5/documents/<int:document_id>/edit', methods=['GET', 'POST'])
+@login_required
+@role_required('teacher', 'admin')
+def phase5_document_edit(document_id):
+    doc = phase5_document_query().filter(OfficialDocument.id == document_id).first_or_404()
+    if request.method == 'POST':
+        doc.doc_type = (request.form.get('doc_type') or doc.doc_type).strip()
+        if doc.doc_type not in PHASE5_DOC_TYPES:
+            doc.doc_type = 'incoming'
+        doc.register_no = (request.form.get('register_no') or doc.register_no or '').strip() or phase5_next_register_no(doc.doc_type)
+        doc.document_no = (request.form.get('document_no') or '').strip()
+        doc.title = (request.form.get('title') or doc.title).strip()
+        doc.from_org = (request.form.get('from_org') or '').strip()
+        doc.to_org = (request.form.get('to_org') or '').strip()
+        doc.document_date = parse_date_field('document_date', doc.document_date)
+        doc.received_date = parse_date_field('received_date', doc.received_date)
+        doc.due_date = parse_date_field('due_date', doc.due_date)
+        doc.priority = (request.form.get('priority') or doc.priority or 'ปกติ').strip()
+        doc.confidentiality = (request.form.get('confidentiality') or doc.confidentiality or 'ปกติ').strip()
+        doc.status = (request.form.get('status') or doc.status or 'รอดำเนินการ').strip()
+        doc.responsible_teacher_id = request.form.get('responsible_teacher_id', type=int)
+        doc.detail = (request.form.get('detail') or '').strip()
+        doc.action_note = (request.form.get('action_note') or '').strip()
+        upload = request.files.get('file')
+        if upload and upload.filename:
+            try:
+                if doc.file_path:
+                    safe_remove_upload_file(doc.file_path)
+                doc.file_path, doc.file_original_name = save_uploaded_file(upload, subdir='documents')
+            except ValueError as e:
+                flash(str(e), 'danger')
+                return render_template('phase5_document_form.html', doc=doc, doc_types=PHASE5_DOC_TYPES, teachers=active_teachers_query().order_by(User.full_name).all(), priorities=PHASE5_PRIORITIES, statuses=PHASE5_STATUSES, confidentials=PHASE5_CONFIDENTIAL, default_type=doc.doc_type)
+        db.session.commit()
+        flash('แก้ไขเอกสารแล้ว', 'success')
+        return redirect(url_for('phase5_document_detail', document_id=doc.id))
+    return render_template('phase5_document_form.html', doc=doc, doc_types=PHASE5_DOC_TYPES, teachers=active_teachers_query().order_by(User.full_name).all(), priorities=PHASE5_PRIORITIES, statuses=PHASE5_STATUSES, confidentials=PHASE5_CONFIDENTIAL, default_type=doc.doc_type)
+
+
+@app.route('/phase5/documents/<int:document_id>/endorse', methods=['POST'])
+@login_required
+@role_required('teacher', 'admin')
+def phase5_document_endorse(document_id):
+    doc = phase5_document_query().filter(OfficialDocument.id == document_id).first_or_404()
+    action = (request.form.get('action') or 'เกษียน').strip()
+    comment = (request.form.get('comment') or '').strip()
+    new_status = (request.form.get('status') or '').strip()
+    if comment:
+        db.session.add(DocumentEndorsement(document_id=doc.id, author_id=current_user.id, action=action, comment=comment))
+    if new_status in PHASE5_STATUSES:
+        doc.status = new_status
+    teacher_id = request.form.get('responsible_teacher_id', type=int)
+    if teacher_id:
+        doc.responsible_teacher_id = teacher_id
+    db.session.commit()
+    flash('บันทึกเกษียน/การดำเนินการแล้ว', 'success')
+    return redirect(url_for('phase5_document_detail', document_id=doc.id))
+
+
+@app.route('/phase5/documents/<int:document_id>/print')
+@login_required
+@role_required('teacher', 'admin')
+def phase5_document_print(document_id):
+    doc = phase5_document_query().filter(OfficialDocument.id == document_id).first_or_404()
+    endorsements = DocumentEndorsement.query.filter_by(document_id=doc.id).order_by(DocumentEndorsement.created_at.asc()).all()
+    return render_template('phase5_document_print.html', doc=doc, endorsements=endorsements, doc_type_label=phase5_doc_type_label)
+
+
+@app.route('/phase5/documents/export')
+@login_required
+@role_required('teacher', 'admin')
+def phase5_documents_export():
+    doc_type = (request.args.get('type') or '').strip()
+    q = phase5_document_query()
+    if doc_type in PHASE5_DOC_TYPES:
+        q = q.filter(OfficialDocument.doc_type == doc_type)
+    docs = q.order_by(OfficialDocument.created_at.desc()).all()
+    wb = Workbook(); ws = wb.active; ws.title = 'E-Saraban'
+    ws.append(['ลำดับ', 'ประเภท', 'เลขทะเบียน', 'เลขที่หนังสือ', 'เรื่อง', 'จาก', 'ถึง', 'วันที่หนังสือ', 'วันที่รับ', 'กำหนดส่ง', 'ความเร่งด่วน', 'สถานะ', 'ผู้รับผิดชอบ'])
+    for i, doc in enumerate(docs, 1):
+        ws.append([i, phase5_doc_type_label(doc.doc_type), doc.register_no, doc.document_no, doc.title, doc.from_org, doc.to_org, doc.document_date.isoformat() if doc.document_date else '', doc.received_date.isoformat() if doc.received_date else '', doc.due_date.isoformat() if doc.due_date else '', doc.priority, doc.status, doc.responsible_teacher.full_name if doc.responsible_teacher else ''])
+    bio = BytesIO(); wb.save(bio); bio.seek(0)
+    filename = f"esaraban_{doc_type or 'all'}_{datetime.now().strftime('%Y%m%d')}.xlsx"
+    return send_file(bio, as_attachment=True, download_name=filename, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
+
 @app.cli.command('init-db')
 def init_db_cmd():
     init_db(); print('initialized')
@@ -6116,6 +7600,7 @@ def ensure_schema_columns():
                 ('blood_type', "VARCHAR(10) DEFAULT ''"), ('phone', "VARCHAR(50) DEFAULT ''"),
                 ('address', 'TEXT DEFAULT \'\''), ('guardian_name', "VARCHAR(255) DEFAULT ''"),
                 ('guardian_phone', "VARCHAR(50) DEFAULT ''"),
+                ('guardian_line_user_id', "VARCHAR(120) DEFAULT ''"),
             ]:
                 add_column('user', col, ddl)
             add_column('classroom', 'is_active', 'BOOLEAN DEFAULT 1')
@@ -6163,6 +7648,7 @@ def ensure_schema_columns():
             ('blood_type', "VARCHAR(10) DEFAULT ''"), ('phone', "VARCHAR(50) DEFAULT ''"),
             ('address', "TEXT DEFAULT ''"), ('guardian_name', "VARCHAR(255) DEFAULT ''"),
             ('guardian_phone', "VARCHAR(50) DEFAULT ''"),
+            ('guardian_line_user_id', "VARCHAR(120) DEFAULT ''"),
         ]:
             add_column('user', col, ddl, ddl)
         add_column('classroom', 'is_active', 'BOOLEAN DEFAULT 1', 'BOOLEAN DEFAULT TRUE')

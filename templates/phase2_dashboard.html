@@ -1,0 +1,71 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="phase1-hero">
+  <div>
+    <div class="eyebrow">Phase 2 · Parent & Records</div>
+    <h1>ปพ.6 · ปพ.7 · ผู้ปกครองออนไลน์ · LINE แจ้งขาดเรียน</h1>
+    <p>ต่อยอดจาก Phase 1 ให้ครูพิมพ์เอกสารผลการเรียนรายบุคคล และเปิดลิงก์ให้ผู้ปกครองตรวจสอบคะแนน/เวลาเรียนได้</p>
+  </div>
+  <div class="phase1-hero-actions">
+    <a class="btn" href="{{ url_for('phase2_guardian_settings') }}">ตั้งค่าผู้ปกครอง</a>
+    <a class="btn secondary" href="{{ url_for('line_absence') }}">LINE แจ้งขาดเรียน</a>
+  </div>
+</div>
+
+<section class="phase1-stat-grid">
+  <div class="phase1-stat-card"><span>นักเรียนในระบบ</span><b>{{ stats.students }}</b></div>
+  <div class="phase1-stat-card"><span>มีข้อมูลผู้ปกครอง</span><b>{{ stats.parent_ready }}</b></div>
+  <div class="phase1-stat-card"><span>มี LINE userId</span><b>{{ stats.line_ready }}</b></div>
+  <div class="phase1-stat-card {% if stats.absent_today %}danger{% endif %}"><span>ขาด/โดด วันนี้</span><b>{{ stats.absent_today }}</b></div>
+</section>
+
+<section class="card phase1-workflow-card">
+  <div class="section-head-row">
+    <div>
+      <h2>ลำดับทำงาน Phase 2</h2>
+      <p class="muted">ยังไม่ให้ระบบแก้คะแนนเอง ผู้ปกครองดูได้อย่างเดียวผ่านลิงก์เฉพาะนักเรียน</p>
+    </div>
+  </div>
+  <div class="phase1-steps">
+    <div><b>1</b><span>ตรวจคะแนน Phase 1</span><small>เช็กชื่อและคะแนนต้องครบก่อน</small></div>
+    <div><b>2</b><span>พิมพ์ ปพ.6</span><small>รายงานผลการเรียนรายบุคคล</small></div>
+    <div><b>3</b><span>พิมพ์ ปพ.7</span><small>หนังสือรับรองการเป็นนักเรียน</small></div>
+    <div><b>4</b><span>ส่งลิงก์ผู้ปกครอง/LINE</span><small>ผู้ปกครองดูคะแนนและแจ้งขาดเรียน</small></div>
+  </div>
+</section>
+
+<section class="card">
+  <div class="section-head-row">
+    <div>
+      <h2>นักเรียนสำหรับเอกสารและลิงก์ผู้ปกครอง</h2>
+      <p class="muted">ใช้ปุ่มคัดลอกลิงก์ส่งให้ผู้ปกครองได้ ลิงก์นี้ดูได้อย่างเดียว</p>
+    </div>
+    <a class="btn secondary" href="{{ url_for('phase1_dashboard') }}">← กลับ Phase 1</a>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <tr>
+        <th>ห้อง</th><th>เลขที่/รหัส</th><th>นักเรียน</th><th>ผู้ปกครอง</th><th>LINE</th><th>เอกสาร</th><th>ลิงก์ผู้ปกครอง</th>
+      </tr>
+      {% for row in students %}
+      <tr>
+        <td data-label="ห้อง">{{ row.room.name if row.room else '-' }}</td>
+        <td data-label="เลขที่/รหัส">{{ row.student.student_no or '-' }} / {{ row.student.username }}</td>
+        <td data-label="นักเรียน"><b>{{ row.student.full_name }}</b></td>
+        <td data-label="ผู้ปกครอง">{{ row.student.guardian_name or '-' }}<br><small>{{ row.student.guardian_phone or '' }}</small></td>
+        <td data-label="LINE">{% if row.student.guardian_line_user_id %}<span class="status-pill ok">พร้อม</span>{% else %}<span class="status-pill warn">ยังไม่มี</span>{% endif %}</td>
+        <td data-label="เอกสาร" class="phase1-actions">
+          <a class="btn small" target="_blank" href="{{ url_for('pp6_print', student_id=row.student.id) }}">ปพ.6</a>
+          <a class="btn small secondary" target="_blank" href="{{ url_for('pp7_print', student_id=row.student.id) }}">ปพ.7</a>
+        </td>
+        <td data-label="ลิงก์ผู้ปกครอง">
+          <input class="copy-input" readonly value="{{ row.parent_url }}" onclick="this.select()">
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="7">ยังไม่มีนักเรียนในห้องที่รับผิดชอบ</td></tr>
+      {% endfor %}
+    </table>
+  </div>
+</section>
+{% endblock %}

@@ -1,0 +1,53 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="section-head-row">
+  <div>
+    <div class="eyebrow">Phase 5 · Documents</div>
+    <h1>ทะเบียนสารบรรณ</h1>
+    <p class="muted">ค้นหา กรองประเภท และส่งออกทะเบียนเอกสาร</p>
+  </div>
+  <div class="phase1-actions">
+    <a class="btn secondary" href="{{ url_for('phase5_dashboard') }}">← Phase 5</a>
+    <a class="btn" href="{{ url_for('phase5_document_new', type=current_type or 'incoming') }}">+ เพิ่มเอกสาร</a>
+  </div>
+</div>
+
+<section class="card">
+  <form method="get" class="inline-form phase5-filter">
+    <select name="type">
+      <option value="">ทุกประเภท</option>
+      {% for key, meta in doc_types.items() %}<option value="{{ key }}" {% if current_type==key %}selected{% endif %}>{{ meta.label }}</option>{% endfor %}
+    </select>
+    <select name="status">
+      <option value="">ทุกสถานะ</option>
+      {% for s in statuses %}<option value="{{ s }}" {% if current_status==s %}selected{% endif %}>{{ s }}</option>{% endfor %}
+    </select>
+    <input type="search" name="q" value="{{ qtext }}" placeholder="ค้นหาเรื่อง/เลขที่/หน่วยงาน">
+    <button class="btn small" type="submit">ค้นหา</button>
+    <a class="btn small secondary" href="{{ url_for('phase5_documents_export', type=current_type) }}">Export Excel</a>
+  </form>
+</section>
+
+<section class="card">
+  <div class="table-wrap">
+    <table>
+      <tr><th>เลขทะเบียน</th><th>ประเภท</th><th>เรื่อง</th><th>จาก/ถึง</th><th>วันที่</th><th>ผู้รับผิดชอบ</th><th>สถานะ</th><th>จัดการ</th></tr>
+      {% for doc in docs %}
+      <tr>
+        <td data-label="เลขทะเบียน"><b>{{ doc.register_no or '-' }}</b><br><small>{{ doc.document_no or '' }}</small></td>
+        <td data-label="ประเภท">{{ doc_type_label(doc.doc_type) }}</td>
+        <td data-label="เรื่อง"><b>{{ doc.title }}</b><br><small>{{ doc.priority }}{% if doc.confidentiality != 'ปกติ' %} · {{ doc.confidentiality }}{% endif %}</small></td>
+        <td data-label="จาก/ถึง">{{ doc.from_org or '-' }}<br><small>ถึง {{ doc.to_org or '-' }}</small></td>
+        <td data-label="วันที่">{{ thai_date_short(doc.document_date) if doc.document_date else '-' }}<br><small>รับ {{ thai_date_short(doc.received_date) if doc.received_date else '-' }}</small></td>
+        <td data-label="ผู้รับผิดชอบ">{{ doc.responsible_teacher.full_name if doc.responsible_teacher else '-' }}</td>
+        <td data-label="สถานะ"><span class="status-pill {% if doc.status=='เสร็จสิ้น' %}ok{% elif doc.priority in ['ด่วนมาก','ด่วนที่สุด'] %}danger{% else %}warn{% endif %}">{{ doc.status }}</span></td>
+        <td data-label="จัดการ" class="phase1-actions">
+          <a class="btn small" href="{{ url_for('phase5_document_detail', document_id=doc.id) }}">เปิด</a>
+          <a class="btn small secondary" href="{{ url_for('phase5_document_edit', document_id=doc.id) }}">แก้ไข</a>
+        </td>
+      </tr>
+      {% else %}<tr><td colspan="8">ยังไม่มีเอกสาร</td></tr>{% endfor %}
+    </table>
+  </div>
+</section>
+{% endblock %}
