@@ -6,6 +6,7 @@
     <p>สรุปตารางสอนรายสัปดาห์ แอดมินเลือกดูแยกตามครูได้ ครูและนักเรียนเห็นเฉพาะของตนเอง</p>
   </div>
   <div class="actions-row">
+    <a class="btn" href="{{ url_for('subjects') }}">📚 บริหารจัดการวิชา</a>
     <button type="button" class="btn" onclick="saveScheduleImage()">📸 บันทึกตารางเป็นรูปภาพ</button>
     <a class="btn secondary" href="#schedule-form">+ เพิ่มคาบ</a>
     {% if current_user.role in ['admin','teacher'] %}<a class="btn" href="{{ url_for('substitute_schedule') }}">👨‍🏫 สอนแทน/เช็กชื่อแทน</a>{% endif %}
@@ -79,7 +80,8 @@
                       <div class="slot-action-row period-hub-actions">
                         {% set anchor = item.rows[0] %}
                         {% if current_user.role != 'student' %}
-                          <a class="btn tiny primary-period-btn combined-period-btn" href="{{ url_for('attendance_schedule_group', schedule_id=anchor.id, date=today_date, period_no=anchor.period_no) }}">เปิดคาบ {{ item.room_text }} เช็กชื่อด้วย</a>
+                          <a class="btn tiny primary-period-btn open-period-btn" href="{{ url_for('schedule_period_group', schedule_id=anchor.id, date=today_date) }}">เปิดคาบ {{ item.room_text }}</a>
+                          <a class="btn tiny secondary attendance-shortcut combined-attendance-btn" href="{{ url_for('attendance_schedule_group', schedule_id=anchor.id, date=today_date, period_no=anchor.period_no) }}">เช็กชื่อ {{ item.room_text }}</a>
                         {% else %}
                           <a class="btn tiny primary-period-btn" href="{{ url_for('schedule_period', schedule_id=anchor.id, date=today_date) }}">เปิดคาบ {{ item.room_text }}</a>
                         {% endif %}
@@ -118,7 +120,7 @@
 .break-label{font-weight:800;writing-mode:vertical-rl;margin:auto;line-height:1.1}
 .break-cell span{font-weight:800;writing-mode:vertical-rl;display:inline-block}
 .break-cell small{display:block;font-size:10px;margin-top:4px}
-.period-hub-actions{display:flex;flex-wrap:wrap;gap:4px;margin:5px 0}.primary-period-btn{font-weight:800}.live-lesson-badge{display:block;margin-top:5px;padding:5px 7px;border-radius:10px;background:#dcfce7;color:#166534;font-size:11px;font-weight:800}.hidden-lesson-badge{display:block;margin-top:5px;padding:5px 7px;border-radius:10px;background:#fee2e2;color:#991b1b;font-size:11px;font-weight:800}.muted-lesson-badge{display:block;margin-top:5px;padding:5px 7px;border-radius:10px;background:#f1f5f9;color:#64748b;font-size:11px;font-weight:700}
+.period-hub-actions{display:flex;flex-wrap:wrap;gap:4px;margin:5px 0}.primary-period-btn{font-weight:800}.combined-attendance-btn{background:#16a34a;color:#fff;border-color:#16a34a}.open-period-btn{background:#38bdf8;color:#075985;border-color:#7dd3fc}.live-lesson-badge{display:block;margin-top:5px;padding:5px 7px;border-radius:10px;background:#dcfce7;color:#166534;font-size:11px;font-weight:800}.hidden-lesson-badge{display:block;margin-top:5px;padding:5px 7px;border-radius:10px;background:#fee2e2;color:#991b1b;font-size:11px;font-weight:800}.muted-lesson-badge{display:block;margin-top:5px;padding:5px 7px;border-radius:10px;background:#f1f5f9;color:#64748b;font-size:11px;font-weight:700}
 </style>
 
 {% if current_user.role != 'student' %}
@@ -172,8 +174,8 @@
     {% endif %}
   </td>
   <td data-label="บทเรียน/หัวข้อเดิม">{% if s.lesson %}<a class="btn small" href="{{url_for('lesson_detail', lesson_id=s.lesson.id)}}">{{s.lesson.title}}</a>{% else %}{{s.topic or '-'}}{% endif %}</td>
-  <td data-label="เปิดคาบ"><a class="btn small" href="{{url_for('schedule_period', schedule_id=s.id, date=today_date)}}">เปิดคาบ/บทเรียน</a></td>
-  {% if current_user.role!='student' %}<td data-label="เช็กชื่อ/คะแนน"><a class="btn small attendance-shortcut" href="{{url_for('attendance', subject_id=s.subject_id, classroom_id=s.classroom_id, date=today_date, period_no=s.period_no, schedule_id=s.id)}}">เช็กชื่อ/คะแนน</a></td><td data-label="จัดการ"><a class="btn small" href="{{url_for('schedule_edit', schedule_id=s.id)}}">แก้ไขคาบ</a><form method="post" action="{{url_for('schedule_delete', schedule_id=s.id)}}" class="inline" onsubmit="return confirm('ลบคาบนี้?')"><button class="danger-btn small">ลบ</button></form></td>{% endif %}
+  <td data-label="เปิดคาบ"><a class="btn small" href="{{ url_for('schedule_period_group', schedule_id=s.id, date=today_date) }}">เปิดคาบ/บทเรียน</a></td>
+  {% if current_user.role!='student' %}<td data-label="เช็กชื่อ/คะแนน"><a class="btn small attendance-shortcut" href="{{ url_for('attendance_schedule_group', schedule_id=s.id, date=today_date, period_no=s.period_no) }}">เช็กชื่อรวมคาบนี้</a></td><td data-label="จัดการ"><a class="btn small" href="{{url_for('schedule_edit', schedule_id=s.id)}}">แก้ไขคาบ</a><form method="post" action="{{url_for('schedule_delete', schedule_id=s.id)}}" class="inline" onsubmit="return confirm('ลบคาบนี้?')"><button class="danger-btn small">ลบ</button></form></td>{% endif %}
 </tr>
 {% endfor %}
 </table>

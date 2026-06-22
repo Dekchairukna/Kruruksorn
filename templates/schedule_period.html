@@ -3,7 +3,7 @@
 <div class="page-head">
   <div>
     <h1>เปิดคาบเรียน</h1>
-    <p class="muted">{{ row.subject.name }} · {{ row.classroom.name }} · คาบ {{ row.period_no }} · {{ selected_day_label }}</p>
+    <p class="muted">{{ row.subject.name }} · {{ group_room_text if is_group_period is defined and is_group_period else row.classroom.name }} · คาบ {{ row.period_no }} · {{ selected_day_label }}</p>
   </div>
   <div class="actions-row">
     <a class="btn secondary" href="{{ url_for('schedule') }}">← กลับตารางสอน</a>
@@ -21,10 +21,13 @@
   </form>
   <div class="period-summary-grid">
     <div><b>วิชา</b><span>{{ row.subject.name }}</span></div>
-    <div><b>ห้อง</b><span>{{ row.classroom.name }}</span></div>
+    <div><b>ห้อง</b><span>{{ group_room_text if is_group_period is defined and is_group_period else row.classroom.name }}</span></div>
     <div><b>เวลา</b><span>{{ row.start_time }} - {{ row.end_time }}</span></div>
     <div><b>สถานที่</b><span>{{ row.room_name or '-' }}</span></div>
   </div>
+  {% if is_group_period is defined and is_group_period and group_rows is defined and group_rows|length > 1 %}
+  <div class="group-period-note">เปิดคาบรวมหลายห้อง: {% for gr in group_rows %}<span>{{ gr.classroom.name }}</span>{% endfor %}</div>
+  {% endif %}
   {% if row.topic %}<p class="period-topic"><b>หัวข้อในตาราง:</b> {{ row.topic }}</p>{% endif %}
   <div class="current-content-box {% if lesson_log and lesson_log.is_published %}is-live{% else %}is-hidden{% endif %}">
     <div>
@@ -51,7 +54,7 @@
 <section class="card period-publish-card" id="publish-lesson-panel">
   <h2>📌 กำหนดบทเรียนของคาบนี้</h2>
   <p class="muted">เลือกบทเรียนที่สอนในวันที่นี้ แล้วกด “สอนแล้ว/เปิดให้นักเรียนเห็น” นักเรียนในห้องนี้จึงจะเห็นบทเรียน ใบงาน และแบบทดสอบของคาบนี้</p>
-  <form method="post" action="{{ url_for('schedule_period_publish', schedule_id=row.id) }}" class="stack-form js-confirm-form" data-confirm="ยืนยันเปิดบทเรียนนี้ให้นักเรียนเห็นและบันทึกว่าสอนไปแล้ว?">
+  <form method="post" action="{{ url_for('schedule_period_group_publish', schedule_id=row.id) if is_group_period is defined and is_group_period else url_for('schedule_period_publish', schedule_id=row.id) }}" class="stack-form js-confirm-form" data-confirm="ยืนยันเปิดบทเรียนนี้ให้นักเรียนเห็นและบันทึกว่าสอนไปแล้ว?">
     <input type="hidden" name="date" value="{{ selected_date.isoformat() }}">
     <label>บทเรียนที่จะเปิดในคาบนี้</label>
     <select name="lesson_id" required>
@@ -66,7 +69,7 @@
     <div class="actions-row">
       <button type="submit" class="btn">สอนแล้ว / เปิดให้นักเรียนเห็น</button>
       {% if lesson_log and lesson_log.is_published %}
-      <button type="submit" formaction="{{ url_for('schedule_period_unpublish', schedule_id=row.id) }}" class="danger-btn secondary">ซ่อนบทเรียนคาบนี้</button>
+      <button type="submit" formaction="{{ url_for('schedule_period_group_unpublish', schedule_id=row.id) if is_group_period is defined and is_group_period else url_for('schedule_period_unpublish', schedule_id=row.id) }}" class="danger-btn secondary">ซ่อนบทเรียนคาบนี้</button>
       {% endif %}
     </div>
   </form>
@@ -80,15 +83,16 @@
 
 <section class="period-action-grid">
   {% if current_user.role in ['teacher','admin'] %}
-  <a class="period-action-card" href="{{ url_for('attendance', subject_id=row.subject_id, classroom_id=row.classroom_id, date=selected_date.isoformat(), period_no=row.period_no, schedule_id=row.id) }}">
+  {% set period_room_text = group_room_text if is_group_period is defined and is_group_period else row.classroom.name %}
+  <a class="period-action-card" href="{{ url_for('attendance_schedule_group', schedule_id=row.id, date=selected_date.isoformat(), period_no=row.period_no) if is_group_period is defined and is_group_period else url_for('attendance', subject_id=row.subject_id, classroom_id=row.classroom_id, date=selected_date.isoformat(), period_no=row.period_no, schedule_id=row.id) }}">
     <div class="period-icon">✅</div>
-    <h2>เช็กชื่อ</h2>
-    <p>เช็กชื่อย้อนหลัง/แก้ไขการมาเรียนของคาบนี้</p>
+    <h2>เช็กชื่อ {{ period_room_text }}</h2>
+    <p>{% if is_group_period is defined and is_group_period %}เช็กชื่อรวมหลายห้องในหน้าเดียว เรียงตามห้องเลขน้อยก่อน{% else %}เช็กชื่อย้อนหลัง/แก้ไขการมาเรียนของคาบนี้{% endif %}</p>
   </a>
-  <a class="period-action-card" href="{{ url_for('attendance', subject_id=row.subject_id, classroom_id=row.classroom_id, date=selected_date.isoformat(), period_no=row.period_no, schedule_id=row.id) }}#classwork-score">
+  <a class="period-action-card" href="{{ (url_for('attendance_schedule_group', schedule_id=row.id, date=selected_date.isoformat(), period_no=row.period_no) if is_group_period is defined and is_group_period else url_for('attendance', subject_id=row.subject_id, classroom_id=row.classroom_id, date=selected_date.isoformat(), period_no=row.period_no, schedule_id=row.id)) }}#classwork-score">
     <div class="period-icon">🧮</div>
-    <h2>กรอกคะแนน</h2>
-    <p>กรอกคะแนนในคาบเรียน แล้วไปรวมกับคะแนนตัดเกรด</p>
+    <h2>กรอกคะแนน {{ period_room_text }}</h2>
+    <p>{% if is_group_period is defined and is_group_period %}กรอกคะแนนคาบเรียนของกลุ่มห้องนี้ในหน้าเดียว{% else %}กรอกคะแนนในคาบเรียน แล้วไปรวมกับคะแนนตัดเกรด{% endif %}</p>
   </a>
   {% endif %}
 
@@ -139,12 +143,42 @@
     {% if current_user.role in ['teacher','admin'] %}<a class="btn secondary small" href="{{ url_for('quiz_create', lesson_id=lesson.id) }}">+ เพิ่มแบบทดสอบ</a>{% endif %}
   </div>
   {% else %}
+  <a class="period-action-card" href="{{ url_for('subject_detail', subject_id=row.subject_id) }}">
+    <div class="period-icon">📘</div>
+    <h2>บทเรียน</h2>
+    <p>ยังไม่ได้เลือกบทเรียนของคาบนี้ กดเพื่อจัดการหน่วย/บทเรียนรายวิชา</p>
+  </a>
+  {% if current_user.role in ['teacher','admin'] %}
+  <a class="period-action-card" href="{{ url_for('schedule_edit', schedule_id=row.id) }}">
+    <div class="period-icon">✏️</div>
+    <h2>แก้/ผูกบทเรียน</h2>
+    <p>เลือกบทเรียนที่จะใช้กับคาบนี้ หรือแก้ข้อมูลคาบเรียน</p>
+  </a>
+  {% endif %}
+  <div class="period-action-card list-card muted-card">
+    <div class="period-icon">📝</div>
+    <h2>ใบงาน</h2>
+    <p>ยังไม่มีใบงาน เพราะยังไม่ได้เลือก/เปิดบทเรียนของคาบนี้</p>
+    {% if current_user.role in ['teacher','admin'] %}
+      <a class="btn secondary small" href="#publish-lesson-panel">เลือกบทเรียนก่อน</a>
+      <a class="btn secondary small" href="{{ url_for('subject_detail', subject_id=row.subject_id) }}">จัดการใบงานในรายวิชา</a>
+    {% endif %}
+  </div>
+  <div class="period-action-card list-card muted-card">
+    <div class="period-icon">📋</div>
+    <h2>แบบทดสอบ</h2>
+    <p>ยังไม่มีแบบทดสอบ เพราะยังไม่ได้เลือก/เปิดบทเรียนของคาบนี้</p>
+    {% if current_user.role in ['teacher','admin'] %}
+      <a class="btn secondary small" href="#publish-lesson-panel">เลือกบทเรียนก่อน</a>
+      <a class="btn secondary small" href="{{ url_for('subject_detail', subject_id=row.subject_id) }}">จัดการแบบทดสอบในรายวิชา</a>
+    {% endif %}
+  </div>
   <div class="period-action-card warning-card">
     <div class="period-icon">⚠️</div>
     <h2>ครูยังไม่ได้เปิดบทเรียนของคาบนี้</h2>
-    <p>นักเรียนจะเห็นบทเรียนเมื่อครูกด “สอนแล้ว/เปิดให้นักเรียนเห็น” ของวันที่เรียนนี้</p>
+    <p>นักเรียนจะเห็นบทเรียน ใบงาน และแบบทดสอบ เมื่อครูกด “สอนแล้ว/เปิดให้นักเรียนเห็น” ของวันที่เรียนนี้</p>
     {% if current_user.role in ['teacher','admin'] %}
-      <a class="btn" href="{{ url_for('schedule_edit', schedule_id=row.id) }}">ผูกบทเรียนกับคาบนี้</a>
+      <a class="btn" href="#publish-lesson-panel">เลือกบทเรียนด้านบน</a>
       <a class="btn secondary" href="{{ url_for('subject_detail', subject_id=row.subject_id) }}">จัดการหน่วย/บทเรียนรายวิชา</a>
     {% endif %}
   </div>
@@ -152,7 +186,7 @@
 </section>
 
 <style>
-.period-summary-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-top:12px}.period-summary-grid div{background:#f8fafc;border:1px solid #e5e7eb;border-radius:14px;padding:10px}.period-summary-grid b{display:block;color:#64748b;font-size:12px}.period-summary-grid span{font-weight:800}.period-topic{margin-top:12px}.period-action-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px;margin:18px 0}.period-action-card{display:block;text-decoration:none;color:inherit;background:#fff;border:1px solid #e5e7eb;border-radius:18px;padding:16px;box-shadow:0 8px 24px rgba(15,23,42,.06)}.period-action-card:hover{transform:translateY(-1px);box-shadow:0 10px 28px rgba(15,23,42,.09)}.period-action-card h2{margin:4px 0 6px}.period-action-card p{color:#64748b;margin:0 0 8px}.period-icon{font-size:30px}.list-card{display:flex;flex-direction:column;gap:8px}.warning-card{grid-column:1/-1;border-color:#fed7aa;background:#fff7ed}.period-overview-card .form-row{align-items:end}
+.group-period-note{margin-top:10px;padding:10px 12px;border-radius:14px;background:#eff6ff;border:1px solid #bfdbfe;color:#1e40af;font-weight:800}.group-period-note span{display:inline-block;margin:2px 4px;padding:3px 8px;border-radius:999px;background:#dbeafe}.period-summary-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-top:12px}.period-summary-grid div{background:#f8fafc;border:1px solid #e5e7eb;border-radius:14px;padding:10px}.period-summary-grid b{display:block;color:#64748b;font-size:12px}.period-summary-grid span{font-weight:800}.period-topic{margin-top:12px}.period-action-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px;margin:18px 0}.period-action-card{display:block;text-decoration:none;color:inherit;background:#fff;border:1px solid #e5e7eb;border-radius:18px;padding:16px;box-shadow:0 8px 24px rgba(15,23,42,.06)}.period-action-card:hover{transform:translateY(-1px);box-shadow:0 10px 28px rgba(15,23,42,.09)}.period-action-card h2{margin:4px 0 6px}.period-action-card p{color:#64748b;margin:0 0 8px}.period-icon{font-size:30px}.list-card{display:flex;flex-direction:column;gap:8px}.warning-card{grid-column:1/-1;border-color:#fed7aa;background:#fff7ed}.muted-card{border-color:#e5e7eb;background:#f8fafc}.period-overview-card .form-row{align-items:end}
 .current-content-box{margin-top:14px;border-radius:18px;padding:14px 16px;display:flex;justify-content:space-between;align-items:flex-start;gap:12px;border:1px solid #e5e7eb;background:#f8fafc}.current-content-box h2{margin:4px 0;font-size:20px}.current-content-box p{margin:3px 0}.current-content-box.is-live{border-color:#86efac;background:#f0fdf4}.current-content-box.is-hidden{border-color:#fecaca;background:#fff7f7}.preline{white-space:pre-line}
 </style>
 {% endblock %}

@@ -124,6 +124,38 @@ def get_database_uri():
     return f"sqlite:///{os.path.join(INSTANCE_DIR, 'krurakson.db')}"
 
 app.config['SQLALCHEMY_DATABASE_URI'] = get_database_uri()
+
+def ensure_local_sqlite_writable():
+    """กันปัญหา sqlite3.OperationalError: attempt to write a readonly database
+
+    เคสที่เจอบ่อยคือแตก zip แล้วไฟล์ instance/krurakson.db หรือโฟลเดอร์ instance
+    ถูกตั้ง permission เป็น read-only ทำให้บันทึกคะแนน/เช็กชื่อไม่ได้
+    ใช้เฉพาะ SQLite local เท่านั้น ส่วน Railway ควรใช้ PostgreSQL ผ่าน DATABASE_URL
+    """
+    uri = app.config.get('SQLALCHEMY_DATABASE_URI', '')
+    if not uri.startswith('sqlite:///'):
+        return
+    db_path = uri.replace('sqlite:///', '', 1)
+    db_dir = os.path.dirname(db_path) or BASE_DIR
+    try:
+        os.makedirs(db_dir, exist_ok=True)
+        # ให้ owner เขียนได้ และให้โฟลเดอร์เข้าได้
+        os.chmod(db_dir, 0o755)
+    except Exception:
+        pass
+    try:
+        if os.path.exists(db_path):
+            os.chmod(db_path, 0o664)
+    except Exception:
+        pass
+    if os.path.exists(db_path) and not os.access(db_path, os.W_OK):
+        raise RuntimeError(
+            'ฐานข้อมูล SQLite เป็น read-only: ' + db_path +
+            ' | แก้โดยรัน: chmod u+rw "' + db_path + '" และ chmod u+rwx "' + db_dir + '" '
+            'หรือย้ายโปรเจกต์ออกจากโฟลเดอร์ที่ล็อกสิทธิ์'
+        )
+
+ensure_local_sqlite_writable()
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['UPLOAD_FOLDER'] = UPLOAD_DIR
 app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100MB รองรับวิดีโอบทเรียน
@@ -1283,6 +1315,65 @@ def lesson_for_schedule(schedule_row, target_date=None, for_student=False):
     return auto_lesson_for_schedule(schedule_row, target_date)
 
 
+def ordered_lessons_for_schedule_group(group_rows):
+    """คืนบทเรียนของคาบรวมหลายห้อง โดยรองรับกรณีนำเข้าข้อมูลแล้ววิชาเดียวกันถูกสร้างเป็นคนละ subject_id
+    - ใช้ตอนเปิดคาบรวม/แก้บทเรียน เพื่อไม่ให้การ์ด บทเรียน และ แก้ไขบทเรียน หาย
+    - เรียงตามลำดับห้องที่แสดงจริง และตัดบทเรียนซ้ำออก
+    """
+    lessons = []
+    seen = set()
+    for row in group_rows or []:
+        for lesson in ordered_lessons_for_subject(row.subject_id):
+            if lesson.id not in seen:
+                lessons.append(lesson)
+                seen.add(lesson.id)
+    return lessons
+
+
+def lesson_for_schedule_group(group_rows, target_date=None):
+    """เลือกบทเรียนสำหรับหน้าเปิดคาบรวมหลายห้อง
+    เดิมใช้เฉพาะ anchor schedule ทำให้บางกรณีบทเรียน/แก้ไขบทเรียนหาย
+    จึงไล่หา lesson จาก log, lesson ที่ผูกกับตาราง, และบทเรียนอัตโนมัติของทุกห้องในกลุ่ม
+    """
+    target_date = target_date or local_today()
+    group_rows = group_rows or []
+
+    # 1) ถ้าวันนี้มี log ห้องใดห้องหนึ่งแล้ว ให้ใช้บทเรียนนั้นเป็นบทเรียนหลักของคาบรวม
+    for row in group_rows:
+        log = get_period_lesson_log(row, target_date)
+        if log and log.lesson_id and log.lesson:
+            return log.lesson
+
+    # 2) ถ้าตารางห้องใดผูกบทเรียนไว้ ให้ใช้บทเรียนนั้น
+    for row in group_rows:
+        if row.lesson_id and row.lesson:
+            return row.lesson
+
+    # 3) ถ้าไม่ได้ผูก ให้หา auto lesson จากทุกห้อง เพราะบางไฟล์ import ทำให้ subject_id แยกกันแม้ชื่อวิชาเหมือนกัน
+    for row in group_rows:
+        lesson = auto_lesson_for_schedule(row, target_date)
+        if lesson:
+            return lesson
+
+    # 4) สุดท้าย ถ้ามีบทเรียนของวิชาใดในกลุ่ม ให้โชว์บทเรียนแรกแทนการปล่อยให้ปุ่มหาย
+    lessons = ordered_lessons_for_schedule_group(group_rows)
+    return lessons[0] if lessons else None
+
+
+def get_group_period_lesson_log(group_rows, target_date=None):
+    """คืน log สำหรับแสดงสถานะในคาบรวม โดยเลือก log ที่มี lesson ก่อน"""
+    target_date = target_date or local_today()
+    group_rows = group_rows or []
+    fallback = None
+    for row in group_rows:
+        log = get_period_lesson_log(row, target_date)
+        if log and not fallback:
+            fallback = log
+        if log and log.lesson_id:
+            return log
+    return fallback
+
+
 def student_can_view_lesson(lesson, student):
     """นักเรียนเปิดบทเรียนได้เมื่อครูกดเปิดบทเรียนนั้นให้ห้องของนักเรียนแล้ว"""
     if not lesson or not student or getattr(student, 'role', None) != 'student':
@@ -2195,6 +2286,7 @@ def build_school_erp_integrated_dashboard(modules, summary):
         except Exception:
             card['url'] = '#'
     quick_links = [
+        {'label': 'บริหารจัดการวิชา', 'url': url_for('subjects'), 'icon': '📚'},
         {'label': 'ตารางสอน', 'url': url_for('schedule'), 'icon': '📅'},
         {'label': 'เช็กชื่อ/คะแนน', 'url': url_for('records_center'), 'icon': '✅'},
         {'label': 'นำเข้า Excel', 'url': url_for('import_all'), 'icon': '📦'} if current_user.role == 'admin' else None,
@@ -3558,6 +3650,14 @@ def download_term_import_file():
 def download_import_template():
     return send_file(os.path.join(BASE_DIR, 'krurakson_import_template.xlsx'), as_attachment=True)
 
+@app.route('/school-erp/subjects')
+@app.route('/academic/subjects')
+@login_required
+@role_required('teacher','admin')
+def school_subjects_shortcut():
+    """ทางลัดหน้าบริหารจัดการวิชา ป้องกันครูหาเมนูเดิมไม่เจอหลังรวม School ERP"""
+    return redirect(url_for('subjects'))
+
 @app.route('/subjects', methods=['GET','POST'])
 @login_required
 @role_required('teacher','admin')
@@ -4699,6 +4799,27 @@ def classroom_natural_sort_key(value):
     return [int(p) if p.isdigit() else p.lower() for p in parts]
 
 
+def compact_classroom_names(room_names):
+    """ย่อชื่อห้องที่มีระดับเดียวกัน เช่น ม.1/2, ม.1/3 -> ม.1/2,1/3"""
+    names = [str(x or '').strip() for x in (room_names or []) if str(x or '').strip()]
+    if not names:
+        return '-'
+    ordered = sorted(dict.fromkeys(names), key=classroom_natural_sort_key)
+    parsed = []
+    for name in ordered:
+        m = re.match(r'^(.*?)(\d+)/(\d+)$', name)
+        if not m:
+            return ','.join(ordered)
+        prefix, level, room = m.groups()
+        parsed.append((prefix.strip(), level, room, name))
+    first_prefix, first_level, _, _ = parsed[0]
+    if all(prefix == first_prefix and level == first_level for prefix, level, room, original in parsed):
+        return ','.join(f"{first_prefix}{level}/{room}" if i == 0 else f"{level}/{room}" for i, (prefix, level, room, original) in enumerate(parsed))
+    if all(prefix == first_prefix for prefix, level, room, original in parsed):
+        return ','.join(f"{level}/{room}" if i else f"{prefix}{level}/{room}" for i, (prefix, level, room, original) in enumerate(parsed))
+    return ','.join(ordered)
+
+
 def schedule_group_sort_rows(rows):
     return sorted(rows or [], key=lambda r: (classroom_natural_sort_key(r.classroom.name if r.classroom else ''), r.id or 0))
 
@@ -4737,7 +4858,7 @@ def build_schedule_grid(rows):
                 if row.classroom and row.classroom.name not in room_names:
                     room_names.append(row.classroom.name)
             group['classrooms'] = room_names
-            group['room_text'] = ','.join(room_names)
+            group['room_text'] = compact_classroom_names(room_names)
             group['is_multi_room'] = len(room_names) > 1
     return grid
 
@@ -4774,6 +4895,14 @@ def schedule_period(schedule_id):
     row = TeachingSchedule.query.get_or_404(schedule_id)
     if not user_can_open_schedule(row):
         return deny_redirect('schedule')
+
+    # ถ้าคาบนี้เป็นวิชาเดียวกัน เวลาเดียวกัน หลายห้อง ให้พาไปหน้าเปิดคาบแบบรวมเสมอ
+    # กันกรณีเข้าจาก Dashboard/ตารางรายการ/ลิงก์เก่า แล้วหลุดเป็น schedule_id ห้องเดียว
+    if current_user.role in ['teacher', 'admin']:
+        grouped_rows = schedule_room_group_rows(row)
+        if len(grouped_rows) > 1:
+            return redirect(url_for('schedule_period_group', schedule_id=grouped_rows[0].id, date=request.args.get('date', local_today().isoformat())))
+
     selected_date = datetime.strptime(request.args.get('date', local_today().isoformat()), '%Y-%m-%d').date()
     lesson_log = get_period_lesson_log(row, selected_date)
     lesson = lesson_for_schedule(row, selected_date, for_student=(current_user.role == 'student'))
@@ -4816,6 +4945,108 @@ def schedule_period(schedule_id):
             for l in (ordered_lessons_for_subject(row.subject_id) if current_user.role in ['teacher','admin'] else [])
         ]
     )
+
+
+
+@app.route('/schedule/group/<int:schedule_id>/period')
+@login_required
+@role_required('teacher','admin')
+def schedule_period_group(schedule_id):
+    """เปิดคาบแบบรวมหลายห้อง: วิชาเดียวกัน ครูเดียวกัน วัน/คาบ/เวลาเดียวกัน"""
+    row = TeachingSchedule.query.get_or_404(schedule_id)
+    group_rows = schedule_room_group_rows(row) or [row]
+    for gr in group_rows:
+        if not user_can_open_schedule(gr):
+            return deny_redirect('schedule')
+    selected_date = datetime.strptime(request.args.get('date', local_today().isoformat()), '%Y-%m-%d').date()
+    lesson_log = get_group_period_lesson_log(group_rows, selected_date)
+    lesson = lesson_for_schedule_group(group_rows, selected_date)
+    worksheets = Worksheet.query.filter_by(lesson_id=lesson.id).all() if lesson else []
+    quizzes = Quiz.query.filter_by(lesson_id=lesson.id).all() if lesson else []
+    files_count = LessonFile.query.filter_by(lesson_id=lesson.id).count() if lesson else 0
+    room_names = [gr.classroom.name for gr in group_rows if gr.classroom]
+    available_group_lessons = ordered_lessons_for_schedule_group(group_rows)
+    return render_template(
+        'schedule_period.html',
+        row=row,
+        selected_date=selected_date,
+        selected_day_label=thai_date_label(selected_date),
+        lesson=lesson,
+        worksheets=worksheets,
+        quizzes=quizzes,
+        files_count=files_count,
+        lesson_status=None,
+        lesson_log=lesson_log,
+        available_lessons=[
+            SimpleNamespace(
+                lesson=l,
+                worksheet_count=Worksheet.query.filter_by(lesson_id=l.id).count(),
+                quiz_count=Quiz.query.filter_by(lesson_id=l.id).count(),
+                file_count=LessonFile.query.filter_by(lesson_id=l.id).count(),
+            )
+            for l in available_group_lessons
+        ],
+        is_group_period=True,
+        group_rows=group_rows,
+        group_room_text=compact_classroom_names(room_names) or (row.classroom.name if row.classroom else '-')
+    )
+
+
+@app.route('/schedule/group/<int:schedule_id>/period/publish', methods=['POST'])
+@login_required
+@role_required('teacher','admin')
+def schedule_period_group_publish(schedule_id):
+    """เปิดบทเรียนให้ทุกห้องในคาบรวมเดียวกัน"""
+    anchor = TeachingSchedule.query.get_or_404(schedule_id)
+    group_rows = schedule_room_group_rows(anchor) or [anchor]
+    for row in group_rows:
+        if not user_can_open_schedule(row):
+            return deny_redirect('schedule')
+    selected_date = datetime.strptime(request.form.get('date', local_today().isoformat()), '%Y-%m-%d').date()
+    lesson_id = request.form.get('lesson_id', type=int)
+    note = (request.form.get('note') or '').strip()
+    lesson = Lesson.query.get_or_404(lesson_id)
+    available_ids = {l.id for l in ordered_lessons_for_schedule_group(group_rows)}
+    if available_ids and lesson.id not in available_ids:
+        flash('บทเรียนนี้ไม่ได้อยู่ในรายวิชาของคาบรวมนี้', 'danger')
+        return redirect(url_for('schedule_period_group', schedule_id=anchor.id, date=selected_date.isoformat()))
+    for row in group_rows:
+        log = get_period_lesson_log(row, selected_date)
+        if not log:
+            log = PeriodLessonLog(schedule_id=row.id, taught_date=selected_date)
+            db.session.add(log)
+        log.lesson_id = lesson.id
+        log.is_published = True
+        log.taught_at = datetime.utcnow()
+        log.taught_by_id = current_user.id
+        log.note = note
+        create_lesson_assignment_for_classroom(lesson, row)
+    db.session.commit()
+    rooms = compact_classroom_names([r.classroom.name for r in group_rows if r.classroom])
+    flash(f'เปิดบทเรียน “{lesson.title}” ให้ {rooms} แล้ว', 'success')
+    return redirect(url_for('schedule_period_group', schedule_id=anchor.id, date=selected_date.isoformat()))
+
+
+@app.route('/schedule/group/<int:schedule_id>/period/unpublish', methods=['POST'])
+@login_required
+@role_required('teacher','admin')
+def schedule_period_group_unpublish(schedule_id):
+    """ซ่อนบทเรียนของทุกห้องในคาบรวมเดียวกัน"""
+    anchor = TeachingSchedule.query.get_or_404(schedule_id)
+    group_rows = schedule_room_group_rows(anchor) or [anchor]
+    for row in group_rows:
+        if not user_can_open_schedule(row):
+            return deny_redirect('schedule')
+    selected_date = datetime.strptime(request.form.get('date', local_today().isoformat()), '%Y-%m-%d').date()
+    changed = 0
+    for row in group_rows:
+        log = get_period_lesson_log(row, selected_date)
+        if log:
+            log.is_published = False
+            changed += 1
+    db.session.commit()
+    flash(f'ซ่อนบทเรียนของคาบรวมแล้ว {changed} ห้อง', 'success' if changed else 'warning')
+    return redirect(url_for('schedule_period_group', schedule_id=anchor.id, date=selected_date.isoformat()))
 
 
 @app.route('/schedule/<int:schedule_id>/period/publish', methods=['POST'])
@@ -5939,7 +6170,7 @@ def attendance_schedule_group(schedule_id):
     room_names = [r.classroom.name for r in group_rows if r.classroom]
     room_ids = [r.classroom_id for r in group_rows if r.classroom_id]
     room_lookup = {r.classroom_id: r for r in group_rows if r.classroom_id}
-    pseudo_room = SimpleNamespace(id=anchor.classroom_id, name=','.join(room_names) or (anchor.classroom.name if anchor.classroom else '-'))
+    pseudo_room = SimpleNamespace(id=anchor.classroom_id, name=compact_classroom_names(room_names) or (anchor.classroom.name if anchor.classroom else '-'))
     att_date = datetime.strptime(request.args.get('date', request.form.get('date', local_today().isoformat())), '%Y-%m-%d').date()
     period_no = request.args.get('period_no', type=int) or request.form.get('period_no', type=int) or anchor.period_no
     period_block = [int(x) for x in request.form.getlist('periods') if str(x).isdigit()] if request.method == 'POST' else schedule_period_block(anchor.id, subject.id, anchor.classroom_id, period_no)

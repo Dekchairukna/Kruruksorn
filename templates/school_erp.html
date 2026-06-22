@@ -22,6 +22,17 @@
   {% endfor %}
 </div>
 
+<section class="card subject-management-shortcut">
+  <div>
+    <h2>📚 บริหารจัดการวิชา</h2>
+    <p class="muted">หน้ารายวิชาเดิมยังอยู่ครบ ใช้สำหรับสร้างรายวิชา ผูกห้องเรียน จัดการหน่วย/บทเรียน ใบงาน และแบบทดสอบ</p>
+  </div>
+  <div class="actions-row">
+    <a class="btn" href="{{ url_for('subjects') }}">เปิดหน้าบริหารจัดการวิชา</a>
+    <a class="btn secondary" href="{{ url_for('teacher_assignments') }}">มอบหมายครู/ห้อง</a>
+  </div>
+</section>
+
 <section class="card erp-phase-hub-card">
   <div class="erp-section-head">
     <div>
