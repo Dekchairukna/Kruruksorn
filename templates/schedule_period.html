@@ -115,11 +115,20 @@
     <h2>ใบงาน</h2>
     {% if worksheets %}
       {% for w in worksheets %}
-        {% if current_user.role == 'student' %}
-          {% if lesson_status %}<a class="btn small" href="{{ url_for('do_worksheet', status_id=lesson_status.id, worksheet_id=w.id) }}">ทำใบงาน: {{ w.title }}</a>{% endif %}
-        {% else %}
-          <a class="btn small" href="{{ url_for('worksheet_edit', worksheet_id=w.id) }}">แก้ไข: {{ w.title }}</a>
-        {% endif %}
+        <div class="period-worksheet-item">
+          <b>{{ w.title }}</b>
+          {% if w.description %}<p class="preserve-lines muted">{{ w.description }}</p>{% endif %}
+          {% if w.file_path %}
+            {% with file_path=w.file_path, file_url=url_for('worksheet_file', worksheet_id=w.id), file_type=(w.file_path|file_preview_type), title=(w|worksheet_display_name) %}
+              {% include '_inline_file_preview.html' %}
+            {% endwith %}
+          {% endif %}
+          {% if current_user.role == 'student' %}
+            {% if lesson_status %}<a class="btn small" href="{{ url_for('do_worksheet', status_id=lesson_status.id, worksheet_id=w.id) }}">ทำใบงาน</a>{% endif %}
+          {% else %}
+            <a class="btn small" href="{{ url_for('worksheet_edit', worksheet_id=w.id) }}">แก้ไขใบงาน</a>
+          {% endif %}
+        </div>
       {% endfor %}
     {% else %}
       <p>ยังไม่มีใบงาน</p>

@@ -1,0 +1,39 @@
+{% set _path = file_path or '' %}
+{% set _title = title or 'ไฟล์แนบ' %}
+{% set _url = file_url or (url_for('uploaded_file', filename=_path) if _path else '') %}
+{% set _type = file_type or (_path|file_preview_type) %}
+{% if _path %}
+  {% if not (_path|upload_file_exists) %}
+    <div class="inline-file-preview missing-file-preview">
+      <div class="file-icon">!</div>
+      <div>
+        <b>{{ _title }}</b>
+        <p>ไฟล์นี้หายจากโฟลเดอร์ uploads แล้ว อาจเกิดจาก redeploy โดยไม่ได้ใช้ persistent volume ให้ครูอัปโหลดใหม่ หรือย้าย uploads ไป Railway Volume</p>
+      </div>
+    </div>
+  {% elif _type == 'image' %}
+    <figure class="inline-file-preview image-preview">
+      <img src="{{ _url }}" alt="{{ _title }}">
+      <figcaption>{{ _title }}</figcaption>
+    </figure>
+  {% elif _type == 'pdf' %}
+    <div class="inline-file-preview pdf-preview">
+      <div class="file-preview-head"><b>{{ _title }}</b><a class="btn small secondary" href="{{ _url }}" target="_blank">เปิดแยก</a></div>
+      <iframe src="{{ _url }}#toolbar=1&navpanes=0" title="{{ _title }}"></iframe>
+    </div>
+  {% elif _type == 'video' %}
+    <div class="inline-file-preview video-preview">
+      <b>{{ _title }}</b>
+      <video controls preload="metadata"><source src="{{ _url }}">เบราว์เซอร์นี้ไม่รองรับวิดีโอ</video>
+    </div>
+  {% else %}
+    <div class="inline-file-preview file-card-preview">
+      <div class="file-icon">{{ _type|upper }}</div>
+      <div>
+        <b>{{ _title }}</b>
+        <p>ไฟล์ชนิดนี้แสดงฝังในเว็บไม่ได้ แนะนำบันทึกเป็น PDF/PNG/JPG เพื่อให้นักเรียนเห็นในหน้าได้ทันที</p>
+        <a class="btn small" href="{{ _url }}" target="_blank">เปิดไฟล์</a>
+      </div>
+    </div>
+  {% endif %}
+{% endif %}

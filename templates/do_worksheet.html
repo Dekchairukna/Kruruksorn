@@ -2,13 +2,11 @@
 {% block content %}
 <h1>{{worksheet.title}}</h1>
 <div class="card worksheet-source-card">
-  <p>{{worksheet.description}}</p>
+  <p class="preserve-lines">{{worksheet.description}}</p>
   {% if worksheet.file_path %}
-    <a class="btn small" href="{{ url_for('worksheet_file', worksheet_id=worksheet.id) }}" target="_blank">เปิดไฟล์ใบงานจากครู</a>
-    {% set ext = worksheet.file_path.rsplit('.',1)[-1].lower() %}
-    {% if ext in ['png','jpg','jpeg'] %}
-      <div class="worksheet-preview"><img src="{{ url_for('worksheet_file', worksheet_id=worksheet.id) }}" alt="{{ worksheet|worksheet_display_name }}"></div>
-    {% endif %}
+    {% with file_path=worksheet.file_path, file_url=url_for('worksheet_file', worksheet_id=worksheet.id), file_type=(worksheet.file_path|file_preview_type), title=(worksheet|worksheet_display_name) %}
+      {% include '_inline_file_preview.html' %}
+    {% endwith %}
   {% endif %}
 </div>
 <form method="post" enctype="multipart/form-data" class="stack-form">
@@ -22,7 +20,6 @@
       {% for dist in ['6.5 m','7.5 m','8.5 m','9.5 m'] %}
       <tr>
         <th>{{ dist }}</th>
-        {% set row_total_name = 'total_' ~ loop.index %}
         {% for q in questions if q.question_text.startswith(dist) %}
           <td><input class="score-input" name="q_{{q.id}}" value="{{old.get(q.id,'')}}" placeholder="0-5 หรือ / X" data-row="{{ dist }}"></td>
         {% endfor %}
@@ -36,7 +33,7 @@
   {% for q in questions %}
     <label>ข้อ {{q.number}}: {{q.question_text}}</label>
     {% if worksheet.worksheet_type=='upload' or q.answer_type=='file' %}
-      <input type="file" name="file_{{q.id}}" accept=".pdf,.png,.jpg,.jpeg">
+      <input type="file" name="file_{{q.id}}" accept=".pdf,.png,.jpg,.jpeg,.webp">
       {% if old_files.get(q.id) %}<p class="muted">ไฟล์คำตอบเดิม: <a href="{{ url_for('uploaded_file', filename=old_files.get(q.id).file_path) }}" target="_blank">เปิดไฟล์ที่ส่งไว้</a></p>{% endif %}
       <textarea name="q_{{q.id}}" placeholder="หมายเหตุเพิ่มเติม ถ้ามี">{{old.get(q.id,'')}}</textarea>
     {% else %}

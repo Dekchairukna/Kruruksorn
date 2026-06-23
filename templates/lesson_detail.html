@@ -106,7 +106,11 @@
     <h3>{{ w.title }}</h3>
     <p><b>ประเภท:</b> {% if w.worksheet_type=='petanque_score' %}ใบงานเปตอง{% elif w.worksheet_type=='upload' %}อัปโหลดไฟล์{% else %}ใบงานวิชาการ{% endif %}</p>
     <p class="preserve-lines">{{ w.description or "" }}</p>
-    {% if w.file_path %}<p><a class="btn small" href="{{ url_for('worksheet_file', worksheet_id=w.id) }}" target="_blank">เปิดไฟล์ใบงาน</a></p>{% endif %}
+    {% if w.file_path %}
+      {% with file_path=w.file_path, file_url=url_for('worksheet_file', worksheet_id=w.id), file_type=(w.file_path|file_preview_type), title=(w|worksheet_display_name) %}
+        {% include '_inline_file_preview.html' %}
+      {% endwith %}
+    {% endif %}
     {% if current_user.role == 'student' and lesson_status %}
       <a class="btn" href="{{ url_for('do_worksheet', status_id=lesson_status.id, worksheet_id=w.id) }}">ทำใบงาน</a>
     {% endif %}

@@ -5,6 +5,8 @@ import zipfile
 import json
 import urllib.request
 import urllib.error
+import base64
+import mimetypes
 from io import BytesIO
 from datetime import datetime, date, time, timedelta
 import calendar as py_calendar
@@ -25,7 +27,7 @@ BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 INSTANCE_DIR = os.path.join(BASE_DIR, 'instance')
 # ไฟล์อัปโหลดต้องไม่ผูกกับโฟลเดอร์โค้ดอย่างเดียว เพราะบน Railway เมื่อ redeploy ไฟล์ใน container อาจหายได้
 # ถ้ามี Railway Volume ให้ตั้งตัวแปร PERSISTENT_UPLOAD_DIR=/data/uploads หรือ /app/uploads ตามที่ mount ไว้
-UPLOAD_DIR = os.environ.get('PERSISTENT_UPLOAD_DIR') or os.environ.get('UPLOAD_DIR') or os.path.join(BASE_DIR, 'uploads')
+UPLOAD_DIR = os.environ.get('PERSISTENT_UPLOAD_DIR') or os.environ.get('UPLOAD_DIR') or ('/data/uploads' if os.path.isdir('/data') else os.path.join(BASE_DIR, 'uploads'))
 os.makedirs(INSTANCE_DIR, exist_ok=True)
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
@@ -173,7 +175,7 @@ app.config['REMEMBER_COOKIE_SAMESITE'] = 'Lax'
 if os.environ.get('COOKIE_SECURE') == '1':
     app.config['SESSION_COOKIE_SECURE'] = True
     app.config['REMEMBER_COOKIE_SECURE'] = True
-ALLOWED_WORKSHEET_EXTENSIONS = {'pdf', 'png', 'jpg', 'jpeg', 'doc', 'docx', 'ppt', 'pptx', 'mp4', 'webm', 'mov'}
+ALLOWED_WORKSHEET_EXTENSIONS = {'pdf', 'png', 'jpg', 'jpeg', 'webp', 'gif', 'doc', 'docx', 'ppt', 'pptx', 'mp4', 'webm', 'mov'}
 ALLOWED_IMAGE_EXTENSIONS = {'png', 'jpg', 'jpeg', 'webp', 'gif'}
 
 def allowed_worksheet_file(filename):
@@ -308,7 +310,7 @@ def save_school_logo(file_obj):
 
 def detect_lesson_file_type(file_path):
     ext = (file_path or '').rsplit('.', 1)[-1].lower() if '.' in (file_path or '') else ''
-    if ext in {'png', 'jpg', 'jpeg'}:
+    if ext in {'png', 'jpg', 'jpeg', 'webp', 'gif'}:
         return 'image'
     if ext == 'pdf':
         return 'pdf'
@@ -320,6 +322,121 @@ def detect_lesson_file_type(file_path):
         return 'video'
     return 'file'
 
+
+
+@app.template_filter('file_preview_type')
+def file_preview_type_filter(file_path):
+    return detect_lesson_file_type(file_path)
+
+
+def upload_file_public_url(file_path):
+    if not file_path:
+        return ''
+    try:
+        return url_for('uploaded_file', filename=file_path)
+    except Exception:
+        return ''
+
+
+def _guess_mime_type(filename):
+    mime, _ = mimetypes.guess_type(filename or '')
+    if mime:
+        return mime
+    ext = (filename or '').rsplit('.', 1)[-1].lower() if '.' in (filename or '') else ''
+    if ext == 'pdf':
+        return 'application/pdf'
+    if ext in {'jpg', 'jpeg'}:
+        return 'image/jpeg'
+    if ext == 'png':
+        return 'image/png'
+    if ext == 'webp':
+        return 'image/webp'
+    return 'application/octet-stream'
+
+
+def extract_text_with_gemini_from_upload(file_path, original_name='', task='worksheet'):
+    """อ่านข้อความจากไฟล์ภาพ/PDF ใบงานด้วย Gemini ถ้ามี GEMINI_API_KEY
+
+    ใช้สำหรับเติมคำชี้แจง/คำถามให้อัตโนมัติหลังครูอัปโหลดไฟล์ ไม่บังคับใช้งาน
+    ถ้าไม่มี key หรืออ่านไม่ได้จะคืนค่าว่าง เพื่อไม่ให้ระบบพัง
+    """
+    api_key = (os.environ.get('GEMINI_API_KEY') or os.environ.get('GOOGLE_API_KEY') or '').strip()
+    if not api_key or not file_path:
+        return ''
+    abs_path = os.path.abspath(os.path.join(app.config['UPLOAD_FOLDER'], file_path))
+    upload_root = os.path.abspath(app.config['UPLOAD_FOLDER'])
+    if not abs_path.startswith(upload_root) or not os.path.exists(abs_path):
+        return ''
+    ext = (original_name or file_path).rsplit('.', 1)[-1].lower() if '.' in (original_name or file_path) else ''
+    if ext not in {'pdf', 'png', 'jpg', 'jpeg', 'webp'}:
+        return ''
+    try:
+        # กันส่งไฟล์ใหญ่มากไป API โดยไม่ตั้งใจ
+        if os.path.getsize(abs_path) > int(os.environ.get('AI_EXTRACT_MAX_BYTES', str(12 * 1024 * 1024))):
+            return ''
+        with open(abs_path, 'rb') as fh:
+            encoded = base64.b64encode(fh.read()).decode('ascii')
+        mime_type = _guess_mime_type(original_name or file_path)
+        model = os.environ.get('GEMINI_MODEL', 'gemini-2.5-flash')
+        if task == 'worksheet':
+            prompt = (
+                'อ่านข้อความจากไฟล์ใบงาน/ใบความรู้นี้ แล้วสรุปเป็นภาษาไทยสำหรับนำไปใส่ในระบบครูรักสอน\n'
+                'ให้ตอบเฉพาะรูปแบบนี้:\n'
+                'คำชี้แจง:\n<คำชี้แจงหรือเนื้อหาสั้น ๆ>\n\n'
+                'คำถาม:\n1. <คำถามข้อที่ 1>\n2. <คำถามข้อที่ 2>\n'
+                'ถ้าในไฟล์ไม่มีคำถาม ให้สร้างคำถามทบทวน 5 ข้อจากเนื้อหาในไฟล์'
+            )
+        else:
+            prompt = (
+                'อ่านข้อความจากไฟล์ใบความรู้/บทเรียนนี้ แล้วสรุปเป็นภาษาไทยสำหรับช่องเนื้อหาบทเรียน\n'
+                'แยกเป็น จุดประสงค์, เนื้อหา, คำศัพท์สำคัญ และคำถามท้ายบทแบบสั้น'
+            )
+        payload = {
+            'contents': [{
+                'parts': [
+                    {'text': prompt},
+                    {'inline_data': {'mime_type': mime_type, 'data': encoded}}
+                ]
+            }],
+            'generationConfig': {'temperature': 0.2, 'maxOutputTokens': 1800}
+        }
+        url = f'https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}'
+        req = urllib.request.Request(
+            url,
+            data=json.dumps(payload).encode('utf-8'),
+            headers={'Content-Type': 'application/json'}
+        )
+        with urllib.request.urlopen(req, timeout=45) as resp:
+            data = json.loads(resp.read().decode('utf-8'))
+        parts = data.get('candidates', [{}])[0].get('content', {}).get('parts', [])
+        return '\n'.join([p.get('text', '') for p in parts if p.get('text')]).strip()
+    except Exception:
+        return ''
+
+
+def split_ai_worksheet_text(text):
+    """แยกผล OCR/AI เป็นคำชี้แจงและคำถามข้อละบรรทัด"""
+    if not text:
+        return '', ''
+    cleaned = str(text).strip()
+    desc = cleaned
+    questions = []
+    if 'คำถาม:' in cleaned:
+        desc_part, q_part = cleaned.split('คำถาม:', 1)
+        desc = desc_part.replace('คำชี้แจง:', '').strip()
+        for line in q_part.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            line = re.sub(r'^\s*(ข้อ\s*)?\d+[\).:-]?\s*', '', line).strip()
+            if line:
+                questions.append(line)
+    else:
+        for line in cleaned.splitlines():
+            m = re.match(r'^\s*(?:ข้อ\s*)?\d+[\).:-]?\s*(.+)$', line)
+            if m:
+                questions.append(m.group(1).strip())
+    return desc.strip(), '\n'.join(questions).strip()
 
 def youtube_embed_url(url):
     """แปลงลิงก์ YouTube ให้ฝังในหน้าบทเรียนได้"""
@@ -4439,8 +4556,20 @@ def worksheet_create(lesson_id):
         except ValueError as e:
             flash(str(e), 'danger')
             return redirect(url_for('worksheet_create', lesson_id=lesson.id))
+        question_text_source = request.form.get('questions','')
+        if ws.file_path and request.form.get('auto_extract_file') == '1':
+            auto_text = extract_text_with_gemini_from_upload(ws.file_path, ws.original_file_name, task='worksheet')
+            auto_desc, auto_questions = split_ai_worksheet_text(auto_text)
+            if auto_desc and not ws.description.strip():
+                ws.description = auto_desc
+            if auto_questions and not question_text_source.strip():
+                question_text_source = auto_questions
+            if auto_text:
+                flash('ระบบอ่านไฟล์ใบงานแล้วเติมคำชี้แจง/คำถามให้เบื้องต้น กรุณาตรวจทานอีกครั้ง', 'success')
+            else:
+                flash('อัปโหลดไฟล์แล้ว แต่ยังอ่านเนื้อหาอัตโนมัติไม่ได้ ถ้ายังไม่ได้ตั้ง GEMINI_API_KEY ระบบจะแสดงไฟล์ในหน้าแทน', 'warning')
         db.session.add(ws); db.session.flush()
-        questions = request.form.get('questions','').splitlines()
+        questions = question_text_source.splitlines()
         for idx, q in enumerate([x.strip() for x in questions if x.strip()], start=1):
             db.session.add(WorksheetQuestion(worksheet_id=ws.id, number=idx, question_text=q, answer_type='text', max_score=float(request.form.get('default_score', 1) or 1)))
         # petanque template: ระยะ 6.5/7.5/8.5/9.5 x สถานี 1-5
@@ -4470,6 +4599,14 @@ def worksheet_edit(worksheet_id):
             fp, original = save_uploaded_file(request.files.get('worksheet_file'), 'worksheets')
             if fp:
                 ws.file_path, ws.original_file_name = fp, original
+                if request.form.get('auto_extract_file') == '1':
+                    auto_text = extract_text_with_gemini_from_upload(ws.file_path, ws.original_file_name, task='worksheet')
+                    auto_desc, auto_questions = split_ai_worksheet_text(auto_text)
+                    if auto_desc and not ws.description.strip():
+                        ws.description = auto_desc
+                    if auto_questions and not WorksheetQuestion.query.filter_by(worksheet_id=ws.id).first():
+                        for idx, q in enumerate([x.strip() for x in auto_questions.splitlines() if x.strip()], start=1):
+                            db.session.add(WorksheetQuestion(worksheet_id=ws.id, number=idx, question_text=q, answer_type='text', max_score=1))
         except ValueError as e:
             flash(str(e), 'danger')
             return redirect(url_for('worksheet_edit', worksheet_id=ws.id))
