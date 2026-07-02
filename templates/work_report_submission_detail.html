@@ -1,0 +1,24 @@
+{% extends 'base.html' %}
+{% block content %}
+{% if not current_user.is_authenticated %}<style>.main{margin-left:0!important;max-width:1000px;margin:auto!important}.sidebar-collapse-btn{display:none!important}</style>{% endif %}
+<style>.report-images{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:14px}.report-images img{width:100%;height:160px;object-fit:cover;border-radius:16px;border:1px solid #e5e7eb}.report-box{white-space:pre-wrap;line-height:1.8;background:#f8fafc;border:1px solid #e2e8f0;border-radius:18px;padding:14px}.meta{color:#64748b;font-weight:700}</style>
+<div class="page-head">
+  <div><h1>📄 รายงานของ {{ submission.reporter_name }}</h1><p>{{ submission.activity.name }}</p></div>
+  <div class="action-row"><a class="btn secondary" href="{{ url_for('work_report_activity_detail', activity_id=submission.activity.id) }}">← กลับกิจกรรม</a><a class="btn" target="_blank" href="{{ url_for('work_report_submission_print', submission_id=submission.id) }}">พิมพ์ / บันทึก PDF</a>{% if submission.activity.status=='เปิดรายงาน' %}<a class="btn secondary" href="{{ url_for('work_report_submit', activity_id=submission.activity.id, assignment_id=submission.assignment_id or '') }}">แก้ไข/เพิ่มรูป</a>{% endif %}</div>
+</div>
+<div class="card">
+  <h2>{{ submission.reporter_name }}</h2>
+  <div class="meta">ตำแหน่ง {{ submission.position }} · ส่งเมื่อ {{ submission.submitted_at.strftime('%d/%m/%Y %H:%M') if submission.submitted_at else '-' }}</div>
+  <h3>หน้าที่ตามคำสั่ง</h3><div class="report-box">{{ submission.duty_text or '-' }}</div>
+  <h3>ผลการปฏิบัติงาน</h3><div class="report-box">{{ submission.performance_text or '-' }}</div>
+  {% if submission.detail_text %}<h3>รายละเอียดเพิ่มเติม</h3><div class="report-box">{{ submission.detail_text }}</div>{% endif %}
+  <div class="grid-form">
+    {% if submission.problems %}<div><h3>ปัญหา/อุปสรรค</h3><div class="report-box">{{ submission.problems }}</div></div>{% endif %}
+    {% if submission.suggestions %}<div><h3>ข้อเสนอแนะ</h3><div class="report-box">{{ submission.suggestions }}</div></div>{% endif %}
+  </div>
+  <h3>รูปภาพกิจกรรม</h3>
+  <div class="report-images">
+    {% for img in submission.images|sort(attribute='sort_order') %}<div><img src="{{ url_for('work_report_upload_file', filename=img.file_path) }}"><small>{{ img.caption }}</small></div>{% else %}<p>ยังไม่มีรูปภาพ</p>{% endfor %}
+  </div>
+</div>
+{% endblock %}

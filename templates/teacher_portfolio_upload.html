@@ -1,0 +1,59 @@
+{% extends 'base.html' %}
+{% block content %}
+{% if not current_user.is_authenticated %}<style>.main{margin-left:0!important;max-width:1100px;margin:auto!important}.sidebar-collapse-btn{display:none!important}</style>{% endif %}
+<style>
+  .upload-box{border:2px dashed #93c5fd;background:#f8fbff;border-radius:22px;padding:22px;margin:10px 0 14px}.hint{background:#eff6ff;border:1px solid #bfdbfe;color:#1e3a8a;border-radius:18px;padding:14px;margin-bottom:14px}.sample{font-family:monospace;background:#f8fafc;border:1px dashed #cbd5e1;border-radius:14px;padding:12px;white-space:pre-wrap}.sticky-actions{position:sticky;bottom:12px;background:rgba(255,255,255,.92);backdrop-filter:blur(6px);border:1px solid #e2e8f0;border-radius:18px;padding:12px;margin-top:20px;box-shadow:0 10px 30px rgba(15,23,42,.12)}
+</style>
+<div class="page-head">
+  <div><h1>+ เพิ่มผลงาน / เอกสารครู</h1><p>อัปโหลดหลายไฟล์ได้ จะรวมเป็นเอกสารเดียวหลายหน้าหรือแยกเป็นหลายเอกสารก็ได้</p></div>
+  <a class="btn secondary" href="{{ url_for('teacher_portfolio') }}">← กลับแฟ้มผลงาน</a>
+</div>
+<div class="card">
+  <div class="hint"><b>แนวเดิมที่ครูเคยมีถูกเอามารวมแล้ว:</b> ระบบอ่าน PDF/DOCX/TXT ได้ทันที ส่วนไฟล์ภาพหรือ PDF สแกนใช้ Gemini OCR เมื่อมี <code>GEMINI_API_KEY</code> หรือ <code>GOOGLE_API_KEY</code> ใน Railway แล้วทุกช่องแก้ไขได้ภายหลัง</div>
+  <form method="post" enctype="multipart/form-data">
+    <h2>1) ไฟล์หลักฐาน</h2>
+    <div class="upload-box">
+      <input type="file" name="files" multiple accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.webp,.gif,.txt,.md" required>
+      <p class="muted">รองรับ PDF, DOCX, JPG, PNG, WEBP, TXT, MD เลือกได้หลายไฟล์</p>
+    </div>
+    <div class="grid-form">
+      <label>โหมดอัปโหลด
+        <select name="upload_mode">
+          <option value="one_document">หลายไฟล์รวมเป็นเอกสารเดียวหลายหน้า</option>
+          <option value="separate">หลายไฟล์แยกเป็นหลายเอกสาร</option>
+        </select>
+      </label>
+      <label>อ่านข้อมูลจากเอกสารอัตโนมัติ
+        <select name="auto_ocr">
+          <option value="on" selected>อ่านทันทีเมื่อบันทึก</option>
+          <option value="off">ยังไม่อ่าน เก็บไฟล์ก่อน</option>
+        </select>
+      </label>
+    </div>
+
+    <h2>2) เจ้าของผลงาน</h2>
+    <div class="grid-form">
+      <label>ชื่อเจ้าของผลงาน / ชื่อที่ให้ระบบค้น
+        <input name="owner_name" list="teacherList" value="{{ default_owner }}" placeholder="เช่น นายพศิน พิมพ์คำไหล">
+        <datalist id="teacherList">{% for t in teachers %}<option value="{{ t.full_name }}">{% endfor %}</datalist>
+      </label>
+      <label>หน้าที่ในเอกสาร <input name="owner_role" placeholder="เว้นว่างให้ระบบเดา เช่น ผู้ฝึกสอน / กรรมการ / วิทยากร"></label>
+    </div>
+
+    <h2>3) ข้อมูลเอกสาร ตรวจแก้ได้</h2>
+    <div class="grid-form">
+      <label>ประเภท
+        <select name="category"><option value="">ให้ระบบเดาเอง</option>{% for c in categories %}<option value="{{ c }}">{{ c }}</option>{% endfor %}</select>
+      </label>
+      <label>เลขที่เอกสาร <input name="doc_number" placeholder="เช่น 36/2569"></label>
+      <label>วันที่ <input name="doc_date" placeholder="เช่น 4 มิถุนายน 2569"></label>
+      <label>หน่วยงาน <input name="organization" placeholder="โรงเรียน/หน่วยงาน"></label>
+    </div>
+    <label>เรื่อง/หัวข้อ <input name="title" placeholder="เว้นว่างให้ระบบอ่านจากคำว่า เรื่อง"></label>
+    <label>แท็ก <input name="tags" placeholder="กีฬา, เปตอง, อบรม, วิทยฐานะ"></label>
+    <label>สรุป <textarea name="summary" rows="4" placeholder="เว้นว่างให้ระบบสรุปจากข้อความที่อ่านได้"></textarea></label>
+    <div class="sample">ตัวอย่าง: อัปโหลดคำสั่ง/เกียรติบัตร → ระบบอ่านเลขที่ วันที่ เรื่อง → ค้นชื่อเจ้าของผลงาน → เดาหน้าที่ → เก็บไว้ค้นย้อนหลัง</div>
+    <div class="sticky-actions"><button>บันทึกเข้าระบบบันทึกผลงานครู</button> <a class="btn secondary" href="{{ url_for('teacher_portfolio') }}">ยกเลิก</a></div>
+  </form>
+</div>
+{% endblock %}

@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="th"><head><meta charset="utf-8"><title>รายงานผลการปฏิบัติงาน</title><style>
+@page{size:A4;margin:14mm}body{font-family:Tahoma,'Noto Sans Thai',sans-serif;color:#111;margin:0;font-size:15px;line-height:1.55}.sheet{max-width:190mm;margin:auto}.head{text-align:center;border-bottom:3px solid #0f766e;padding-bottom:10px;margin-bottom:14px}.head h1{font-size:24px;margin:0}.school{font-weight:700}.section{margin-top:12px}.label{font-weight:700;color:#0f766e}.box{border:1px solid #d1d5db;border-radius:8px;padding:10px;min-height:46px;white-space:pre-wrap}.meta-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.images{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px}.photo{border:1px solid #d1d5db;border-radius:8px;padding:6px;text-align:center;break-inside:avoid}.photo img{width:100%;height:70mm;object-fit:cover;border-radius:6px}.caption{font-size:13px;color:#444;margin-top:4px}.sign{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:24px;text-align:center}.signature-img{height:45px;object-fit:contain}.muted{color:#555}.print-actions{position:sticky;top:0;background:#fff;padding:8px;text-align:right;border-bottom:1px solid #ddd;margin-bottom:10px}@media print{.print-actions{display:none}.photo img{height:62mm}}</style></head>
+<body><div class="print-actions"><button onclick="window.print()">พิมพ์ / Save as PDF</button></div><div class="sheet">
+  <div class="head"><h1>รายงานผลการปฏิบัติงาน ภาคเรียนที่ {{ submission.activity.semester }}/{{ submission.activity.academic_year }}</h1><div class="school">โรงเรียนเปรมติณสูลานนท์</div><div>สังกัดองค์การบริหารส่วนจังหวัดขอนแก่น</div></div>
+  <div class="meta-grid">
+    <div><span class="label">ชื่อกิจกรรม:</span> {{ submission.activity.name }}</div>
+    <div><span class="label">วันที่รายงาน:</span> {{ thai_date_label(submission.submitted_at.date()) if submission.submitted_at else '' }}</div>
+    <div><span class="label">ผู้รายงาน:</span> {{ submission.reporter_name }}</div>
+    <div><span class="label">ตำแหน่ง:</span> {{ submission.position }}</div>
+    <div><span class="label">วันจัดกิจกรรม:</span> {{ thai_date_label(submission.activity.activity_date) if submission.activity.activity_date else '-' }}</div>
+    <div><span class="label">เวลา:</span> {{ submission.activity.start_time or '-' }} - {{ submission.activity.end_time or '-' }} น.</div>
+    <div><span class="label">สถานที่:</span> {{ submission.activity.location or '-' }}</div>
+    <div><span class="label">คำสั่ง:</span> {% if submission.activity.order %}{{ submission.activity.order.order_no or '-' }}{% else %}-{% endif %}</div>
+  </div>
+  <div class="section"><div class="label">หน้าที่ตามคำสั่ง</div><div class="box">{{ submission.duty_text or '-' }}</div></div>
+  <div class="section"><div class="label">ผลการปฏิบัติงาน</div><div class="box">{{ submission.performance_text or '-' }}</div></div>
+  {% if submission.detail_text %}<div class="section"><div class="label">รายละเอียดเพิ่มเติม</div><div class="box">{{ submission.detail_text }}</div></div>{% endif %}
+  <div class="meta-grid section">
+    <div>{% if submission.problems %}<div class="label">ปัญหา/อุปสรรค</div><div class="box">{{ submission.problems }}</div>{% endif %}</div>
+    <div>{% if submission.suggestions %}<div class="label">ข้อเสนอแนะ</div><div class="box">{{ submission.suggestions }}</div>{% endif %}</div>
+  </div>
+  <div class="section"><div class="label">รูปภาพกิจกรรม</div><div class="images">
+    {% for img in submission.images|sort(attribute='sort_order') %}<div class="photo"><img src="{{ url_for('work_report_upload_file', filename=img.file_path) }}"><div class="caption">{{ img.caption or 'ภาพกิจกรรม' }}</div></div>{% endfor %}
+  </div></div>
+  <div class="sign">
+    <div>{% if submission.signature_path %}<img class="signature-img" src="{{ url_for('work_report_upload_file', filename=submission.signature_path) }}">{% else %}<br><br>{% endif %}<br>ลงชื่อ........................................ผู้รายงาน<br>({{ submission.reporter_name }})</div>
+    <div><br><br><br>ลงชื่อ........................................ผู้รับรอง<br><span class="muted">(........................................)</span></div>
+  </div>
+</div></body></html>

@@ -8,10 +8,11 @@ import urllib.error
 import base64
 import mimetypes
 from io import BytesIO
+from pathlib import Path
 from datetime import datetime, date, time, timedelta
 import calendar as py_calendar
 from functools import wraps
-from flask import Flask, render_template, request, redirect, url_for, flash, send_file, send_from_directory, session
+from flask import Flask, render_template, request, redirect, url_for, flash, send_file, send_from_directory, session, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -175,7 +176,7 @@ app.config['REMEMBER_COOKIE_SAMESITE'] = 'Lax'
 if os.environ.get('COOKIE_SECURE') == '1':
     app.config['SESSION_COOKIE_SECURE'] = True
     app.config['REMEMBER_COOKIE_SECURE'] = True
-ALLOWED_WORKSHEET_EXTENSIONS = {'pdf', 'png', 'jpg', 'jpeg', 'webp', 'gif', 'doc', 'docx', 'ppt', 'pptx', 'mp4', 'webm', 'mov'}
+ALLOWED_WORKSHEET_EXTENSIONS = {'pdf', 'png', 'jpg', 'jpeg', 'webp', 'gif', 'doc', 'docx', 'ppt', 'pptx', 'mp4', 'webm', 'mov', 'txt', 'md'}
 ALLOWED_IMAGE_EXTENSIONS = {'png', 'jpg', 'jpeg', 'webp', 'gif'}
 
 def allowed_worksheet_file(filename):
@@ -185,7 +186,7 @@ def save_uploaded_file(file_obj, subdir='worksheets'):
     if not file_obj or not file_obj.filename:
         return '', ''
     if not allowed_worksheet_file(file_obj.filename):
-        raise ValueError('รองรับเฉพาะไฟล์ PDF, PNG, JPG, Word, PowerPoint, MP4, WebM, MOV')
+        raise ValueError('รองรับเฉพาะไฟล์ PDF, PNG, JPG, Word, PowerPoint, TXT, MD, MP4, WebM, MOV')
     target_dir = os.path.join(app.config['UPLOAD_FOLDER'], subdir)
     os.makedirs(target_dir, exist_ok=True)
     original = file_obj.filename
@@ -1056,6 +1057,143 @@ class DocumentEndorsement(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     document = db.relationship('OfficialDocument')
     author = db.relationship('User', foreign_keys=[author_id])
+
+
+# -----------------------------
+# Work Report: รายงานผลการปฏิบัติงานครูแบบฟอร์มกลาง
+# -----------------------------
+class WorkReportOrder(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    order_no = db.Column(db.String(120), default='')
+    order_date = db.Column(db.Date, nullable=True)
+    title = db.Column(db.String(500), nullable=False)
+    semester = db.Column(db.String(20), default='1')
+    academic_year = db.Column(db.String(20), default='2569')
+    source_file_path = db.Column(db.String(500), default='')
+    source_file_original_name = db.Column(db.String(255), default='')
+    extracted_text = db.Column(db.Text, default='')
+    status = db.Column(db.String(40), default='เปิดรายงาน')  # ร่าง, รอตรวจ, เปิดรายงาน, ปิดรายงาน, เก็บถาวร
+    created_by_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_by = db.relationship('User', foreign_keys=[created_by_id])
+
+
+
+class WorkReportOrderFile(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    order_id = db.Column(db.Integer, db.ForeignKey('work_report_order.id'), nullable=False)
+    file_path = db.Column(db.String(500), nullable=False)
+    original_name = db.Column(db.String(255), default='')
+    extracted_text = db.Column(db.Text, default='')
+    sort_order = db.Column(db.Integer, default=0)
+    uploaded_at = db.Column(db.DateTime, default=datetime.utcnow)
+    order = db.relationship('WorkReportOrder', backref=db.backref('files', lazy=True, cascade='all, delete-orphan'))
+
+
+class WorkReportActivity(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    order_id = db.Column(db.Integer, db.ForeignKey('work_report_order.id'), nullable=True)
+    name = db.Column(db.String(500), nullable=False)
+    activity_date = db.Column(db.Date, nullable=True)
+    start_time = db.Column(db.String(20), default='')
+    end_time = db.Column(db.String(20), default='')
+    location = db.Column(db.String(255), default='')
+    detail = db.Column(db.Text, default='')
+    semester = db.Column(db.String(20), default='1')
+    academic_year = db.Column(db.String(20), default='2569')
+    status = db.Column(db.String(40), default='เปิดรายงาน')  # เปิดรายงาน, ปิดรายงาน
+    template_type = db.Column(db.String(80), default='prem_basic')
+    created_by_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    order = db.relationship('WorkReportOrder', backref=db.backref('activities', lazy=True))
+    created_by = db.relationship('User', foreign_keys=[created_by_id])
+
+
+class WorkReportAssignment(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    activity_id = db.Column(db.Integer, db.ForeignKey('work_report_activity.id'), nullable=False)
+    teacher_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    teacher_name = db.Column(db.String(255), default='')
+    position = db.Column(db.String(100), default='ครู')
+    duty_text = db.Column(db.Text, default='')
+    committee_group = db.Column(db.String(255), default='')
+    sort_order = db.Column(db.Integer, default=0)
+    activity = db.relationship('WorkReportActivity', backref=db.backref('assignments', lazy=True, cascade='all, delete-orphan'))
+    teacher = db.relationship('User', foreign_keys=[teacher_id])
+
+
+class WorkReportSubmission(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    activity_id = db.Column(db.Integer, db.ForeignKey('work_report_activity.id'), nullable=False)
+    assignment_id = db.Column(db.Integer, db.ForeignKey('work_report_assignment.id'), nullable=True)
+    teacher_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    reporter_name = db.Column(db.String(255), nullable=False)
+    position = db.Column(db.String(100), default='ครู')
+    duty_text = db.Column(db.Text, default='')
+    performance_text = db.Column(db.Text, default='')
+    detail_text = db.Column(db.Text, default='')
+    problems = db.Column(db.Text, default='')
+    suggestions = db.Column(db.Text, default='')
+    signature_path = db.Column(db.String(500), default='')
+    status = db.Column(db.String(40), default='ส่งแล้ว')
+    submitted_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    activity = db.relationship('WorkReportActivity', backref=db.backref('submissions', lazy=True, cascade='all, delete-orphan'))
+    assignment = db.relationship('WorkReportAssignment')
+    teacher = db.relationship('User', foreign_keys=[teacher_id])
+
+
+class WorkReportImage(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    submission_id = db.Column(db.Integer, db.ForeignKey('work_report_submission.id'), nullable=False)
+    file_path = db.Column(db.String(500), nullable=False)
+    original_name = db.Column(db.String(255), default='')
+    caption = db.Column(db.String(255), default='')
+    sort_order = db.Column(db.Integer, default=0)
+    uploaded_at = db.Column(db.DateTime, default=datetime.utcnow)
+    submission = db.relationship('WorkReportSubmission', backref=db.backref('images', lazy=True, cascade='all, delete-orphan'))
+
+
+# -----------------------------
+# Teacher Portfolio: ระบบบันทึกผลงานครู / แฟ้มเอกสารอัจฉริยะ
+# -----------------------------
+class PortfolioDocument(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    title = db.Column(db.String(500), nullable=False)
+    doc_number = db.Column(db.String(120), default='')
+    doc_date = db.Column(db.String(120), default='')
+    category = db.Column(db.String(80), default='เอกสารทั่วไป')
+    organization = db.Column(db.String(255), default='')
+    owner_name = db.Column(db.String(255), default='')
+    owner_role = db.Column(db.String(255), default='')
+    summary = db.Column(db.Text, default='')
+    tags = db.Column(db.Text, default='')
+    filename = db.Column(db.String(500), default='')
+    original_filename = db.Column(db.String(255), default='')
+    extracted_text = db.Column(db.Text, default='')
+    ocr_status = db.Column(db.Text, default='')
+    upload_mode = db.Column(db.String(40), default='separate')
+    source_type = db.Column(db.String(60), default='manual')  # manual, work_report
+    source_report_id = db.Column(db.Integer, db.ForeignKey('work_report_submission.id'), nullable=True)
+    created_by_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    source_report = db.relationship('WorkReportSubmission', foreign_keys=[source_report_id])
+    created_by = db.relationship('User', foreign_keys=[created_by_id])
+
+
+class PortfolioDocumentPage(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    document_id = db.Column(db.Integer, db.ForeignKey('portfolio_document.id'), nullable=False)
+    page_no = db.Column(db.Integer, default=1)
+    filename = db.Column(db.String(500), nullable=False)
+    original_filename = db.Column(db.String(255), default='')
+    extracted_text = db.Column(db.Text, default='')
+    ocr_status = db.Column(db.Text, default='')
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    document = db.relationship('PortfolioDocument', backref=db.backref('pages', lazy=True, cascade='all, delete-orphan'))
 
 class GradeSetting(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -2312,6 +2450,8 @@ def build_school_erp_modules():
                 _erp_feature('ภาระงานสอน', 'ดึงข้อมูลจากตารางสอนและรายวิชา', endpoint='schedule', tag='เดิม'),
                 _erp_feature('เวรประจำวัน', 'ต้นแบบจัดเวรครูและพิมพ์ตารางเวร', status='ต้นแบบ'),
                 _erp_feature('ไปราชการ/ลางาน', 'บันทึกวันลาและวันไปราชการ', status='ต้นแบบ'),
+                _erp_feature('บันทึกผลงานครู', 'คลังคำสั่ง เกียรติบัตร หนังสือราชการ และผลงานครู พร้อม OCR/ค้นหา', endpoint='teacher_portfolio', tag='ใหม่'),
+                _erp_feature('รายงานผลการปฏิบัติงาน', 'แบบฟอร์มกลางให้ครูส่งรายงานพร้อมรูป และพิมพ์รายงานตามเทมเพลต', endpoint='work_reports', tag='ใหม่'),
             ],
         },
         {
@@ -7865,6 +8005,1104 @@ def phase4_activity_export(program_id):
     filename = f"activity_{program.id}_{datetime.now().strftime('%Y%m%d')}.xlsx"
     return send_file(bio, as_attachment=True, download_name=filename, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
+
+
+
+# -----------------------------
+# Teacher Portfolio: ระบบบันทึกผลงานครู / แฟ้มเอกสารอัจฉริยะ
+# -----------------------------
+PORTFOLIO_CATEGORIES = ['คำสั่ง', 'รายงานตามคำสั่ง', 'เกียรติบัตร', 'หนังสือราชการ', 'หนังสือเชิญ', 'ผลงาน', 'อบรม/พัฒนา', 'เอกสารทั่วไป']
+PORTFOLIO_UPLOAD_EXTENSIONS = {'pdf', 'png', 'jpg', 'jpeg', 'webp', 'gif', 'doc', 'docx', 'txt', 'md'}
+
+
+def portfolio_public_upload(filename):
+    return filename and filename.replace('\\', '/').startswith('portfolio/')
+
+
+def portfolio_allowed_file(filename):
+    return filename and '.' in filename and filename.rsplit('.', 1)[1].lower() in PORTFOLIO_UPLOAD_EXTENSIONS
+
+
+def save_portfolio_file(file_obj, subdir='portfolio/docs'):
+    if not file_obj or not file_obj.filename:
+        return '', ''
+    if not portfolio_allowed_file(file_obj.filename):
+        raise ValueError('แฟ้มผลงานครูรองรับ PDF, DOCX, รูปภาพ, TXT และ MD')
+    return save_uploaded_file(file_obj, subdir=subdir)
+
+
+def portfolio_normalize_text(value):
+    return re.sub(r'[ \t]+', ' ', value or '').strip()
+
+
+def portfolio_owner_variants(owner_name):
+    name = (owner_name or '').strip()
+    if not name:
+        return []
+    compact = re.sub(r'\s+', '', name)
+    variants = [compact]
+    parts = [x for x in re.split(r'\s+', name) if x]
+    if parts:
+        variants.append(re.sub(r'\s+', '', parts[0]))
+        variants.append(re.sub(r'^(นาย|นาง|นางสาว|เด็กชาย|เด็กหญิง|ดร\.|ครู)', '', parts[0]))
+    if len(parts) >= 2:
+        variants.append(re.sub(r'\s+', '', ''.join(parts[:2])))
+        variants.append(re.sub(r'\s+', '', parts[-1]))
+    variants = [v for v in dict.fromkeys(variants) if v and len(v) >= 2]
+    return sorted(variants, key=len, reverse=True)
+
+
+def portfolio_find_owner_context(text, owner_name, window=100):
+    if not text or not owner_name:
+        return ''
+    compact_text = re.sub(r'\s+', '', text)
+    for v in portfolio_owner_variants(owner_name):
+        idx = compact_text.find(v)
+        if idx >= 0:
+            start = max(0, idx - window)
+            end = min(len(compact_text), idx + len(v) + window)
+            return compact_text[start:end]
+    for line in text.splitlines():
+        compact_line = re.sub(r'\s+', '', line)
+        if any(v in compact_line for v in portfolio_owner_variants(owner_name)):
+            return line.strip()
+    return ''
+
+
+def portfolio_guess_owner_role(text, owner_name):
+    if not owner_name or not text:
+        return ''
+    variants = portfolio_owner_variants(owner_name)
+    compact_text = re.sub(r'\s+', '', text)
+    if not variants or not any(v in compact_text for v in variants):
+        return 'ไม่พบชื่อนี้ในเอกสาร'
+    roles = [
+        'ครูผู้ฝึกสอน', 'ผู้ฝึกสอน', 'ผู้ควบคุมทีม', 'ผู้จัดการทีม', 'ผู้ช่วยผู้ฝึกสอน',
+        'คณะกรรมการ', 'กรรมการดำเนินงาน', 'กรรมการ', 'คณะทำงาน', 'เจ้าหน้าที่',
+        'วิทยากร', 'ผู้ช่วยวิทยากร', 'ผู้เข้าร่วม', 'ผู้เข้าอบรม', 'ผู้รับผิดชอบ',
+        'ครูที่ปรึกษา', 'เลขานุการ', 'เหรัญญิก', 'ประธาน', 'รองประธาน', 'นักกีฬา',
+    ]
+    bad_words = ['เพื่อน', 'ห้อง', 'ม.1', 'ม1', 'ม.2', 'ม2', 'ม.3', 'ม3', 'ป.1', 'ป1', 'ชั้น']
+    for line in text.splitlines():
+        line_clean = line.strip()
+        compact_line = re.sub(r'\s+', '', line_clean)
+        if any(v in compact_line for v in variants):
+            for role in roles:
+                if role in line_clean:
+                    return role
+            m = re.search(r'(?:หน้าที่|ตำแหน่ง)\s*[:：]?\s*([ก-๙A-Za-z0-9 /._-]{2,80})', line_clean)
+            if m:
+                value = m.group(1).strip()
+                if not any(b in value for b in bad_words):
+                    return value
+    context = portfolio_find_owner_context(text, owner_name, window=140)
+    for role in roles:
+        if role in context:
+            return role
+    return 'พบชื่อในเอกสาร แต่ยังเดาหน้าที่ไม่ได้ โปรดกดแก้ไขเพื่อระบุเอง'
+
+
+def portfolio_guess_category(text, filename=''):
+    s = f"{text} {filename}".lower()
+    if 'คำสั่ง' in s:
+        return 'คำสั่ง'
+    if 'เกียรติบัตร' in s or 'certificate' in s or 'certifies' in s:
+        return 'เกียรติบัตร'
+    if 'เชิญ' in s:
+        return 'หนังสือเชิญ'
+    if 'อบรม' in s or 'พัฒนา' in s:
+        return 'อบรม/พัฒนา'
+    if 'ผลงาน' in s or 'portfolio' in s:
+        return 'ผลงาน'
+    if 'หนังสือ' in s or 'เรื่อง' in s:
+        return 'หนังสือราชการ'
+    return 'เอกสารทั่วไป'
+
+
+def portfolio_guess_doc_number(text):
+    text = portfolio_normalize_text(text)
+    patterns = [
+        r'(?:คำสั่ง|ประกาศ|หนังสือ)?\s*(?:ที่|เลขที่)\s*([ก-๙A-Za-z0-9./\- ]{1,45}\d+\s*/\s*\d{2,4})',
+        r'(?:No\.|NO\.|เลขที่)\s*([A-Za-z0-9./\-]+)',
+        r'(\d+\s*/\s*\d{2,4})',
+    ]
+    for pat in patterns:
+        m = re.search(pat, text)
+        if m:
+            return re.sub(r'\s+', '', m.group(1)).strip()
+    return ''
+
+
+def portfolio_guess_date(text):
+    text = portfolio_normalize_text(text)
+    months = '|'.join([m for m in THAI_MONTHS if m])
+    m = re.search(rf'(\d{{1,2}})\s*({months})\s*(\d{{4}})', text)
+    if m:
+        return f"{m.group(1)} {m.group(2)} {m.group(3)}"
+    m = re.search(r'(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})', text)
+    if m:
+        return m.group(0)
+    return ''
+
+
+def portfolio_guess_organization(text):
+    for line in (text or '').splitlines()[:30]:
+        line = line.strip()
+        if any(w in line for w in ['โรงเรียน', 'สำนักงาน', 'สมาคม', 'มหาวิทยาลัย', 'วิทยาลัย', 'อบจ.', 'เทศบาล']):
+            return line[:180]
+    return ''
+
+
+def portfolio_guess_title(text, original_filename=''):
+    m = re.search(r'เรื่อง\s+(.+)', text or '')
+    if m:
+        return re.sub(r'\s+', ' ', m.group(1).strip())[:220]
+    lines = [re.sub(r'\s+', ' ', x.strip()) for x in (text or '').splitlines() if x.strip()]
+    for line in lines:
+        if 8 <= len(line) <= 220 and not re.match(r'^(ที่|เลขที่|วันที่|---)', line):
+            return line[:220]
+    return Path(original_filename or 'เอกสาร').stem
+
+
+def portfolio_make_tags(text, category, owner_name='', owner_role=''):
+    keys = []
+    for kw in ['กีฬา', 'เปตอง', 'อบรม', 'แข่งขัน', 'คณะกรรมการ', 'ครู', 'นักเรียน', 'วิทยากร', 'ผู้ฝึกสอน', 'กรรมการ', 'วิทยฐานะ', 'เกียรติบัตร', 'คำสั่ง', 'ประชุม', 'กิจกรรม']:
+        if kw in (text or ''):
+            keys.append(kw)
+    if owner_name:
+        keys.insert(0, owner_name)
+    if owner_role:
+        keys.insert(1, owner_role)
+    if category and category not in keys:
+        keys.insert(0, category)
+    return ', '.join(dict.fromkeys(keys[:14]))
+
+
+def portfolio_summarize(text):
+    return re.sub(r'\s+', ' ', text or '').strip()[:500]
+
+
+def portfolio_analyze_text(text, original_name, form):
+    owner_name = (form.get('owner_name') or '').strip()
+    owner_role = (form.get('owner_role') or '').strip() or portfolio_guess_owner_role(text, owner_name)
+    category = (form.get('category') or '').strip() or portfolio_guess_category(text, original_name)
+    return {
+        'title': (form.get('title') or '').strip() or portfolio_guess_title(text, original_name),
+        'doc_number': (form.get('doc_number') or '').strip() or portfolio_guess_doc_number(text),
+        'doc_date': (form.get('doc_date') or '').strip() or portfolio_guess_date(text),
+        'category': category,
+        'organization': (form.get('organization') or '').strip() or portfolio_guess_organization(text),
+        'owner_name': owner_name,
+        'owner_role': owner_role,
+        'tags': (form.get('tags') or '').strip() or portfolio_make_tags(text, category, owner_name, owner_role),
+        'summary': (form.get('summary') or '').strip() or portfolio_summarize(text),
+    }
+
+
+def portfolio_extract_text_from_upload_path(file_path, original_name=''):
+    # ใช้ตัวอ่านเอกสารตัวเดียวกับรายงานตามคำสั่ง: txt/docx/pdf text-layer และ Gemini สำหรับภาพ/สแกนถ้ามี key
+    text, method = extract_work_order_text_from_upload_path(file_path, original_name)
+    return text, method
+
+
+def portfolio_create_from_work_report(submission):
+    """เมื่อครูส่งรายงานตามคำสั่ง ให้ขึ้นในแฟ้มผลงานครูอัตโนมัติ"""
+    if not submission or not submission.id:
+        return None
+    existing = PortfolioDocument.query.filter_by(source_type='work_report', source_report_id=submission.id).first()
+    activity = submission.activity
+    order = activity.order if activity else None
+    doc_date = ''
+    if activity and activity.activity_date:
+        doc_date = thai_date_label(activity.activity_date)
+    text = '\n'.join([x for x in [submission.performance_text, submission.detail_text, submission.problems, submission.suggestions] if x]).strip()
+    if existing:
+        doc = existing
+    else:
+        doc = PortfolioDocument(source_type='work_report', source_report_id=submission.id, created_by_id=submission.teacher_id)
+        db.session.add(doc)
+    doc.title = activity.name if activity else 'รายงานผลการปฏิบัติงาน'
+    doc.doc_number = order.order_no if order else ''
+    doc.doc_date = doc_date
+    doc.category = 'รายงานตามคำสั่ง'
+    doc.organization = 'โรงเรียนเปรมติณสูลานนท์'
+    doc.owner_name = submission.reporter_name
+    doc.owner_role = submission.duty_text
+    doc.summary = portfolio_summarize(text) or 'บันทึกจากระบบรายงานผลการปฏิบัติงาน'
+    doc.tags = portfolio_make_tags(text + ' คำสั่ง รายงานผลการปฏิบัติงาน', doc.category, doc.owner_name, doc.owner_role)
+    doc.extracted_text = text
+    doc.ocr_status = 'สร้างอัตโนมัติจากรายงานตามคำสั่ง'
+    doc.updated_at = datetime.utcnow()
+    return doc
+
+
+@app.route('/teacher-portfolio/uploads/<path:filename>')
+def portfolio_upload_file(filename):
+    filename = (filename or '').replace('\\', '/')
+    if not portfolio_public_upload(filename):
+        flash('ไม่อนุญาตให้เปิดไฟล์นี้', 'danger')
+        return redirect(url_for('teacher_portfolio'))
+    return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
+
+
+@app.route('/teacher-portfolio')
+def teacher_portfolio():
+    qtext = (request.args.get('q') or '').strip()
+    category = (request.args.get('category') or '').strip()
+    owner = (request.args.get('owner') or '').strip()
+    q = PortfolioDocument.query
+    if qtext:
+        like = f"%{qtext}%"
+        q = q.filter(db.or_(PortfolioDocument.title.ilike(like), PortfolioDocument.doc_number.ilike(like), PortfolioDocument.tags.ilike(like), PortfolioDocument.summary.ilike(like), PortfolioDocument.extracted_text.ilike(like), PortfolioDocument.owner_name.ilike(like), PortfolioDocument.owner_role.ilike(like)))
+    if category:
+        q = q.filter(PortfolioDocument.category == category)
+    if owner:
+        q = q.filter(PortfolioDocument.owner_name.ilike(f"%{owner}%"))
+    docs = q.order_by(PortfolioDocument.created_at.desc(), PortfolioDocument.id.desc()).all()
+    stats = db.session.query(PortfolioDocument.category, db.func.count(PortfolioDocument.id)).group_by(PortfolioDocument.category).all()
+    owners = db.session.query(PortfolioDocument.owner_name).filter(PortfolioDocument.owner_name != '').distinct().order_by(PortfolioDocument.owner_name).all()
+    overall = {
+        'total': PortfolioDocument.query.count(),
+        'work_reports': PortfolioDocument.query.filter_by(category='รายงานตามคำสั่ง').count(),
+        'certs': PortfolioDocument.query.filter_by(category='เกียรติบัตร').count(),
+        'orders': PortfolioDocument.query.filter_by(category='คำสั่ง').count(),
+    }
+    return render_template('teacher_portfolio.html', docs=docs, stats=stats, owners=[x[0] for x in owners], overall=overall, qtext=qtext, category=category, owner=owner, categories=PORTFOLIO_CATEGORIES)
+
+
+@app.route('/teacher-portfolio/upload', methods=['GET', 'POST'])
+def teacher_portfolio_upload():
+    teachers = active_users_query().filter(User.role.in_(['teacher','admin'])).order_by(User.full_name).all()
+    if request.method == 'POST':
+        files = [f for f in request.files.getlist('files') if f and f.filename]
+        files = [f for f in files if portfolio_allowed_file(f.filename)]
+        if not files:
+            flash('ยังไม่ได้เลือกไฟล์ หรือไฟล์ไม่รองรับ', 'warning')
+            return redirect(url_for('teacher_portfolio_upload'))
+        auto_ocr = request.form.get('auto_ocr') == 'on'
+        upload_mode = request.form.get('upload_mode') or 'separate'
+        created_by_id = current_user.id if getattr(current_user, 'is_authenticated', False) else None
+        if upload_mode == 'one_document':
+            page_rows = []
+            parts = []
+            statuses = []
+            first_path = ''
+            first_original = files[0].filename
+            for idx, file in enumerate(files, 1):
+                path, original = save_portfolio_file(file, subdir='portfolio/docs')
+                if idx == 1:
+                    first_path = path
+                text, status = ('', 'ยังไม่ได้สั่งอ่านข้อมูล')
+                if auto_ocr:
+                    text, status = portfolio_extract_text_from_upload_path(path, original)
+                parts.append(f"\n--- ไฟล์/หน้า {idx}: {original} ---\n{text}")
+                statuses.append(f"หน้า {idx}: {status}")
+                page_rows.append((idx, path, original, text, status))
+            full_text = '\n'.join(parts).strip()
+            data = portfolio_analyze_text(full_text, first_original, request.form)
+            doc = PortfolioDocument(filename=first_path, original_filename=first_original, extracted_text=full_text, ocr_status=' | '.join(statuses), upload_mode='one_document', created_by_id=created_by_id, **data)
+            db.session.add(doc); db.session.flush()
+            for page_no, path, original, text, status in page_rows:
+                db.session.add(PortfolioDocumentPage(document_id=doc.id, page_no=page_no, filename=path, original_filename=original, extracted_text=text, ocr_status=status))
+            db.session.commit()
+            flash(f'บันทึกเป็นเอกสารเดียว {len(files)} หน้าเรียบร้อย', 'success')
+            return redirect(url_for('teacher_portfolio_detail', doc_id=doc.id))
+        saved = 0
+        last_doc = None
+        for file in files:
+            path, original = save_portfolio_file(file, subdir='portfolio/docs')
+            text, status = ('', 'ยังไม่ได้สั่งอ่านข้อมูล')
+            if auto_ocr:
+                text, status = portfolio_extract_text_from_upload_path(path, original)
+            data = portfolio_analyze_text(text, original, request.form)
+            doc = PortfolioDocument(filename=path, original_filename=original, extracted_text=text, ocr_status=status, upload_mode='separate', created_by_id=created_by_id, **data)
+            db.session.add(doc)
+            last_doc = doc
+            saved += 1
+        db.session.commit()
+        flash(f'อัปโหลดเข้าระบบบันทึกผลงานครูสำเร็จ {saved} ไฟล์', 'success')
+        if saved == 1 and last_doc:
+            return redirect(url_for('teacher_portfolio_detail', doc_id=last_doc.id))
+        return redirect(url_for('teacher_portfolio'))
+    default_owner = current_user.full_name if getattr(current_user, 'is_authenticated', False) and current_user.role in ['teacher','admin'] else ''
+    return render_template('teacher_portfolio_upload.html', teachers=teachers, categories=PORTFOLIO_CATEGORIES, default_owner=default_owner)
+
+
+@app.route('/teacher-portfolio/<int:doc_id>')
+def teacher_portfolio_detail(doc_id):
+    doc = PortfolioDocument.query.get_or_404(doc_id)
+    owner_context = portfolio_find_owner_context(doc.extracted_text or '', doc.owner_name or '')
+    return render_template('teacher_portfolio_detail.html', doc=doc, owner_context=owner_context)
+
+
+@app.route('/teacher-portfolio/<int:doc_id>/ocr', methods=['POST'])
+def teacher_portfolio_rerun_ocr(doc_id):
+    doc = PortfolioDocument.query.get_or_404(doc_id)
+    if doc.pages:
+        parts = []
+        statuses = []
+        for p in sorted(doc.pages, key=lambda x: x.page_no or x.id):
+            text, status = portfolio_extract_text_from_upload_path(p.filename, p.original_filename)
+            p.extracted_text = text
+            p.ocr_status = status
+            parts.append(f"\n--- ไฟล์/หน้า {p.page_no}: {p.original_filename} ---\n{text}")
+            statuses.append(f"หน้า {p.page_no}: {status}")
+        text = '\n'.join(parts).strip()
+        status = ' | '.join(statuses)
+    else:
+        text, status = portfolio_extract_text_from_upload_path(doc.filename, doc.original_filename)
+    data = portfolio_analyze_text(text, doc.original_filename, {
+        'owner_name': doc.owner_name,
+        'owner_role': doc.owner_role,
+        'category': doc.category,
+        'title': doc.title,
+        'doc_number': doc.doc_number,
+        'doc_date': doc.doc_date,
+        'organization': doc.organization,
+        'tags': doc.tags,
+        'summary': doc.summary,
+    })
+    doc.extracted_text = text
+    doc.ocr_status = status
+    for key, value in data.items():
+        if not getattr(doc, key) and value:
+            setattr(doc, key, value)
+    doc.updated_at = datetime.utcnow()
+    db.session.commit()
+    flash(status or 'อ่านข้อมูลแล้ว แต่ยังไม่พบข้อความ', 'info')
+    return redirect(url_for('teacher_portfolio_detail', doc_id=doc.id))
+
+
+@app.route('/teacher-portfolio/<int:doc_id>/edit', methods=['GET', 'POST'])
+def teacher_portfolio_edit(doc_id):
+    doc = PortfolioDocument.query.get_or_404(doc_id)
+    teachers = active_users_query().filter(User.role.in_(['teacher','admin'])).order_by(User.full_name).all()
+    if request.method == 'POST':
+        doc.title = (request.form.get('title') or '').strip() or doc.title
+        doc.doc_number = (request.form.get('doc_number') or '').strip()
+        doc.doc_date = (request.form.get('doc_date') or '').strip()
+        doc.category = (request.form.get('category') or '').strip() or 'เอกสารทั่วไป'
+        doc.organization = (request.form.get('organization') or '').strip()
+        doc.owner_name = (request.form.get('owner_name') or '').strip()
+        doc.owner_role = (request.form.get('owner_role') or '').strip()
+        doc.summary = (request.form.get('summary') or '').strip()
+        doc.tags = (request.form.get('tags') or '').strip()
+        doc.extracted_text = (request.form.get('extracted_text') or '').strip()
+        doc.updated_at = datetime.utcnow()
+        db.session.commit()
+        flash('แก้ไขข้อมูลแฟ้มผลงานครูเรียบร้อย', 'success')
+        return redirect(url_for('teacher_portfolio_detail', doc_id=doc.id))
+    return render_template('teacher_portfolio_edit.html', doc=doc, teachers=teachers, categories=PORTFOLIO_CATEGORIES)
+
+
+@app.route('/teacher-portfolio/<int:doc_id>/delete', methods=['POST'])
+def teacher_portfolio_delete(doc_id):
+    doc = PortfolioDocument.query.get_or_404(doc_id)
+    if doc.filename:
+        safe_remove_upload_file(doc.filename)
+    for p in list(doc.pages):
+        safe_remove_upload_file(p.filename)
+    db.session.delete(doc)
+    db.session.commit()
+    flash('ลบเอกสารออกจากแฟ้มผลงานครูแล้ว', 'success')
+    return redirect(url_for('teacher_portfolio'))
+
+
+@app.route('/teacher-portfolio/export')
+def teacher_portfolio_export():
+    qtext = (request.args.get('q') or '').strip()
+    category = (request.args.get('category') or '').strip()
+    owner = (request.args.get('owner') or '').strip()
+    q = PortfolioDocument.query
+    if qtext:
+        like = f"%{qtext}%"
+        q = q.filter(db.or_(PortfolioDocument.title.ilike(like), PortfolioDocument.doc_number.ilike(like), PortfolioDocument.tags.ilike(like), PortfolioDocument.summary.ilike(like), PortfolioDocument.owner_name.ilike(like), PortfolioDocument.owner_role.ilike(like)))
+    if category:
+        q = q.filter(PortfolioDocument.category == category)
+    if owner:
+        q = q.filter(PortfolioDocument.owner_name.ilike(f"%{owner}%"))
+    docs = q.order_by(PortfolioDocument.created_at.desc()).all()
+    wb = Workbook(); ws = wb.active; ws.title = 'Portfolio'
+    ws.append(['ลำดับ','ประเภท','เลขที่','วันที่','เรื่อง','เจ้าของผลงาน','หน้าที่','หน่วยงาน','แท็ก','สถานะ OCR'])
+    for i, d in enumerate(docs, 1):
+        ws.append([i, d.category, d.doc_number, d.doc_date, d.title, d.owner_name, d.owner_role, d.organization, d.tags, d.ocr_status])
+    bio = BytesIO(); wb.save(bio); bio.seek(0)
+    filename = f"teacher_portfolio_{datetime.now().strftime('%Y%m%d')}.xlsx"
+    return send_file(bio, as_attachment=True, download_name=filename, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
+# -----------------------------
+# Work Report: รายงานผลการปฏิบัติงานครู
+# -----------------------------
+WORK_REPORT_STATUSES = ['เปิดรายงาน', 'ปิดรายงาน']
+WORK_REPORT_ORDER_STATUSES = ['ร่าง', 'รอตรวจ', 'เปิดรายงาน', 'ปิดรายงาน', 'เก็บถาวร']
+
+
+def work_report_public_upload(filename):
+    return filename and filename.replace('\\', '/').startswith('work_reports/')
+
+
+def save_work_report_image(file_obj, subdir='work_reports'):
+    if not file_obj or not file_obj.filename:
+        return '', ''
+    ext = file_obj.filename.rsplit('.', 1)[-1].lower() if '.' in file_obj.filename else ''
+    if ext not in ALLOWED_IMAGE_EXTENSIONS:
+        raise ValueError('รูปกิจกรรมรองรับเฉพาะ PNG, JPG, JPEG, WEBP หรือ GIF')
+    return save_uploaded_file(file_obj, subdir=subdir)
+
+
+def parse_work_assignment_lines(raw_text):
+    """อ่านรายชื่อครูและหน้าที่จาก textarea แบบง่าย
+    รูปแบบที่รองรับ:
+    - ชื่อครู | หน้าที่ | กลุ่มฝ่าย
+    - ชื่อครู - หน้าที่
+    - ชื่อครู\tหน้าที่
+    """
+    rows = []
+    for idx, line in enumerate((raw_text or '').splitlines(), 1):
+        line = line.strip().strip('•').strip()
+        if not line:
+            continue
+        name, duty, group = line, '', ''
+        if '|' in line:
+            parts = [x.strip() for x in line.split('|')]
+            name = parts[0] if parts else ''
+            duty = parts[1] if len(parts) > 1 else ''
+            group = parts[2] if len(parts) > 2 else ''
+        elif '\t' in line:
+            parts = [x.strip() for x in line.split('\t') if x.strip()]
+            name = parts[0] if parts else ''
+            duty = parts[1] if len(parts) > 1 else ''
+        elif ' - ' in line:
+            name, duty = [x.strip() for x in line.split(' - ', 1)]
+        elif ' : ' in line:
+            name, duty = [x.strip() for x in line.split(' : ', 1)]
+        elif ':' in line and len(line.split(':', 1)[0]) < 80:
+            name, duty = [x.strip() for x in line.split(':', 1)]
+        if name:
+            rows.append({'name': name, 'duty': duty, 'group': group, 'sort_order': idx})
+    return rows
+
+
+def find_teacher_by_name(name):
+    clean = re.sub(r'\s+', '', (name or '').strip())
+    if not clean:
+        return None
+    teachers = active_users_query().filter(User.role.in_(['teacher', 'admin'])).all()
+    for t in teachers:
+        if re.sub(r'\s+', '', t.full_name or '') == clean:
+            return t
+    # fallback แบบ contains เผื่อ OCR/การพิมพ์มีคำนำหน้าหรือเว้นวรรคต่างกัน
+    for t in teachers:
+        tclean = re.sub(r'\s+', '', t.full_name or '')
+        if clean in tclean or tclean in clean:
+            return t
+    return None
+
+
+
+def thai_text_date_to_iso(text):
+    """แปลงวันที่ภาษาไทย/ตัวเลขจากข้อความ OCR เป็น YYYY-MM-DD สำหรับใส่ input type=date"""
+    text = (text or '').strip()
+    if not text:
+        return ''
+    month_map = {m: i for i, m in enumerate(THAI_MONTHS) if m}
+    month_alias = {
+        'ม.ค.': 1, 'มค': 1, 'มกราคม': 1,
+        'ก.พ.': 2, 'กพ': 2, 'กุมภาพันธ์': 2,
+        'มี.ค.': 3, 'มีค': 3, 'มีนาคม': 3,
+        'เม.ย.': 4, 'เมย': 4, 'เมษายน': 4,
+        'พ.ค.': 5, 'พค': 5, 'พฤษภาคม': 5,
+        'มิ.ย.': 6, 'มิย': 6, 'มิถุนายน': 6,
+        'ก.ค.': 7, 'กค': 7, 'กรกฎาคม': 7,
+        'ส.ค.': 8, 'สค': 8, 'สิงหาคม': 8,
+        'ก.ย.': 9, 'กย': 9, 'กันยายน': 9,
+        'ต.ค.': 10, 'ตค': 10, 'ตุลาคม': 10,
+        'พ.ย.': 11, 'พย': 11, 'พฤศจิกายน': 11,
+        'ธ.ค.': 12, 'ธค': 12, 'ธันวาคม': 12,
+    }
+    month_map.update(month_alias)
+    t = re.sub(r'พ\.?ศ\.?|พุทธศักราช|วันที่|เดือน|วัน[ก-ฮ]+ที่', ' ', text)
+    t = re.sub(r'\s+', ' ', t).strip()
+    # 4 มิถุนายน 2569
+    m = re.search(r'(\d{1,2})\s+([^\s]+)\s+(\d{4})', t)
+    if m:
+        day = int(m.group(1)); mon_txt = m.group(2).strip(); year = int(m.group(3))
+        month = month_map.get(mon_txt) or month_map.get(mon_txt.replace('.', ''))
+        if month:
+            if year > 2400:
+                year -= 543
+            try:
+                return date(year, month, day).isoformat()
+            except Exception:
+                return ''
+    # 04/06/2569 หรือ 4-6-69
+    m = re.search(r'(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})', t)
+    if m:
+        day, month, year = int(m.group(1)), int(m.group(2)), int(m.group(3))
+        if year < 100:
+            year += 2500
+        if year > 2400:
+            year -= 543
+        try:
+            return date(year, month, day).isoformat()
+        except Exception:
+            return ''
+    return ''
+
+
+def extract_text_from_docx_path(abs_path):
+    try:
+        import xml.etree.ElementTree as ET
+        with zipfile.ZipFile(abs_path) as zf:
+            xml = zf.read('word/document.xml')
+        root = ET.fromstring(xml)
+        ns = {'w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'}
+        lines = []
+        for para in root.findall('.//w:p', ns):
+            parts = [node.text for node in para.findall('.//w:t', ns) if node.text]
+            if parts:
+                lines.append(''.join(parts))
+        return '\n'.join(lines).strip()
+    except Exception:
+        return ''
+
+
+def extract_text_from_pdf_path(abs_path):
+    # ใช้ pypdf ถ้าติดตั้งไว้ และ fallback แบบอ่าน string จาก PDF โดยตรงสำหรับไฟล์ที่เป็น text-layer
+    try:
+        from pypdf import PdfReader
+        reader = PdfReader(abs_path)
+        pages = []
+        for page in reader.pages[:12]:
+            pages.append(page.extract_text() or '')
+        text = '\n'.join(pages).strip()
+        if text:
+            return text
+    except Exception:
+        pass
+    try:
+        raw = Path(abs_path).read_bytes()
+        chunks = re.findall(rb'\((.{2,200}?)\)\s*Tj|\[(.{2,1000}?)\]\s*TJ', raw, flags=re.S)
+        vals = []
+        for a, b in chunks:
+            vals.append((a or b).decode('latin-1', errors='ignore'))
+        return '\n'.join(vals).strip()
+    except Exception:
+        return ''
+
+
+def gemini_extract_work_order_text(file_path, original_name=''):
+    """อ่านข้อความคำสั่งจาก PDF/ภาพด้วย Gemini ถ้ามี API key; ถ้าไม่มี key จะคืนค่าว่างเพื่อให้ระบบไม่พัง"""
+    api_key = (os.environ.get('GEMINI_API_KEY') or os.environ.get('GOOGLE_API_KEY') or '').strip()
+    if not api_key or not file_path:
+        return ''
+    abs_path = os.path.abspath(os.path.join(app.config['UPLOAD_FOLDER'], file_path))
+    upload_root = os.path.abspath(app.config['UPLOAD_FOLDER'])
+    if not abs_path.startswith(upload_root) or not os.path.exists(abs_path):
+        return ''
+    ext = (original_name or file_path).rsplit('.', 1)[-1].lower() if '.' in (original_name or file_path) else ''
+    if ext not in {'pdf', 'png', 'jpg', 'jpeg', 'webp'}:
+        return ''
+    try:
+        if os.path.getsize(abs_path) > int(os.environ.get('AI_EXTRACT_MAX_BYTES', str(12 * 1024 * 1024))):
+            return ''
+        with open(abs_path, 'rb') as fh:
+            encoded = base64.b64encode(fh.read()).decode('ascii')
+        mime_type = _guess_mime_type(original_name or file_path)
+        model = os.environ.get('GEMINI_MODEL', 'gemini-2.5-flash')
+        prompt = (
+            'อ่านข้อความจากไฟล์คำสั่งโรงเรียนนี้อย่างละเอียด เป็นภาษาไทย ห้ามสรุปจนข้อมูลหาย\n'
+            'ให้ดึงเลขคำสั่ง วันที่คำสั่ง เรื่องคำสั่ง ชื่อกิจกรรม วันที่จัด เวลา สถานที่ รายชื่อครู และหน้าที่ตามคำสั่ง\n'
+            'ตอบเป็นข้อความธรรมดา โดยคงรายชื่อครูและฝ่าย/หน้าที่เป็นบรรทัด ๆ เพื่อให้ระบบนำไปตรวจสอบต่อได้'
+        )
+        payload = {
+            'contents': [{'parts': [{'text': prompt}, {'inline_data': {'mime_type': mime_type, 'data': encoded}}]}],
+            'generationConfig': {'temperature': 0.1, 'maxOutputTokens': 3500}
+        }
+        url = f'https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}'
+        req = urllib.request.Request(url, data=json.dumps(payload).encode('utf-8'), headers={'Content-Type': 'application/json'})
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            data = json.loads(resp.read().decode('utf-8'))
+        parts = data.get('candidates', [{}])[0].get('content', {}).get('parts', [])
+        return '\n'.join([p.get('text', '') for p in parts if p.get('text')]).strip()
+    except Exception:
+        return ''
+
+
+def extract_work_order_text_from_upload_path(file_path, original_name=''):
+    abs_path = os.path.abspath(os.path.join(app.config['UPLOAD_FOLDER'], file_path))
+    upload_root = os.path.abspath(app.config['UPLOAD_FOLDER'])
+    if not abs_path.startswith(upload_root) or not os.path.exists(abs_path):
+        return '', 'ไม่พบไฟล์ที่อัปโหลด'
+    ext = (original_name or file_path).rsplit('.', 1)[-1].lower() if '.' in (original_name or file_path) else ''
+    text = ''
+    method = ''
+    if ext in {'txt', 'md'}:
+        try:
+            text = Path(abs_path).read_text(encoding='utf-8', errors='ignore')
+            method = 'อ่านข้อความจากไฟล์ข้อความ'
+        except Exception:
+            text = ''
+    elif ext == 'docx':
+        text = extract_text_from_docx_path(abs_path)
+        method = 'อ่านข้อความจาก Word (.docx)'
+    elif ext == 'pdf':
+        text = extract_text_from_pdf_path(abs_path)
+        method = 'อ่านข้อความจาก PDF text-layer'
+        if not text.strip():
+            ai_text = gemini_extract_work_order_text(file_path, original_name)
+            if ai_text:
+                text = ai_text
+                method = 'อ่านข้อความจาก PDF/สแกนด้วย Gemini OCR'
+    elif ext in {'png', 'jpg', 'jpeg', 'webp'}:
+        ai_text = gemini_extract_work_order_text(file_path, original_name)
+        if ai_text:
+            text = ai_text
+            method = 'อ่านข้อความจากภาพด้วย Gemini OCR'
+        else:
+            method = 'ไฟล์ภาพต้องตั้งค่า GEMINI_API_KEY/GOOGLE_API_KEY เพื่อ OCR อัตโนมัติ'
+    elif ext in {'doc'}:
+        method = 'ไฟล์ .doc รุ่นเก่าอ่านตรงไม่ได้ แนะนำบันทึกเป็น .docx หรือ PDF'
+    else:
+        method = 'ชนิดไฟล์นี้ยังอ่านข้อความอัตโนมัติไม่ได้'
+    return (text or '').strip(), method
+
+
+def parse_work_order_fields_from_text(text):
+    """เดาข้อมูลจากข้อความคำสั่งเพื่อเติมช่องตรวจสอบ แอดมิน/ครูยังแก้ได้ก่อนบันทึก"""
+    text = (text or '').replace('\r', '\n')
+    clean = re.sub(r'[ \t]+', ' ', text)
+    lines = [re.sub(r'\s+', ' ', x).strip() for x in text.splitlines() if re.sub(r'\s+', '', x)]
+    data = {
+        'order_no': '', 'order_date': '', 'order_title': '',
+        'activity_name': '', 'activity_date': '', 'start_time': '', 'end_time': '', 'location': '',
+        'detail': '', 'assignment_lines': ''
+    }
+    m = re.search(r'คำสั่ง[^\n]*?ที่\s*([0-9]{1,5}\s*/\s*(?:25|26)\d{2})', clean)
+    if not m:
+        m = re.search(r'([0-9]{1,5}\s*/\s*(?:25|26)\d{2})', clean)
+    if m:
+        data['order_no'] = re.sub(r'\s+', '', m.group(1))
+    m = re.search(r'ลงวันที่\s*([^\n]{3,60})', clean)
+    if m:
+        data['order_date'] = thai_text_date_to_iso(m.group(1))
+    title = ''
+    for i, line in enumerate(lines):
+        if line.startswith('เรื่อง'):
+            title = re.sub(r'^เรื่อง\s*[:：-]?\s*', '', line).strip()
+            if not title and i + 1 < len(lines):
+                title = lines[i + 1]
+            break
+    if not title:
+        m = re.search(r'(แต่งตั้ง[^\n]{10,250}|โครงการ[^\n]{10,250}|กิจกรรม[^\n]{10,250})', clean)
+        if m:
+            title = m.group(1).strip()
+    data['order_title'] = title
+    activity = title
+    activity = re.sub(r'^แต่งตั้ง(คณะกรรมการ|ครู|บุคลากร|คณะทำงาน)?\s*(ดำเนินงาน|รับผิดชอบ|ปฏิบัติหน้าที่)?\s*', '', activity).strip()
+    activity = activity or title
+    data['activity_name'] = activity
+    # วันที่กิจกรรม: พยายามจับหลังคำว่า ในวันที่/วันที่จัด/ดำเนินการในวันที่ ก่อน ถ้าไม่เจอปล่อยให้แก้เอง
+    for pat in [r'(?:ในวันที่|วันที่จัดกิจกรรม|ดำเนินการในวันที่|จัดขึ้นในวันที่)\s*([^\n]{3,60})', r'ระหว่างวันที่\s*([^\n]{3,80})']:
+        m = re.search(pat, clean)
+        if m:
+            iso = thai_text_date_to_iso(m.group(1))
+            if iso:
+                data['activity_date'] = iso
+                break
+    m = re.search(r'(?:เวลา|ระหว่างเวลา)\s*(\d{1,2}[.:]\d{2})\s*(?:น\.?|ถึง|-|–|—)\s*(\d{1,2}[.:]\d{2})', clean)
+    if m:
+        data['start_time'] = m.group(1).replace(':', '.')
+        data['end_time'] = m.group(2).replace(':', '.')
+    m = re.search(r'\sณ\s+([^\n]{3,120})', clean)
+    if m:
+        loc = m.group(1).strip()
+        loc = re.split(r'\s(?:โดยมี|เพื่อ|ทั้งนี้|จึง)', loc)[0].strip()
+        data['location'] = loc[:255]
+    data['detail'] = title
+    # เดารายชื่อครูและหน้าที่
+    assignment_rows = []
+    current_group = ''
+    name_prefixes = r'(?:นาย|นางสาว|นาง|ว่าที่ร้อยตรี|ร้อยตรี|ครู)'
+    for raw in lines:
+        line = re.sub(r'^\s*(?:\d+\.?|[๑-๙]+\.?|[-•])\s*', '', raw).strip()
+        if not line:
+            continue
+        is_group = bool(re.search(r'(ฝ่าย|คณะกรรมการ|คณะทำงาน|ผู้รับผิดชอบ|กรรมการ)', line)) and not re.search(name_prefixes, line)
+        if is_group and len(line) <= 140:
+            current_group = line
+            continue
+        if re.match(r'^(?:\d+\.?\s*)?' + name_prefixes, line):
+            # แยกกรณีมีหน้าที่ต่อท้ายด้วย -, :, | หรือช่องว่างหลายชุด
+            name_part = line
+            duty = current_group
+            for sep in [' | ', ' - ', ' : ', ':']:
+                if sep in line:
+                    a, b = line.split(sep, 1)
+                    name_part, duty = a.strip(), b.strip() or current_group
+                    break
+            # ตัดคำหน้าที่ที่มักต่อท้ายชื่อ
+            m_name = re.search(r'((?:นาย|นางสาว|นาง|ว่าที่ร้อยตรี|ร้อยตรี|ครู)\s*\S+(?:\s+\S+){1,3})', name_part)
+            name = m_name.group(1).strip() if m_name else name_part.strip()
+            name = re.sub(r'\s{2,}.*$', '', name).strip()
+            if 4 <= len(name) <= 80:
+                assignment_rows.append(f"{name} | {duty} | {current_group}")
+    # ลดซ้ำโดยคงลำดับ
+    seen = set(); unique = []
+    for row in assignment_rows:
+        key = re.sub(r'\s+', '', row.split('|')[0])
+        if key in seen:
+            continue
+        seen.add(key); unique.append(row)
+    data['assignment_lines'] = '\n'.join(unique)
+    return data
+
+
+def merge_work_order_parse_results(results):
+    merged = {
+        'order_no': '', 'order_date': '', 'order_title': '',
+        'activity_name': '', 'activity_date': '', 'start_time': '', 'end_time': '', 'location': '',
+        'detail': '', 'assignment_lines': ''
+    }
+    all_text = []
+    assignments = []
+    for item in results:
+        fields = item.get('fields') or {}
+        for key in merged:
+            if key == 'assignment_lines':
+                continue
+            if not merged.get(key) and fields.get(key):
+                merged[key] = fields.get(key)
+        if fields.get('assignment_lines'):
+            assignments.extend(fields.get('assignment_lines').splitlines())
+        if item.get('text'):
+            all_text.append(f"--- {item.get('original_name') or 'ไฟล์'} ---\n{item.get('text')}")
+    seen = set(); uniq = []
+    for row in assignments:
+        key = re.sub(r'\s+', '', row.split('|')[0] if '|' in row else row)
+        if not key or key in seen:
+            continue
+        seen.add(key); uniq.append(row)
+    merged['assignment_lines'] = '\n'.join(uniq)
+    return merged, '\n\n'.join(all_text).strip()
+
+
+def work_report_activity_summary(activity):
+    total = len(activity.assignments)
+    submitted_assignment_ids = {s.assignment_id for s in activity.submissions if s.assignment_id}
+    submitted = len(submitted_assignment_ids)
+    extra = len([s for s in activity.submissions if not s.assignment_id])
+    return {
+        'total': total,
+        'submitted': submitted + extra,
+        'missing': max(total - submitted, 0),
+        'percent': round(((submitted / total) * 100), 1) if total else (100 if extra else 0),
+        'extra': extra,
+    }
+
+
+def work_report_default_text(activity, assignment=None):
+    order = activity.order
+    order_text = ''
+    if order and order.order_no:
+        order_text = f"ตามคำสั่งที่ {order.order_no}"
+        if order.order_date:
+            order_text += f" ลงวันที่ {thai_date_label(order.order_date).replace('วัน', '')}"
+    elif order:
+        order_text = 'ตามคำสั่งที่เกี่ยวข้อง'
+    duty = assignment.duty_text if assignment else ''
+    activity_date = thai_date_label(activity.activity_date) if activity.activity_date else ''
+    time_text = ''
+    if activity.start_time or activity.end_time:
+        time_text = f" ระหว่างเวลา {activity.start_time or '-'} - {activity.end_time or '-'} น."
+    location = f" ณ {activity.location}" if activity.location else ''
+    return (
+        f"ข้าพเจ้าได้รับมอบหมายให้ปฏิบัติหน้าที่{(' ' + duty) if duty else ''} "
+        f"{order_text} ในกิจกรรม{activity.name} "
+        f"{('ซึ่งดำเนินการใน' + activity_date) if activity_date else ''}{time_text}{location} "
+        "โดยได้ปฏิบัติหน้าที่ตามที่ได้รับมอบหมายเป็นที่เรียบร้อย สนับสนุนการดำเนินกิจกรรมให้เป็นไปด้วยความเรียบร้อยและบรรลุตามวัตถุประสงค์"
+    ).strip()
+
+
+def work_report_submission_for_assignment(activity_id, assignment_id):
+    if not assignment_id:
+        return None
+    return WorkReportSubmission.query.filter_by(activity_id=activity_id, assignment_id=assignment_id).order_by(WorkReportSubmission.updated_at.desc()).first()
+
+
+@app.route('/work-reports/uploads/<path:filename>')
+def work_report_upload_file(filename):
+    """เปิดรูปในรายงานผลแบบ public เฉพาะโฟลเดอร์ work_reports เท่านั้น"""
+    filename = (filename or '').replace('\\', '/')
+    if not work_report_public_upload(filename):
+        flash('ไม่อนุญาตให้เปิดไฟล์นี้', 'danger')
+        return redirect(url_for('work_reports'))
+    return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
+
+
+@app.route('/work-reports')
+def work_reports():
+    qtext = (request.args.get('q') or '').strip()
+    status = (request.args.get('status') or '').strip()
+    q = WorkReportActivity.query
+    if qtext:
+        like = f"%{qtext}%"
+        q = q.outerjoin(WorkReportOrder, WorkReportActivity.order_id == WorkReportOrder.id).filter(db.or_(
+            WorkReportActivity.name.ilike(like),
+            WorkReportActivity.location.ilike(like),
+            WorkReportOrder.order_no.ilike(like),
+            WorkReportOrder.title.ilike(like),
+        ))
+    if status in WORK_REPORT_STATUSES:
+        q = q.filter(WorkReportActivity.status == status)
+    activities = q.order_by(WorkReportActivity.activity_date.is_(None), WorkReportActivity.activity_date.desc(), WorkReportActivity.created_at.desc()).all()
+    summary = {a.id: work_report_activity_summary(a) for a in activities}
+    overall = {
+        'activities': len(activities),
+        'assignments': sum(x['total'] for x in summary.values()),
+        'submitted': sum(x['submitted'] for x in summary.values()),
+        'missing': sum(x['missing'] for x in summary.values()),
+    }
+    return render_template('work_reports.html', activities=activities, summary=summary, overall=overall, qtext=qtext, status=status, statuses=WORK_REPORT_STATUSES)
+
+
+@app.route('/work-reports/extract-source', methods=['POST'])
+def work_report_extract_source():
+    """รับไฟล์คำสั่งหลายไฟล์ อ่านทันทีแบบ AJAX แล้วส่งข้อมูลกลับไปเติมฟอร์มตรวจสอบก่อนบันทึก"""
+    uploads = request.files.getlist('source_files') or request.files.getlist('source_file')
+    if not uploads:
+        return jsonify({'ok': False, 'message': 'ไม่พบไฟล์ที่ส่งมา', 'files': [], 'fields': {}, 'combined_text': ''}), 400
+    results = []
+    for idx, upload in enumerate(uploads, 1):
+        if not upload or not upload.filename:
+            continue
+        try:
+            file_path, original = save_uploaded_file(upload, subdir='work_reports/orders')
+            text, method = extract_work_order_text_from_upload_path(file_path, original)
+            fields = parse_work_order_fields_from_text(text) if text else {}
+            results.append({
+                'file_path': file_path,
+                'original_name': original,
+                'text': text,
+                'method': method,
+                'fields': fields,
+                'sort_order': idx,
+            })
+        except ValueError as e:
+            results.append({'file_path': '', 'original_name': upload.filename, 'text': '', 'method': str(e), 'fields': {}, 'sort_order': idx, 'error': str(e)})
+        except Exception as e:
+            results.append({'file_path': '', 'original_name': upload.filename, 'text': '', 'method': 'อ่านไฟล์ไม่สำเร็จ', 'fields': {}, 'sort_order': idx, 'error': str(e)})
+    fields, combined_text = merge_work_order_parse_results(results)
+    return jsonify({'ok': True, 'files': results, 'fields': fields, 'combined_text': combined_text})
+
+
+@app.route('/work-reports/new', methods=['GET', 'POST'])
+def work_report_new():
+    teachers = active_users_query().filter(User.role.in_(['teacher','admin'])).order_by(User.full_name).all()
+    created_by_id = current_user.id if getattr(current_user, 'is_authenticated', False) else None
+    if request.method == 'POST':
+        order = WorkReportOrder(
+            order_no=(request.form.get('order_no') or '').strip(),
+            order_date=parse_date_field('order_date'),
+            title=(request.form.get('order_title') or request.form.get('activity_name') or '').strip(),
+            semester=(request.form.get('semester') or '1').strip(),
+            academic_year=(request.form.get('academic_year') or '2569').strip(),
+            extracted_text=(request.form.get('extracted_text') or '').strip(),
+            status=(request.form.get('order_status') or 'เปิดรายงาน').strip(),
+            created_by_id=created_by_id,
+        )
+        activity_name = (request.form.get('activity_name') or '').strip()
+        if not activity_name:
+            flash('กรุณากรอกชื่อกิจกรรม', 'danger')
+            return render_template('work_report_activity_form.html', activity=None, teachers=teachers, statuses=WORK_REPORT_STATUSES, order_statuses=WORK_REPORT_ORDER_STATUSES)
+
+        db.session.add(order); db.session.flush()
+
+        # ไฟล์คำสั่งที่อ่านแล้วจาก AJAX จะถูกเก็บ path ไว้ใน hidden field
+        saved_files = []
+        raw_saved = (request.form.get('saved_source_files_json') or '').strip()
+        if raw_saved:
+            try:
+                saved_files = json.loads(raw_saved)
+                if not isinstance(saved_files, list):
+                    saved_files = []
+            except Exception:
+                saved_files = []
+        # fallback กรณี browser ส่งไฟล์มาพร้อม submit แต่ยังไม่ได้อ่านด้วย AJAX
+        if not saved_files:
+            for idx, upload in enumerate(request.files.getlist('source_files') or request.files.getlist('source_file'), 1):
+                if upload and upload.filename:
+                    try:
+                        file_path, original = save_uploaded_file(upload, subdir='work_reports/orders')
+                        text, method = extract_work_order_text_from_upload_path(file_path, original)
+                        saved_files.append({'file_path': file_path, 'original_name': original, 'text': text, 'sort_order': idx, 'method': method})
+                    except ValueError as e:
+                        flash(str(e), 'warning')
+
+        for idx, item in enumerate(saved_files, 1):
+            file_path = (item.get('file_path') or '').strip()
+            original_name = (item.get('original_name') or '').strip()
+            if not file_path or not work_report_public_upload(file_path):
+                continue
+            if not order.source_file_path:
+                order.source_file_path = file_path
+                order.source_file_original_name = original_name
+            db.session.add(WorkReportOrderFile(
+                order_id=order.id,
+                file_path=file_path,
+                original_name=original_name,
+                extracted_text=(item.get('text') or '')[:200000],
+                sort_order=int(item.get('sort_order') or idx),
+            ))
+
+        activity = WorkReportActivity(
+            order_id=order.id,
+            name=activity_name,
+            activity_date=parse_date_field('activity_date'),
+            start_time=(request.form.get('start_time') or '').strip(),
+            end_time=(request.form.get('end_time') or '').strip(),
+            location=(request.form.get('location') or '').strip(),
+            detail=(request.form.get('detail') or '').strip(),
+            semester=order.semester,
+            academic_year=order.academic_year,
+            status=(request.form.get('status') or 'เปิดรายงาน').strip(),
+            created_by_id=created_by_id,
+        )
+        db.session.add(activity); db.session.flush()
+        rows = parse_work_assignment_lines(request.form.get('assignment_lines') or '')
+        added = 0
+        for row in rows:
+            teacher = find_teacher_by_name(row['name'])
+            db.session.add(WorkReportAssignment(
+                activity_id=activity.id,
+                teacher_id=teacher.id if teacher else None,
+                teacher_name=teacher.full_name if teacher else row['name'],
+                position=teacher.position if teacher else 'ครู',
+                duty_text=row['duty'],
+                committee_group=row['group'],
+                sort_order=row['sort_order'],
+            ))
+            added += 1
+        db.session.commit()
+        flash(f'สร้างกิจกรรมรายงานผลแล้ว และเพิ่มรายชื่อผู้เกี่ยวข้อง {added} รายการ', 'success')
+        return redirect(url_for('work_report_activity_detail', activity_id=activity.id))
+    return render_template('work_report_activity_form.html', activity=None, teachers=teachers, statuses=WORK_REPORT_STATUSES, order_statuses=WORK_REPORT_ORDER_STATUSES)
+
+
+@app.route('/work-reports/<int:activity_id>')
+def work_report_activity_detail(activity_id):
+    activity = WorkReportActivity.query.get_or_404(activity_id)
+    submissions_by_assignment = {s.assignment_id: s for s in WorkReportSubmission.query.filter_by(activity_id=activity.id).filter(WorkReportSubmission.assignment_id.isnot(None)).order_by(WorkReportSubmission.updated_at.desc()).all()}
+    extra_submissions = WorkReportSubmission.query.filter_by(activity_id=activity.id, assignment_id=None).order_by(WorkReportSubmission.updated_at.desc()).all()
+    summary = work_report_activity_summary(activity)
+    return render_template('work_report_activity_detail.html', activity=activity, submissions_by_assignment=submissions_by_assignment, extra_submissions=extra_submissions, summary=summary)
+
+
+@app.route('/work-reports/<int:activity_id>/submit', methods=['GET', 'POST'])
+def work_report_submit(activity_id):
+    activity = WorkReportActivity.query.get_or_404(activity_id)
+    if activity.status != 'เปิดรายงาน':
+        flash('กิจกรรมนี้ปิดรับรายงานแล้ว', 'warning')
+        return redirect(url_for('work_report_activity_detail', activity_id=activity.id))
+    assignment_id = request.args.get('assignment_id', type=int) or request.form.get('assignment_id', type=int)
+    assignment = WorkReportAssignment.query.filter_by(id=assignment_id, activity_id=activity.id).first() if assignment_id else None
+    submission = work_report_submission_for_assignment(activity.id, assignment.id if assignment else None)
+    if request.method == 'POST':
+        reporter_name = (request.form.get('reporter_name') or '').strip()
+        if assignment and not reporter_name:
+            reporter_name = assignment.teacher.full_name if assignment.teacher else assignment.teacher_name
+        if not reporter_name:
+            flash('กรุณากรอกหรือเลือกชื่อผู้รายงาน', 'danger')
+            return render_template('work_report_submission_form.html', activity=activity, assignment=assignment, assignments=activity.assignments, submission=submission, default_text=work_report_default_text(activity, assignment))
+        if submission is None:
+            submission = WorkReportSubmission(activity_id=activity.id, assignment_id=assignment.id if assignment else None)
+            db.session.add(submission)
+        submission.teacher_id = assignment.teacher_id if assignment else None
+        submission.reporter_name = reporter_name
+        submission.position = (request.form.get('position') or (assignment.position if assignment else 'ครู')).strip()
+        submission.duty_text = (request.form.get('duty_text') or (assignment.duty_text if assignment else '')).strip()
+        submission.performance_text = (request.form.get('performance_text') or '').strip()
+        submission.detail_text = (request.form.get('detail_text') or '').strip()
+        submission.problems = (request.form.get('problems') or '').strip()
+        submission.suggestions = (request.form.get('suggestions') or '').strip()
+        signature = request.files.get('signature')
+        if signature and signature.filename:
+            try:
+                if submission.signature_path:
+                    safe_remove_upload_file(submission.signature_path)
+                submission.signature_path, _ = save_work_report_image(signature, subdir='work_reports/signatures')
+            except ValueError as e:
+                flash(str(e), 'danger')
+                return render_template('work_report_submission_form.html', activity=activity, assignment=assignment, assignments=activity.assignments, submission=submission, default_text=work_report_default_text(activity, assignment))
+        db.session.flush()
+        captions = request.form.getlist('image_captions')
+        files = request.files.getlist('images')
+        added_images = 0
+        current_count = WorkReportImage.query.filter_by(submission_id=submission.id).count()
+        for i, img in enumerate(files):
+            if not img or not img.filename:
+                continue
+            try:
+                path, original = save_work_report_image(img, subdir='work_reports/images')
+            except ValueError as e:
+                flash(str(e), 'danger')
+                continue
+            db.session.add(WorkReportImage(
+                submission_id=submission.id,
+                file_path=path,
+                original_name=original,
+                caption=(captions[i] if i < len(captions) else '').strip(),
+                sort_order=current_count + added_images + 1,
+            ))
+            added_images += 1
+        db.session.commit()
+        flash('บันทึกรายงานผลการปฏิบัติงานแล้ว', 'success')
+        return redirect(url_for('work_report_submission_detail', submission_id=submission.id))
+    return render_template('work_report_submission_form.html', activity=activity, assignment=assignment, assignments=activity.assignments, submission=submission, default_text=work_report_default_text(activity, assignment))
+
+
+@app.route('/work-reports/submissions/<int:submission_id>')
+def work_report_submission_detail(submission_id):
+    submission = WorkReportSubmission.query.get_or_404(submission_id)
+    return render_template('work_report_submission_detail.html', submission=submission)
+
+
+@app.route('/work-reports/submissions/<int:submission_id>/print')
+def work_report_submission_print(submission_id):
+    submission = WorkReportSubmission.query.get_or_404(submission_id)
+    return render_template('work_report_print.html', submission=submission)
+
+
+@app.route('/work-reports/submissions/<int:submission_id>/image/<int:image_id>/delete', methods=['POST'])
+@login_required
+@role_required('teacher', 'admin')
+def work_report_image_delete(submission_id, image_id):
+    image = WorkReportImage.query.filter_by(id=image_id, submission_id=submission_id).first_or_404()
+    safe_remove_upload_file(image.file_path)
+    db.session.delete(image); db.session.commit()
+    flash('ลบรูปภาพแล้ว', 'success')
+    return redirect(url_for('work_report_submission_detail', submission_id=submission_id))
+
+
+@app.route('/work-reports/<int:activity_id>/export')
+def work_report_activity_export(activity_id):
+    activity = WorkReportActivity.query.get_or_404(activity_id)
+    wb = Workbook(); ws = wb.active; ws.title = 'Work Reports'
+    ws.append(['ลำดับ', 'ชื่อกิจกรรม', 'คำสั่ง', 'ชื่อครู', 'ตำแหน่ง', 'หน้าที่', 'สถานะ', 'วันที่ส่ง', 'จำนวนรูป'])
+    submissions = {s.assignment_id: s for s in WorkReportSubmission.query.filter_by(activity_id=activity.id).all() if s.assignment_id}
+    for i, ass in enumerate(sorted(activity.assignments, key=lambda x: x.sort_order or x.id), 1):
+        sub = submissions.get(ass.id)
+        ws.append([
+            i, activity.name, activity.order.order_no if activity.order else '',
+            ass.teacher.full_name if ass.teacher else ass.teacher_name,
+            ass.position, ass.duty_text,
+            'ส่งแล้ว' if sub else 'ยังไม่ส่ง',
+            sub.submitted_at.strftime('%Y-%m-%d %H:%M') if sub and sub.submitted_at else '',
+            len(sub.images) if sub else 0,
+        ])
+    bio = BytesIO(); wb.save(bio); bio.seek(0)
+    filename = f"work_report_{activity.id}_{datetime.now().strftime('%Y%m%d')}.xlsx"
+    return send_file(bio, as_attachment=True, download_name=filename, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
 # -----------------------------
 # Phase 5: E-Saraban / Official Documents

@@ -1,0 +1,57 @@
+{% extends 'base.html' %}
+{% block content %}
+{% if not current_user.is_authenticated %}<style>.main{margin-left:0!important;max-width:1160px;margin:auto!important}.sidebar-collapse-btn{display:none!important}</style>{% endif %}
+<style>
+.work-hero{background:linear-gradient(135deg,#e0f2fe,#dcfce7,#fce7f3);border-radius:28px;padding:26px;border:1px solid #e2e8f0;box-shadow:0 14px 32px rgba(100,116,139,.10);margin-bottom:18px}.work-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-top:18px}.work-stat{background:rgba(255,255,255,.82);border-radius:20px;padding:14px;border:1px solid rgba(255,255,255,.9)}.work-stat b{font-size:26px;display:block}.work-card{position:relative;overflow:hidden}.progress{height:10px;background:#e5e7eb;border-radius:999px;overflow:hidden}.progress span{display:block;height:100%;background:linear-gradient(90deg,#38bdf8,#34d399);border-radius:999px}.status-pill{display:inline-block;border-radius:999px;padding:6px 10px;font-size:12px;font-weight:800}.status-open{background:#dcfce7;color:#166534}.status-closed{background:#fee2e2;color:#991b1b}.searchbar{display:grid;grid-template-columns:1fr 160px auto;gap:10px;margin:18px 0}.activity-meta{color:#64748b;font-weight:700;line-height:1.7}.work-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}@media(max-width:760px){.searchbar{grid-template-columns:1fr}.work-actions .btn{width:100%;text-align:center}}</style>
+<div class="work-hero">
+  <div class="page-head" style="margin-bottom:0">
+    <div>
+      <h1>📋 รายงานผลการปฏิบัติงาน</h1>
+      <p>โรงเรียนเปรมติณสูลานนท์ · แบบฟอร์มกลางคล้าย Google Form สำหรับครูส่งผลงานและรูปกิจกรรม</p>
+    </div>
+    {% if current_user.is_authenticated and current_user.role in ['admin','teacher'] %}
+      <a class="btn" href="{{ url_for('work_report_new') }}">➕ เพิ่มคำสั่ง/กิจกรรม</a>
+    {% endif %}
+  </div>
+  <div class="work-stats">
+    <div class="work-stat"><span>กิจกรรมทั้งหมด</span><b>{{ overall.activities }}</b></div>
+    <div class="work-stat"><span>รายชื่อที่มอบหมาย</span><b>{{ overall.assignments }}</b></div>
+    <div class="work-stat"><span>รายงานแล้ว</span><b>{{ overall.submitted }}</b></div>
+    <div class="work-stat"><span>ยังไม่ส่ง</span><b>{{ overall.missing }}</b></div>
+  </div>
+</div>
+<form class="searchbar" method="get">
+  <input name="q" value="{{ qtext }}" placeholder="ค้นหาชื่อกิจกรรม / เลขคำสั่ง / สถานที่">
+  <select name="status">
+    <option value="">ทุกสถานะ</option>
+    {% for s in statuses %}<option value="{{ s }}" {% if status==s %}selected{% endif %}>{{ s }}</option>{% endfor %}
+  </select>
+  <button type="submit">ค้นหา</button>
+</form>
+<div class="cards">
+{% for activity in activities %}
+  {% set sm = summary[activity.id] %}
+  <div class="card work-card">
+    <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start">
+      <h2 style="margin-top:0">{{ activity.name }}</h2>
+      <span class="status-pill {{ 'status-open' if activity.status=='เปิดรายงาน' else 'status-closed' }}">{{ activity.status }}</span>
+    </div>
+    <div class="activity-meta">
+      {% if activity.order %}คำสั่งที่ {{ activity.order.order_no or '-' }}{% endif %}
+      {% if activity.activity_date %}<br>วันที่ {{ thai_date_label(activity.activity_date) }}{% endif %}
+      {% if activity.start_time or activity.end_time %}<br>เวลา {{ activity.start_time or '-' }} - {{ activity.end_time or '-' }} น.{% endif %}
+      {% if activity.location %}<br>สถานที่ {{ activity.location }}{% endif %}
+    </div>
+    <p>ส่งแล้ว {{ sm.submitted }} / {{ sm.total }} คน {% if sm.extra %}<small class="muted">+ เพิ่มเอง {{ sm.extra }}</small>{% endif %}</p>
+    <div class="progress"><span style="width:{{ sm.percent }}%"></span></div>
+    <div class="work-actions">
+      <a class="btn" href="{{ url_for('work_report_activity_detail', activity_id=activity.id) }}">ดูรายละเอียด</a>
+      {% if activity.status=='เปิดรายงาน' %}<a class="btn secondary" href="{{ url_for('work_report_submit', activity_id=activity.id) }}">ส่งรายงาน</a>{% endif %}
+      <a class="btn secondary" href="{{ url_for('work_report_activity_export', activity_id=activity.id) }}">Excel</a>
+    </div>
+  </div>
+{% else %}
+  <div class="card"><h2>ยังไม่มีกิจกรรม</h2><p>ให้ครูที่รับผิดชอบกด “เพิ่มคำสั่ง/กิจกรรม” เพื่อเปิดแบบฟอร์มรับรายงาน</p></div>
+{% endfor %}
+</div>
+{% endblock %}
