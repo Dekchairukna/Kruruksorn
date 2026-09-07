@@ -6295,6 +6295,154 @@ def build_classroom_day_attendance_report(classroom, report_date):
         summary.append({'student': link.student, 'checked': checked, 'totals': totals, 'percent': percent})
     return links, period_headers, attendance_map, summary
 
+
+def build_absence_risk_report(start_date, end_date, threshold=60.0, include_sick=False, subject_id=None, classroom_id=None):
+    """สรุปนักเรียนที่มีสัดส่วนขาดเรียนเกินเกณฑ์ แยกรายวิชา/ห้อง
+
+    ค่าเริ่มต้นถือว่า "ขาดเรียน" = ขาด + โดดเรียน
+    สามารถเลือกรวม "ลาป่วย" ได้จากหน้ารายงาน
+    ตัวหารนับเฉพาะคาบที่มีการบันทึกเช็กชื่อจริงของนักเรียนคนนั้น
+    """
+    threshold = max(0.0, min(float(threshold or 60), 100.0))
+    absent_statuses = {'ขาด', 'โดดเรียน'}
+    if include_sick:
+        absent_statuses.add('ลาป่วย')
+
+    q = Attendance.query.filter(Attendance.date >= start_date, Attendance.date <= end_date)
+    if subject_id:
+        q = q.filter(Attendance.subject_id == subject_id)
+    if classroom_id:
+        q = q.filter(Attendance.classroom_id == classroom_id)
+
+    if current_user.role != 'admin':
+        allowed_subjects = teacher_subject_ids()
+        allowed_rooms = teacher_classroom_ids()
+        q = q.filter(
+            Attendance.subject_id.in_(allowed_subjects or [-1]),
+            Attendance.classroom_id.in_(allowed_rooms or [-1])
+        )
+
+    # เก็บ record ล่าสุดต่อ 1 นักเรียน/วิชา/ห้อง/วัน/คาบ เพื่อกันข้อมูลซ้ำเก่าทำให้เปอร์เซ็นต์เพี้ยน
+    unique = {}
+    for a in q.order_by(Attendance.id.asc()).all():
+        key = (a.subject_id, a.classroom_id, a.student_id, a.date, a.period_no or 0)
+        unique[key] = a
+
+    grouped = {}
+    for a in unique.values():
+        student = a.student
+        if not student or student.role != 'student' or student.is_active is False:
+            continue
+        key = (a.subject_id, a.classroom_id, a.student_id)
+        row = grouped.setdefault(key, {
+            'subject': a.subject,
+            'room': a.classroom,
+            'student': student,
+            'checked': 0,
+            'absent': 0,
+            'present': 0,
+            'late': 0,
+            'sick': 0,
+            'activity': 0,
+            'skip': 0,
+            'plain_absent': 0,
+        })
+        st = normalize_attendance_status(a.status)
+        row['checked'] += 1
+        if st in absent_statuses:
+            row['absent'] += 1
+        if st == 'มา': row['present'] += 1
+        elif st == 'สาย': row['late'] += 1
+        elif st == 'ขาด': row['plain_absent'] += 1
+        elif st == 'โดดเรียน': row['skip'] += 1
+        elif st == 'ลาป่วย': row['sick'] += 1
+        elif st == 'ไปกิจกรรม': row['activity'] += 1
+
+    rows = []
+    for row in grouped.values():
+        checked = row['checked']
+        pct = round((row['absent'] / checked * 100), 2) if checked else 0
+        row['absence_percent'] = pct
+        if checked and pct > threshold:  # "เกิน 60%" = มากกว่า 60 จริง ๆ
+            rows.append(row)
+
+    rows.sort(key=lambda r: (-r['absence_percent'], classroom_natural_sort_key(r['room'].name if r['room'] else ''), r['student'].full_name or '', r['subject'].name if r['subject'] else ''))
+    return rows
+
+
+def absence_risk_filter_options():
+    if current_user.role == 'admin':
+        subjects = Subject.query.filter(db.or_(Subject.is_active == True, Subject.is_active.is_(None))).order_by(Subject.name.asc()).all()
+        classrooms = Classroom.query.filter(db.or_(Classroom.is_active == True, Classroom.is_active.is_(None))).order_by(Classroom.name.asc()).all()
+    else:
+        subjects = Subject.query.filter(Subject.id.in_(teacher_subject_ids() or [-1]), db.or_(Subject.is_active == True, Subject.is_active.is_(None))).order_by(Subject.name.asc()).all()
+        classrooms = Classroom.query.filter(Classroom.id.in_(teacher_classroom_ids() or [-1]), db.or_(Classroom.is_active == True, Classroom.is_active.is_(None))).order_by(Classroom.name.asc()).all()
+    return subjects, classrooms
+
+
+@app.route('/records/absence-risk')
+@login_required
+@role_required('teacher','admin')
+def absence_risk_report():
+    range_type, default_start, default_end, range_label = attendance_range_from_request()
+    try:
+        start_date = datetime.strptime(request.args.get('start_date', default_start.isoformat()), '%Y-%m-%d').date()
+        end_date = datetime.strptime(request.args.get('end_date', default_end.isoformat()), '%Y-%m-%d').date()
+    except ValueError:
+        start_date, end_date = default_start, default_end
+    if start_date > end_date:
+        start_date, end_date = end_date, start_date
+    threshold = request.args.get('threshold', type=float)
+    threshold = 60.0 if threshold is None else max(0.0, min(threshold, 100.0))
+    include_sick = request.args.get('include_sick') == '1'
+    subject_id = request.args.get('subject_id', type=int)
+    classroom_id = request.args.get('classroom_id', type=int)
+    rows = build_absence_risk_report(start_date, end_date, threshold, include_sick, subject_id, classroom_id)
+    subjects, classrooms = absence_risk_filter_options()
+    unique_students = len({r['student'].id for r in rows})
+    unique_rooms = len({r['room'].id for r in rows if r['room']})
+    unique_subjects = len({r['subject'].id for r in rows if r['subject']})
+    return render_template(
+        'absence_risk_report.html', rows=rows, threshold=threshold, include_sick=include_sick,
+        start_date=start_date, end_date=end_date, subjects=subjects, classrooms=classrooms,
+        selected_subject_id=subject_id, selected_classroom_id=classroom_id,
+        unique_students=unique_students, unique_rooms=unique_rooms, unique_subjects=unique_subjects,
+        range_label=range_label
+    )
+
+
+@app.route('/records/absence-risk/export')
+@login_required
+@role_required('teacher','admin')
+def absence_risk_export():
+    _, default_start, default_end, _ = attendance_range_from_request()
+    try:
+        start_date = datetime.strptime(request.args.get('start_date', default_start.isoformat()), '%Y-%m-%d').date()
+        end_date = datetime.strptime(request.args.get('end_date', default_end.isoformat()), '%Y-%m-%d').date()
+    except ValueError:
+        start_date, end_date = default_start, default_end
+    if start_date > end_date:
+        start_date, end_date = end_date, start_date
+    threshold = request.args.get('threshold', type=float)
+    threshold = 60.0 if threshold is None else max(0.0, min(threshold, 100.0))
+    include_sick = request.args.get('include_sick') == '1'
+    subject_id = request.args.get('subject_id', type=int)
+    classroom_id = request.args.get('classroom_id', type=int)
+    rows = build_absence_risk_report(start_date, end_date, threshold, include_sick, subject_id, classroom_id)
+
+    wb = Workbook(); ws = wb.active; ws.title = 'absence_over_threshold'
+    ws.append([f'นักเรียนขาดเรียนเกิน {threshold:g}% ช่วง {start_date.isoformat()} ถึง {end_date.isoformat()}'])
+    ws.append(['ที่', 'รหัสนักเรียน', 'ชื่อ-สกุล', 'ชั้น/ห้อง', 'รายวิชา', 'คาบที่เช็ก', 'ขาด', 'โดดเรียน', 'ลาป่วย', 'คาบที่นับเป็นขาด', 'ขาดเรียน (%)'])
+    for i, r in enumerate(rows, start=1):
+        ws.append([i, r['student'].student_no or r['student'].username, r['student'].full_name, r['room'].name if r['room'] else '-', r['subject'].name if r['subject'] else '-', r['checked'], r['plain_absent'], r['skip'], r['sick'], r['absent'], r['absence_percent']])
+    for col in ws.columns:
+        max_len = max(len(str(c.value or '')) for c in col)
+        ws.column_dimensions[col[0].column_letter].width = min(max(max_len + 2, 10), 45)
+    filename = f"absence_over_{threshold:g}pct_{start_date.isoformat()}_{end_date.isoformat()}.xlsx"
+    path = os.path.join(UPLOAD_DIR, filename); wb.save(path)
+    return send_file(path, as_attachment=True, download_name=filename)
+
+
 @app.route('/records/classroom-day')
 @login_required
 @role_required('teacher','admin')

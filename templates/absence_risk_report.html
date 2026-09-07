@@ -1,0 +1,86 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="attendance-dashboard-head">
+  <div>
+    <h1>🚨 นักเรียนขาดเรียนเกินเกณฑ์</h1>
+    <p class="muted">ค้นหาว่านักเรียนคนใด ชั้น/ห้องใด ขาดเรียนเกิน {{ threshold|round(1) }}% และเกิดในรายวิชาใด</p>
+  </div>
+</div>
+
+<section class="card">
+  <form method="get" class="dashboard-filter" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;align-items:end">
+    <label>ตั้งแต่วันที่
+      <input type="date" name="start_date" value="{{ start_date.isoformat() }}">
+    </label>
+    <label>ถึงวันที่
+      <input type="date" name="end_date" value="{{ end_date.isoformat() }}">
+    </label>
+    <label>ขาดเกิน (%)
+      <input type="number" name="threshold" min="0" max="100" step="0.1" value="{{ threshold }}">
+    </label>
+    <label>รายวิชา
+      <select name="subject_id">
+        <option value="">ทุกวิชา</option>
+        {% for s in subjects %}<option value="{{ s.id }}" {% if selected_subject_id==s.id %}selected{% endif %}>{{ s.name }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>ชั้น/ห้อง
+      <select name="classroom_id">
+        <option value="">ทุกห้อง</option>
+        {% for r in classrooms %}<option value="{{ r.id }}" {% if selected_classroom_id==r.id %}selected{% endif %}>{{ r.name }}</option>{% endfor %}
+      </select>
+    </label>
+    <label style="display:flex;gap:8px;align-items:center;padding-bottom:10px">
+      <input type="checkbox" name="include_sick" value="1" {% if include_sick %}checked{% endif %} style="width:auto"> รวม “ลาป่วย” เป็นขาดเรียน
+    </label>
+    <button class="btn">🔎 ตรวจสอบ</button>
+  </form>
+  <p class="muted" style="margin-top:10px">ค่าเริ่มต้น “ขาดเรียน” = <b>ขาด + โดดเรียน</b> และคำนวณจากคาบที่มีการเช็กชื่อจริงเท่านั้น {% if include_sick %}ขณะนี้รวม “ลาป่วย” ด้วย{% endif %}</p>
+</section>
+
+<section class="daily-stat-grid">
+  <div class="daily-stat-card red"><b>นักเรียนที่เกินเกณฑ์</b><h2>{{ unique_students }}</h2><small>นับไม่ซ้ำรายคน</small></div>
+  <div class="daily-stat-card blue"><b>รายการเสี่ยง</b><h2>{{ rows|length }}</h2><small>1 คนอาจเกินเกณฑ์หลายวิชา</small></div>
+  <div class="daily-stat-card cyan"><b>ชั้น/ห้อง</b><h2>{{ unique_rooms }}</h2><small>ห้องที่พบผู้เกินเกณฑ์</small></div>
+  <div class="daily-stat-card green"><b>รายวิชา</b><h2>{{ unique_subjects }}</h2><small>วิชาที่พบผู้เกินเกณฑ์</small></div>
+</section>
+
+<section class="card">
+  <div class="section-head-row">
+    <div>
+      <h2>รายชื่อนักเรียนที่ขาดเกิน {{ threshold|round(1) }}%</h2>
+      <p class="muted">ช่วง {{ thai_date_short(start_date) }} – {{ thai_date_short(end_date) }} · เรียงจากเปอร์เซ็นต์ขาดสูงสุด</p>
+    </div>
+    <div class="actions-row">
+      <a class="btn secondary small" href="{{ url_for('absence_risk_report', range='term', threshold=threshold, include_sick=1 if include_sick else none) }}">ภาคเรียนปัจจุบัน</a>
+      <a class="btn small" href="{{ url_for('absence_risk_export', start_date=start_date.isoformat(), end_date=end_date.isoformat(), threshold=threshold, include_sick=1 if include_sick else none, subject_id=selected_subject_id, classroom_id=selected_classroom_id) }}">⬇️ Export Excel</a>
+    </div>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <tr>
+        <th>ที่</th><th>รหัส</th><th>ชื่อ-สกุล</th><th>ชั้น/ห้อง</th><th>รายวิชา</th>
+        <th>คาบที่เช็ก</th><th>ขาด</th><th>โดด</th><th>ลาป่วย</th><th>นับเป็นขาด</th><th>ขาดเรียน</th><th>ดูรายละเอียด</th>
+      </tr>
+      {% for r in rows %}
+      <tr>
+        <td>{{ loop.index }}</td>
+        <td>{{ r.student.student_no or r.student.username }}</td>
+        <td><b>{{ r.student.full_name }}</b></td>
+        <td>{{ r.room.name }}</td>
+        <td>{{ r.subject.name }}</td>
+        <td>{{ r.checked }}</td>
+        <td>{{ r.plain_absent }}</td>
+        <td>{{ r.skip }}</td>
+        <td>{{ r.sick }}</td>
+        <td>{{ r.absent }}</td>
+        <td><b class="bad-text">{{ r.absence_percent }}%</b></td>
+        <td><a class="btn small secondary" href="{{ url_for('attendance', subject_id=r.subject.id, classroom_id=r.room.id) }}">เปิดวิชา/ห้อง</a></td>
+      </tr>
+      {% else %}
+      <tr><td colspan="12" style="text-align:center;padding:28px">✅ ไม่พบนักเรียนที่ขาดเรียนเกิน {{ threshold|round(1) }}% ตามเงื่อนไขที่เลือก</td></tr>
+      {% endfor %}
+    </table>
+  </div>
+</section>
+{% endblock %}
