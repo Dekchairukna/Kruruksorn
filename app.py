@@ -5797,9 +5797,40 @@ def classwork_score_history():
             .group_by(ClassworkScore.item_id).all())
         score_counts = {item_id: count for item_id, count in rows}
 
+    # สรุปให้เห็นทันทีว่า "วันไหน/คาบไหนมีการบันทึกคะแนนจริง"
+    # แยกตาม วันที่ + วิชา + ห้อง แล้วทำสถานะคาบ 1-8
+    overview_map = {}
+    for item in items:
+        key = (item.date, item.subject_id, item.classroom_id)
+        if key not in overview_map:
+            overview_map[key] = {
+                'date': item.date,
+                'subject': item.subject,
+                'classroom': item.classroom,
+                'periods': {},
+            }
+        pno = item.period_no
+        if not pno:
+            continue
+        bucket = overview_map[key]['periods'].setdefault(pno, {
+            'item_count': 0,
+            'score_count': 0,
+            'schedule_id': item.schedule_id,
+            'titles': [],
+        })
+        bucket['item_count'] += 1
+        bucket['score_count'] += score_counts.get(item.id, 0)
+        if item.title and item.title not in bucket['titles']:
+            bucket['titles'].append(item.title)
+        if not bucket.get('schedule_id') and item.schedule_id:
+            bucket['schedule_id'] = item.schedule_id
+
+    score_period_overview = list(overview_map.values())
+
     return render_template(
         'classwork_score_history.html',
-        items=items, score_counts=score_counts, subjects=subjects, classrooms=classrooms,
+        items=items, score_counts=score_counts, score_period_overview=score_period_overview,
+        subjects=subjects, classrooms=classrooms,
         subject_id=subject_id, classroom_id=classroom_id, period_no=period_no,
         keyword=keyword, date_from_text=date_from_text, date_to_text=date_to_text,
     )

@@ -54,6 +54,55 @@
 <section class="card">
   <div class="section-head-row">
     <div>
+      <h2>คาบที่มีการบันทึกคะแนน</h2>
+      <p class="muted">ดูตรงนี้ได้เลยว่าคาบไหนเคยคีย์คะแนนแล้ว — <b style="color:#147a3e">สีเขียว = มีคะแนนนักเรียนบันทึกจริง</b> · <b style="color:#9a6700">สีเหลือง = สร้างหัวข้อไว้แต่ยังไม่มีคะแนนนักเรียน</b> · สีเทา = ไม่มีรายการ</p>
+    </div>
+  </div>
+
+  {% if score_period_overview %}
+  <div class="table-wrap">
+    <table>
+      <tr>
+        <th>วันที่</th><th>รายวิชา</th><th>ห้อง</th>
+        {% for p in range(1, 9) %}<th style="text-align:center;min-width:92px">คาบ {{ p }}</th>{% endfor %}
+      </tr>
+      {% for row in score_period_overview %}
+      <tr>
+        <td data-label="วันที่"><b>{{ row.date.strftime('%d/%m/%Y') if row.date else '-' }}</b></td>
+        <td data-label="รายวิชา">{{ row.subject.name if row.subject else '-' }}</td>
+        <td data-label="ห้อง">{{ row.classroom.name if row.classroom else '-' }}</td>
+        {% for p in range(1, 9) %}
+          {% set info = row.periods.get(p) %}
+          <td data-label="คาบ {{ p }}" style="text-align:center">
+            {% if info and info.score_count > 0 %}
+              <a href="{{ url_for('attendance', subject_id=row.subject.id, classroom_id=row.classroom.id, date=row.date.isoformat(), period_no=p, schedule_id=info.schedule_id) }}#classwork-score"
+                 title="{{ info.titles|join(', ') }}"
+                 style="display:inline-block;text-decoration:none;background:#e7f7ed;border:1px solid #87d4a4;color:#147a3e;border-radius:10px;padding:7px 9px;font-weight:700;line-height:1.25">
+                ✓ มีคะแนน<br><small>{{ info.score_count }} รายการ</small>
+              </a>
+            {% elif info %}
+              <a href="{{ url_for('attendance', subject_id=row.subject.id, classroom_id=row.classroom.id, date=row.date.isoformat(), period_no=p, schedule_id=info.schedule_id) }}#classwork-score"
+                 title="{{ info.titles|join(', ') }}"
+                 style="display:inline-block;text-decoration:none;background:#fff7d6;border:1px solid #e6c75b;color:#9a6700;border-radius:10px;padding:7px 9px;font-weight:700;line-height:1.25">
+                มีหัวข้อ<br><small>ยังไม่คีย์คะแนน</small>
+              </a>
+            {% else %}
+              <span style="color:#9aa0a6">—</span>
+            {% endif %}
+          </td>
+        {% endfor %}
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+  {% else %}
+    <p class="muted">ยังไม่พบคาบที่มีรายการคะแนนตามตัวกรองนี้</p>
+  {% endif %}
+</section>
+
+<section class="card">
+  <div class="section-head-row">
+    <div>
       <h2>รายการที่เคยคีย์คะแนน</h2>
       <p class="muted">พบ {{ items|length }} รายการ{% if items|length >= 1000 %} (แสดงสูงสุด 1,000 รายการ){% endif %} · ถ้าคาบใดไม่มีรายการ แปลว่ายังไม่มีหัวข้อคะแนนในคาบถูกบันทึกไว้</p>
     </div>
