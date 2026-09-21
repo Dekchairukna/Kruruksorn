@@ -1313,3 +1313,14 @@ button:disabled,.btn[disabled]{opacity:.45;cursor:not-allowed}
 .inline-file-preview .file-icon{min-width:44px;height:44px;border-radius:14px;display:flex;align-items:center;justify-content:center;font-weight:900;background:#e0f2fe;color:#075985}
 .period-worksheet-item{border:1px solid #e5e7eb;border-radius:16px;padding:10px;background:#fff;margin:8px 0}.period-worksheet-item .inline-file-preview.pdf-preview iframe{height:520px}.period-worksheet-item .inline-file-preview.image-preview img{max-height:520px}.check-row{display:flex;align-items:center;gap:8px;font-weight:700;color:#475569}.check-row input{width:auto}
 @media (max-width: 768px){.inline-file-preview.pdf-preview iframe{height:520px}.period-worksheet-item .inline-file-preview.pdf-preview iframe{height:420px}}
+
+/* --- เมนูด้านข้างแบบจัดกลุ่ม (ลดความยาว) --- */
+.sidebar nav .nav-group{margin:10px 0 2px}
+.sidebar nav .nav-group summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:8px;padding:9px 15px;font-size:12px;font-weight:900;text-transform:uppercase;letter-spacing:.04em;color:rgba(255,255,255,.72);border-radius:12px;user-select:none}
+.sidebar nav .nav-group summary::-webkit-details-marker{display:none}
+.sidebar nav .nav-group summary::marker{content:''}
+.sidebar nav .nav-group summary::after{content:'▾';margin-left:auto;font-size:11px;transition:.15s ease}
+.sidebar nav .nav-group:not([open]) summary::after{transform:rotate(-90deg)}
+.sidebar nav .nav-group summary:hover{background:rgba(255,255,255,.1);color:#fff}
+.sidebar nav .nav-group a{margin:4px 0 4px 6px}
+body.sidebar-collapsed .sidebar nav .nav-group summary{display:none}

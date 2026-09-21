@@ -2,11 +2,11 @@
 {% block content %}
 <div class="page-head">
   <div>
-    <h1>นำเข้า Excel แยกหมวด</h1>
-    <p>เลือกอัปโหลดเฉพาะข้อมูลที่ต้องการ ไม่ต้องรวมทั้งระบบในไฟล์เดียว</p>
+    <h1>นำเข้าข้อมูล Excel</h1>
+    <p>เลือกได้ 2 แบบ: อัปโหลดทีละหมวดด้านล่าง หรือกดปุ่ม "นำเข้า Excel ทั้งระบบ" ถ้ามีไฟล์เดียวที่รวมทุกชีตไว้แล้ว</p>
   </div>
   <div class="actions-row">
-    <a class="btn" href="{{ url_for('import_all') }}">📦 ไปหน้านำเข้า Excel ทั้งระบบ</a>
+    <a class="btn" href="{{ url_for('import_all') }}">📦 นำเข้า Excel ทั้งระบบ (ไฟล์เดียว)</a>
     <a class="btn secondary" href="{{ url_for('download_import_template') }}">⬇️ ไฟล์ตัวอย่างรวมทั้งหมด</a>
   </div>
 </div>

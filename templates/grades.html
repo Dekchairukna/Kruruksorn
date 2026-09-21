@@ -21,7 +21,14 @@
   <label>กลางภาค (%)<input name="midterm_weight" type="number" step="0.1" value="{{ setting.midterm_weight }}"></label>
   <label>ปลายภาค (%)<input name="final_weight" type="number" step="0.1" value="{{ setting.final_weight }}"></label>
 </div>
-{% if total_weight != 100 %}<div class="alert warning">น้ำหนักหลักรวม {{ total_weight }}% ถ้าไม่ถึง 100% ส่วนที่เหลือจะเป็นจิตพิสัย/พฤติกรรมอัตโนมัติ</div>{% endif %}
+{% set behavior_effective_weight = [0, 100 - total_weight]|max %}
+{% if total_weight > 100 %}
+<div class="alert danger">⚠️ น้ำหนักหลักรวม {{ total_weight }}% เกิน 100% แล้ว → <b>จิตพิสัยจะไม่ถูกนับเลย (น้ำหนัก 0%)</b> ลดน้ำหนักช่องใดช่องหนึ่งลงให้รวมไม่เกิน 100% เพื่อให้เหลือที่ว่างให้จิตพิสัย</div>
+{% elif total_weight < 100 %}
+<div class="alert success">น้ำหนักหลักรวม {{ total_weight }}% ส่วนที่เหลืออีก {{ behavior_effective_weight }}% จะเป็นน้ำหนักของจิตพิสัยโดยอัตโนมัติ</div>
+{% else %}
+<div class="alert danger">⚠️ น้ำหนักหลักรวมพอดี 100% แล้ว → <b>จิตพิสัยจะไม่ถูกนับเลย (น้ำหนัก 0%)</b> ถ้าต้องการให้จิตพิสัยมีผลต่อคะแนน ให้ลดน้ำหนักช่องใดช่องหนึ่งลง</div>
+{% endif %}
 <h2>คะแนนรายนักเรียน</h2>
 <div class="table-wrap">
 <table>

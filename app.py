@@ -1058,14 +1058,18 @@ class DocumentEndorsement(db.Model):
     author = db.relationship('User', foreign_keys=[author_id])
 
 class GradeSetting(db.Model):
+    # หมายเหตุ: worksheet+quiz+attendance+classwork+midterm+final ต้อง "ไม่เกิน" 100
+    # เพราะ "จิตพิสัย" (behavior) จะได้น้ำหนัก = ส่วนที่เหลือจาก 100 โดยอัตโนมัติ
+    # (ดู calculate_grade_row) ถ้าตั้งรวมเกิน 100 จิตพิสัยจะได้น้ำหนัก 0% ทันทีโดยไม่มีการแจ้งเตือนชัดเจน
+    # ค่าเริ่มต้นนี้รวมกันได้ 90 เพื่อเผื่อจิตพิสัยไว้ 10% เสมอ
     id = db.Column(db.Integer, primary_key=True)
     subject_id = db.Column(db.Integer, db.ForeignKey('subject.id'), nullable=False)
-    worksheet_weight = db.Column(db.Float, default=30)
-    quiz_weight = db.Column(db.Float, default=20)
+    worksheet_weight = db.Column(db.Float, default=25)
+    quiz_weight = db.Column(db.Float, default=15)
     attendance_weight = db.Column(db.Float, default=10)
     classwork_weight = db.Column(db.Float, default=10)
-    midterm_weight = db.Column(db.Float, default=20)
-    final_weight = db.Column(db.Float, default=20)
+    midterm_weight = db.Column(db.Float, default=15)
+    final_weight = db.Column(db.Float, default=15)
     subject = db.relationship('Subject')
 
 class ManualScore(db.Model):
@@ -2161,293 +2165,6 @@ def build_calendar_dashboard(year=2026, months=(5,6,7,8,9,10), teacher_id=None, 
     return blocks, upcoming, today_position
 
 
-
-# -----------------------------------------------------------------------------
-# KRURUKSORN SCHOOL ERP HUB
-# ศูนย์รวมโมดูลระบบบริหารโรงเรียน: เพิ่มเป็น prototype แบบไม่รื้อระบบเดิม
-# หมายเหตุ: ไม่ใส่ KRURUK SPORTS ตามที่ผู้ใช้ระบุว่า "13 ไม่เอา"
-# -----------------------------------------------------------------------------
-
-def _erp_feature(title, detail='', status='พร้อมใช้งาน', endpoint=None, href=None, tag=''):
-    return {
-        'title': title,
-        'detail': detail,
-        'status': status,
-        'endpoint': endpoint,
-        'href': href,
-        'tag': tag,
-    }
-
-
-def build_school_erp_modules():
-    """คืนค่าโครงสร้างเมนู School ERP ประมาณ 50 หน้า โดยผูกบางหน้าเข้ากับระบบเดิมแล้ว"""
-    modules = [
-        {
-            'key': 'academic-grading',
-            'icon': '📚',
-            'title': 'งานวิชาการและวัดผล',
-            'subtitle': 'หลักสูตร รายวิชา คะแนน เกรด และเอกสาร ปพ.',
-            'color': 'green',
-            'features': [
-                _erp_feature('รายวิชา/หลักสูตร', 'จัดการรายวิชา หน่วยการเรียนรู้ ตัวชี้วัด และบทเรียน', endpoint='subjects', tag='เดิม'),
-                _erp_feature('บันทึกคะแนน/เช็กชื่อรายวิชา', 'เลือกห้องและรายวิชาเพื่อบันทึกเวลาเรียน คะแนนในคาบ และคะแนนรวม', endpoint='records_center', tag='เดิม'),
-                _erp_feature('สมุดคะแนนและคำนวณเกรด', 'คำนวณจากใบงาน แบบทดสอบ คะแนนในคาบ กลางภาค ปลายภาค และจิตพิสัย', endpoint='records_center', tag='เดิม'),
-                _erp_feature('เอกสาร ปพ.5', 'ต้นแบบหน้ารวมเพื่อพิมพ์สมุดบันทึกผลการพัฒนาคุณภาพผู้เรียน', status='ต้นแบบ'),
-                _erp_feature('เอกสาร ปพ.6', 'ต้นแบบรายงานผลการเรียนรายบุคคลสำหรับผู้ปกครอง', status='ต้นแบบ'),
-                _erp_feature('เอกสาร ปพ.7', 'ต้นแบบหนังสือรับรองผลการศึกษา/สถานภาพนักเรียน', status='ต้นแบบ'),
-                _erp_feature('สถิติผลสัมฤทธิ์', 'ภาพรวมค่าเฉลี่ย เกรด และจำนวนผู้เรียนรายห้อง/รายวิชา', endpoint='records_center', tag='เดิม'),
-            ],
-        },
-        {
-            'key': 'teacher-work',
-            'icon': '👨‍🏫',
-            'title': 'ระบบครูผู้สอน',
-            'subtitle': 'ตารางสอน แผนการสอน ใบงาน แบบทดสอบ และงานที่สั่ง',
-            'color': 'blue',
-            'features': [
-                _erp_feature('ตารางสอน', 'ตารางสอนครูและห้องเรียน 8 คาบ/วัน', endpoint='schedule', tag='เดิม'),
-                _erp_feature('สอนแทน', 'ดูคาบที่ต้องสอนแทนและบันทึกการเข้าสอน', endpoint='substitute_schedule', tag='เดิม'),
-                _erp_feature('ใบความรู้/บทเรียน', 'จัดการบทเรียน สื่อ วิดีโอ PDF รูปภาพ และเอกสารประกอบ', endpoint='subjects', tag='เดิม'),
-                _erp_feature('ใบงานออนไลน์', 'สร้างใบงาน ตรวจงาน และให้คะแนน', endpoint='subjects', tag='เดิม'),
-                _erp_feature('แบบทดสอบออนไลน์', 'สร้างแบบทดสอบและตรวจคะแนนอัตโนมัติ', endpoint='subjects', tag='เดิม'),
-                _erp_feature('สั่งงานนักเรียน', 'มอบหมายงานรายห้อง/รายวิชา', endpoint='assign', tag='เดิม'),
-            ],
-        },
-        {
-            'key': 'student-care',
-            'icon': '🫶',
-            'title': 'งานกิจการนักเรียนและระบบดูแลช่วยเหลือ',
-            'subtitle': 'ประวัตินักเรียน SDQ เยี่ยมบ้าน พฤติกรรม และกลุ่มเสี่ยง',
-            'color': 'pink',
-            'features': [
-                _erp_feature('ฐานข้อมูลนักเรียน', 'ข้อมูลพื้นฐาน นักเรียน ผู้ปกครอง สุขภาพ และข้อมูลติดต่อ', endpoint='classrooms', tag='เดิม'),
-                _erp_feature('เช็กชื่อเข้าเรียน', 'มา สาย ลา ขาด ไปกิจกรรม พร้อมรายงานรายวัน', endpoint='attendance_dashboard', tag='เดิม'),
-                _erp_feature('แจ้งเตือนผู้ปกครอง', 'เตรียมต่อ LINE/Email จากข้อมูลการขาดเรียนและสาย', status='ต่อยอด'),
-                _erp_feature('เยี่ยมบ้านออนไลน์', 'แบบฟอร์มครูและผู้ปกครอง พร้อมข้อมูลสภาพครอบครัวและความต้องการช่วยเหลือ', endpoint='phase3_home_visits', tag='Phase 3'),
-                _erp_feature('แบบประเมิน SDQ', 'นักเรียน ผู้ปกครอง และครูทำแบบประเมินออนไลน์', endpoint='phase3_sdq', tag='Phase 3'),
-                _erp_feature('พฤติกรรม/ความประพฤติ', 'บันทึกความดี ความผิด คะแนนพฤติกรรม และหมายเหตุรายบุคคล', status='ต้นแบบ'),
-                _erp_feature('ทุนการศึกษา/กลุ่มช่วยเหลือ', 'จัดกลุ่มนักเรียนที่ต้องติดตามและช่วยเหลือ', endpoint='phase3_care_records', tag='Phase 3'),
-            ],
-        },
-        {
-            'key': 'parent-portal',
-            'icon': '👪',
-            'title': 'ระบบผู้ปกครอง',
-            'subtitle': 'ผู้ปกครองดูคะแนน การมาเรียน การบ้าน และประกาศ',
-            'color': 'orange',
-            'features': [
-                _erp_feature('Parent Portal', 'หน้าเข้าสู่ระบบสำหรับผู้ปกครอง', status='ต้นแบบ'),
-                _erp_feature('ดูผลการเรียน', 'แสดงคะแนนและเกรดของนักเรียนแบบอ่านง่าย', status='ต้นแบบ'),
-                _erp_feature('ดูการมาเรียน', 'สรุปมา สาย ลา ขาด และไปกิจกรรม', status='ต้นแบบ'),
-                _erp_feature('ดูการบ้าน/งานค้าง', 'ติดตามงานที่ครูสั่งและสถานะการส่งงาน', status='ต้นแบบ'),
-                _erp_feature('แจ้งเตือน LINE', 'แจ้งขาดเรียน งานค้าง คะแนนต่ำ และประกาศใหม่', status='ต่อยอด'),
-            ],
-        },
-        {
-            'key': 'student-activities',
-            'icon': '🎯',
-            'title': 'กิจกรรมพัฒนาผู้เรียน',
-            'subtitle': 'ชุมนุม ลูกเสือ เนตรนารี จิตอาสา และกิจกรรมโรงเรียน',
-            'color': 'purple',
-            'features': [
-                _erp_feature('ลงทะเบียนชุมนุม/ชมรม', 'นักเรียนเลือกชุมนุมผ่านเว็บ จำกัดจำนวน และตรวจสอบสิทธิ์', endpoint='phase4_clubs', tag='Phase 4'),
-                _erp_feature('รายชื่อนักเรียนในชุมนุม', 'ครูที่ปรึกษาดูรายชื่อและส่งออก Excel', endpoint='phase4_clubs', tag='Phase 4'),
-                _erp_feature('บันทึกกิจกรรมลูกเสือ/เนตรนารี', 'บันทึกการเข้าร่วมรายวัน/รายกิจกรรม', endpoint='phase4_activities', tag='Phase 4'),
-                _erp_feature('กิจกรรมเพื่อสังคม/จิตอาสา', 'เก็บชั่วโมงกิจกรรมและรายงานนักเรียน', endpoint='phase4_activities', tag='Phase 4'),
-                _erp_feature('กิจกรรมประจำห้อง', 'เช็กชื่อกิจกรรมหน้าเสาธง/กิจกรรมพิเศษ', endpoint='classrooms', tag='เดิม'),
-            ],
-        },
-        {
-            'key': 'student-registry',
-            'icon': '🗂️',
-            'title': 'งานทะเบียนนักเรียน',
-            'subtitle': 'รับนักเรียน จัดห้อง ย้ายเข้า ย้ายออก และเอกสารรับรอง',
-            'color': 'green',
-            'features': [
-                _erp_feature('จัดการห้องเรียน', 'สร้างห้อง ครูประจำชั้น และรายชื่อนักเรียน', endpoint='classrooms', tag='เดิม'),
-                _erp_feature('นำเข้านักเรียน', 'นำเข้ารายชื่อนักเรียนจาก Excel', endpoint='import_students', tag='เดิม'),
-                _erp_feature('ย้ายห้อง/เลื่อนชั้น', 'ย้ายห้องรายบุคคลและเตรียมต่อยอดเลื่อนชั้นทั้งระบบ', endpoint='classrooms', tag='เดิม'),
-                _erp_feature('ย้ายเข้า/ย้ายออก', 'แบบฟอร์มทะเบียนรับย้ายและจำหน่ายนักเรียน', status='ต้นแบบ'),
-                _erp_feature('หนังสือรับรองนักเรียน', 'ต้นแบบเอกสารรับรองสถานภาพนักเรียน', status='ต้นแบบ'),
-            ],
-        },
-        {
-            'key': 'savings',
-            'icon': '🏦',
-            'title': 'ระบบออมทรัพย์นักเรียน',
-            'subtitle': 'ฝาก ถอน สมุดบัญชี และรายงานยอดเงิน',
-            'color': 'blue',
-            'features': [
-                _erp_feature('บัญชีออมทรัพย์นักเรียน', 'เปิดบัญชีรายคนและดูยอดคงเหลือ', status='ต้นแบบ'),
-                _erp_feature('บันทึกฝากเงิน', 'บันทึกเงินฝากรายวัน รายห้อง หรือรายบุคคล', status='ต้นแบบ'),
-                _erp_feature('บันทึกถอนเงิน', 'อนุมัติและบันทึกการถอนเงิน', status='ต้นแบบ'),
-                _erp_feature('สมุดบัญชี', 'พิมพ์ประวัติฝากถอนรายคน', status='ต้นแบบ'),
-                _erp_feature('รายงานการเงิน', 'สรุปรายวัน รายเดือน รายห้อง และทั้งโรงเรียน', status='ต้นแบบ'),
-            ],
-        },
-        {
-            'key': 'e-saraban',
-            'icon': '📨',
-            'title': 'ระบบสารบรรณอิเล็กทรอนิกส์',
-            'subtitle': 'หนังสือรับ หนังสือส่ง คำสั่ง ประกาศ บันทึกข้อความ และเกษียน',
-            'color': 'orange',
-            'features': [
-                _erp_feature('ทะเบียนหนังสือรับ', 'ลงรับหนังสือ เลขรับ วันที่รับ และผู้รับผิดชอบ', endpoint='phase5_documents', tag='Phase 5'),
-                _erp_feature('ทะเบียนหนังสือส่ง', 'เลขส่ง หน่วยงานปลายทาง และไฟล์แนบ PDF', endpoint='phase5_documents', tag='Phase 5'),
-                _erp_feature('คำสั่งโรงเรียน', 'สร้างคำสั่งจาก Template และออกเลขอัตโนมัติ', endpoint='phase5_documents', tag='Phase 5'),
-                _erp_feature('ประกาศโรงเรียน', 'ประกาศภายใน/ภายนอก พร้อมไฟล์แนบ', endpoint='phase5_documents', tag='Phase 5'),
-                _erp_feature('บันทึกข้อความ', 'ร่างและพิมพ์บันทึกข้อความรูปแบบราชการ', endpoint='phase5_documents', tag='Phase 5'),
-                _erp_feature('เกษียนออนไลน์', 'เกษียน/มอบหมาย/รับทราบ และติดตามสถานะ', endpoint='phase5_documents', tag='Phase 5'),
-            ],
-        },
-        {
-            'key': 'personnel',
-            'icon': '🧑‍💼',
-            'title': 'ระบบบุคลากร',
-            'subtitle': 'ข้อมูลครู ภาระงาน เวรประจำวัน ไปราชการ และลางาน',
-            'color': 'pink',
-            'features': [
-                _erp_feature('ข้อมูลครูและบุคลากร', 'บัญชีครู ตำแหน่ง และสิทธิ์การใช้งาน', endpoint='users', tag='เดิม'),
-                _erp_feature('มอบหมายครู', 'ผูกครูกับรายวิชาและห้องเรียน', endpoint='teacher_assignments', tag='เดิม'),
-                _erp_feature('ภาระงานสอน', 'ดึงข้อมูลจากตารางสอนและรายวิชา', endpoint='schedule', tag='เดิม'),
-                _erp_feature('เวรประจำวัน', 'ต้นแบบจัดเวรครูและพิมพ์ตารางเวร', status='ต้นแบบ'),
-                _erp_feature('ไปราชการ/ลางาน', 'บันทึกวันลาและวันไปราชการ', status='ต้นแบบ'),
-            ],
-        },
-        {
-            'key': 'executive-dashboard',
-            'icon': '📊',
-            'title': 'ระบบผู้บริหาร',
-            'subtitle': 'Dashboard และรายงานภาพรวมโรงเรียน',
-            'color': 'purple',
-            'features': [
-                _erp_feature('Dashboard ผู้บริหาร', 'นักเรียน ครู ห้องเรียน รายวิชา และกิจกรรมวันนี้', endpoint='admin_dashboard', tag='เดิม'),
-                _erp_feature('สถิติการมาเรียน', 'ภาพรวมมา สาย ลา ขาด แยกห้อง/รายวัน', endpoint='attendance_dashboard', tag='เดิม'),
-                _erp_feature('สถิติผลสัมฤทธิ์', 'คะแนนเฉลี่ย เกรด และรายงานรายวิชา', endpoint='records_center', tag='เดิม'),
-                _erp_feature('รายงาน PDF/Excel', 'ส่งออกเอกสารสำหรับประชุมและรายงานผู้บริหาร', status='ต่อยอด'),
-                _erp_feature('ปฏิทินบริหารงานโรงเรียน', 'ปฏิทินกิจกรรม วันหยุด และกำหนดการสำคัญ', endpoint='calendar_events', tag='เดิม'),
-            ],
-        },
-        {
-            'key': 'online-exam',
-            'icon': '📝',
-            'title': 'ระบบสอบออนไลน์',
-            'subtitle': 'คลังข้อสอบ สุ่มข้อสอบ ตรวจคะแนน และวิเคราะห์ข้อสอบ',
-            'color': 'green',
-            'features': [
-                _erp_feature('คลังข้อสอบ', 'จัดเก็บข้อสอบตามรายวิชา หน่วย และตัวชี้วัด', endpoint='subjects', tag='เดิม'),
-                _erp_feature('แบบทดสอบออนไลน์', 'สร้างข้อสอบปรนัย/อัตนัยและให้นักเรียนทำผ่านเว็บ', endpoint='subjects', tag='เดิม'),
-                _erp_feature('สุ่มข้อสอบ', 'ตั้งค่าจำนวนข้อและชุดข้อสอบ', status='ต่อยอด'),
-                _erp_feature('ตรวจอัตโนมัติ', 'ตรวจคำตอบปรนัยและรวมคะแนน', endpoint='assignments', tag='เดิม'),
-                _erp_feature('วิเคราะห์ข้อสอบ', 'ความยาก อำนาจจำแนก และข้อที่นักเรียนผิดมาก', status='ต้นแบบ'),
-            ],
-        },
-        {
-            'key': 'activity-finance',
-            'icon': '💳',
-            'title': 'ระบบการเงินกิจกรรม',
-            'subtitle': 'ค่ากิจกรรม ทัศนศึกษา ระดมทรัพยากร และใบเสร็จ',
-            'color': 'blue',
-            'features': [
-                _erp_feature('รายการเก็บเงินกิจกรรม', 'สร้างรายการเก็บเงินตามห้อง/ระดับชั้น', status='ต้นแบบ'),
-                _erp_feature('บันทึกการชำระเงิน', 'รับเงินสด/โอน/แนบสลิป', status='ต้นแบบ'),
-                _erp_feature('ติดตามค้างชำระ', 'แสดงรายชื่อคนยังไม่จ่ายและส่งออก Excel', status='ต้นแบบ'),
-                _erp_feature('ใบเสร็จรับเงิน', 'พิมพ์ใบเสร็จแบบ Manual Payment', status='ต้นแบบ'),
-                _erp_feature('รายงานการเงินกิจกรรม', 'สรุปรายวัน รายห้อง และทั้งกิจกรรม', status='ต้นแบบ'),
-            ],
-        },
-    ]
-    total_features = sum(len(m['features']) for m in modules)
-    linked_features = sum(1 for m in modules for f in m['features'] if f.get('endpoint') or f.get('href'))
-    prototype_features = total_features - linked_features
-    return modules, {
-        'total_modules': len(modules),
-        'total_features': total_features,
-        'linked_features': linked_features,
-        'prototype_features': prototype_features,
-    }
-
-
-
-def safe_model_count(model, *filters):
-    try:
-        q = model.query
-        for f in filters:
-            q = q.filter(f)
-        return q.count()
-    except Exception:
-        return 0
-
-
-def build_school_erp_integrated_dashboard(modules, summary):
-    """แดชบอร์ดรวม School ERP + Phase 1-5 ในหน้าเดียว"""
-    today = local_today()
-    stats = [
-        {'label': 'นักเรียน', 'value': safe_model_count(User, User.role == 'student'), 'icon': '👨‍🎓'},
-        {'label': 'ครู/ผู้ใช้', 'value': safe_model_count(User, User.role.in_(['teacher','admin'])), 'icon': '👩‍🏫'},
-        {'label': 'ห้องเรียน', 'value': safe_model_count(Classroom), 'icon': '🏫'},
-        {'label': 'รายวิชา', 'value': safe_model_count(Subject), 'icon': '📚'},
-        {'label': 'เช็กชื่อวันนี้', 'value': safe_model_count(Attendance, Attendance.date == today), 'icon': '✅'},
-        {'label': 'สารบรรณ', 'value': safe_model_count(OfficialDocument) if 'OfficialDocument' in globals() else 0, 'icon': '📨'},
-    ]
-    phase_cards = [
-        {'phase': 'Phase 1', 'title': 'วิชาการหลัก', 'desc': 'ข้อมูลนักเรียน ครู ตารางสอน เช็กชื่อ คะแนน/เกรด และ ปพ.5', 'endpoint': 'phase1_dashboard', 'icon': '🎯', 'status': 'พร้อมทดสอบ'},
-        {'phase': 'Phase 2', 'title': 'ผู้ปกครอง + เอกสารผลการเรียน', 'desc': 'ปพ.6 ปพ.7 Parent Portal และ LINE แจ้งขาดเรียนแบบเตรียมข้อความ', 'endpoint': 'phase2_dashboard', 'icon': '👨‍👩‍👧', 'status': 'พร้อมทดสอบ'},
-        {'phase': 'Phase 3', 'title': 'ดูแลช่วยเหลือนักเรียน', 'desc': 'SDQ ออนไลน์ เยี่ยมบ้านออนไลน์ และเปิด/ติดตามเคสช่วยเหลือ', 'endpoint': 'phase3_dashboard', 'icon': '🧡', 'status': 'พร้อมทดสอบ'},
-        {'phase': 'Phase 4', 'title': 'กิจกรรมพัฒนาผู้เรียน', 'desc': 'ชุมนุมออนไลน์ กิจกรรมลูกเสือ/จิตอาสา และชั่วโมงกิจกรรม', 'endpoint': 'phase4_dashboard', 'icon': '🎯', 'status': 'พร้อมทดสอบ'},
-        {'phase': 'Phase 5', 'title': 'สารบรรณอิเล็กทรอนิกส์', 'desc': 'หนังสือรับ–ส่ง คำสั่ง ประกาศ บันทึกข้อความ และเกษียนออนไลน์', 'endpoint': 'phase5_dashboard', 'icon': '📨', 'status': 'พร้อมทดสอบ'},
-    ]
-    for card in phase_cards:
-        try:
-            card['url'] = url_for(card['endpoint'])
-        except Exception:
-            card['url'] = '#'
-    quick_links = [
-        {'label': 'บริหารจัดการวิชา', 'url': url_for('subjects'), 'icon': '📚'},
-        {'label': 'ตารางสอน', 'url': url_for('schedule'), 'icon': '📅'},
-        {'label': 'เช็กชื่อ/คะแนน', 'url': url_for('records_center'), 'icon': '✅'},
-        {'label': 'นำเข้า Excel', 'url': url_for('import_all'), 'icon': '📦'} if current_user.role == 'admin' else None,
-        {'label': 'AI Assistant', 'url': url_for('ai_assistant'), 'icon': '✨'},
-        {'label': 'ตั้งค่าโรงเรียน', 'url': url_for('school_settings'), 'icon': '⚙️'},
-    ]
-    quick_links = [x for x in quick_links if x]
-    return {'stats': stats, 'phases': phase_cards, 'quick_links': quick_links}
-
-def _resolve_erp_links(modules):
-    for module in modules:
-        module['href'] = url_for('school_erp_module', module_key=module['key'])
-        for feature in module['features']:
-            if feature.get('endpoint'):
-                try:
-                    feature['url'] = url_for(feature['endpoint'])
-                except Exception:
-                    feature['url'] = module['href']
-            else:
-                feature['url'] = module['href']
-    return modules
-
-
-@app.route('/school-erp')
-@login_required
-@role_required('admin', 'teacher')
-def school_erp():
-    modules, summary = build_school_erp_modules()
-    modules = _resolve_erp_links(modules)
-    dashboard = build_school_erp_integrated_dashboard(modules, summary)
-    return render_template('school_erp.html', modules=modules, summary=summary, dashboard=dashboard)
-
-
-@app.route('/school-erp/<module_key>')
-@login_required
-@role_required('admin', 'teacher')
-def school_erp_module(module_key):
-    modules, summary = build_school_erp_modules()
-    modules = _resolve_erp_links(modules)
-    module = next((m for m in modules if m['key'] == module_key), None)
-    if not module:
-        flash('ไม่พบโมดูลที่เลือก', 'danger')
-        return redirect(url_for('school_erp'))
-    return render_template('school_erp_module.html', module=module, modules=modules, summary=summary)
 
 
 @app.route('/admin')
@@ -6012,6 +5729,81 @@ def records_center():
         pairs=pairs, subject_summaries=subject_summaries, classrooms_for_daily=classrooms_for_daily,
         range_type=range_type, start_date=start_date, end_date=end_date, label=label, today_date=local_today().isoformat()
     )
+
+@app.route('/records/classwork-scores')
+@login_required
+@role_required('teacher','admin')
+def classwork_score_history():
+    """ค้นหาและเปิดแก้คะแนนในคาบย้อนหลังจากข้อมูลที่บันทึกจริง
+
+    หน้านี้อ่าน ClassworkScoreItem เดิมโดยตรง จึงใช้กับข้อมูลเก่าบน PostgreSQL
+    ได้ทันทีโดยไม่ต้องเพิ่มคอลัมน์หรือย้ายข้อมูล
+    """
+    subject_ids = teacher_subject_ids()
+    room_ids = teacher_classroom_ids()
+
+    subjects = (Subject.query
+        .filter(Subject.id.in_(subject_ids or [-1]))
+        .order_by(Subject.name.asc()).all())
+    classrooms = (Classroom.query
+        .filter(Classroom.id.in_(room_ids or [-1]))
+        .order_by(Classroom.name.asc()).all())
+
+    subject_id = request.args.get('subject_id', type=int)
+    classroom_id = request.args.get('classroom_id', type=int)
+    period_no = request.args.get('period_no', type=int)
+    keyword = (request.args.get('q') or '').strip()
+    date_from_text = (request.args.get('date_from') or '').strip()
+    date_to_text = (request.args.get('date_to') or '').strip()
+
+    q = ClassworkScoreItem.query.filter(
+        ClassworkScoreItem.subject_id.in_(subject_ids or [-1]),
+        ClassworkScoreItem.classroom_id.in_(room_ids or [-1]),
+    )
+    if subject_id:
+        q = q.filter(ClassworkScoreItem.subject_id == subject_id)
+    if classroom_id:
+        q = q.filter(ClassworkScoreItem.classroom_id == classroom_id)
+    if period_no:
+        q = q.filter(ClassworkScoreItem.period_no == period_no)
+    if keyword:
+        q = q.filter(ClassworkScoreItem.title.ilike(f'%{keyword}%'))
+
+    date_from = None
+    date_to = None
+    try:
+        if date_from_text:
+            date_from = datetime.strptime(date_from_text, '%Y-%m-%d').date()
+            q = q.filter(ClassworkScoreItem.date >= date_from)
+    except ValueError:
+        flash('วันที่เริ่มต้นไม่ถูกต้อง', 'warning')
+    try:
+        if date_to_text:
+            date_to = datetime.strptime(date_to_text, '%Y-%m-%d').date()
+            q = q.filter(ClassworkScoreItem.date <= date_to)
+    except ValueError:
+        flash('วันที่สิ้นสุดไม่ถูกต้อง', 'warning')
+
+    items = q.order_by(
+        ClassworkScoreItem.date.desc(),
+        ClassworkScoreItem.period_no.desc(),
+        ClassworkScoreItem.id.desc(),
+    ).limit(1000).all()
+
+    score_counts = {}
+    if items:
+        rows = (db.session.query(ClassworkScore.item_id, db.func.count(ClassworkScore.id))
+            .filter(ClassworkScore.item_id.in_([x.id for x in items]))
+            .group_by(ClassworkScore.item_id).all())
+        score_counts = {item_id: count for item_id, count in rows}
+
+    return render_template(
+        'classwork_score_history.html',
+        items=items, score_counts=score_counts, subjects=subjects, classrooms=classrooms,
+        subject_id=subject_id, classroom_id=classroom_id, period_no=period_no,
+        keyword=keyword, date_from_text=date_from_text, date_to_text=date_to_text,
+    )
+
 
 @app.route('/records/subject-summary/print')
 @login_required

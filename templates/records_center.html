@@ -1,7 +1,12 @@
 {% extends 'base.html' %}
 {% block content %}
-<h1>เช็กชื่อและสมุดคะแนน</h1>
-<p class="muted">เลือกคู่รายวิชา/ห้องเรียน เพื่อเช็กเวลาเรียน สรุปขาด-ลา-มาสาย และทำคะแนนตัดเกรดทั้งเทอม</p>
+<div class="section-head-row">
+  <div>
+    <h1>เช็กชื่อและสมุดคะแนน</h1>
+    <p class="muted">เลือกคู่รายวิชา/ห้องเรียน เพื่อเช็กเวลาเรียน สรุปขาด-ลา-มาสาย และทำคะแนนตัดเกรดทั้งเทอม</p>
+  </div>
+  <a class="btn" href="{{ url_for('classwork_score_history') }}">ค้นหาคะแนนในคาบย้อนหลัง</a>
+</div>
 
 
 <section class="card daily-report-picker">

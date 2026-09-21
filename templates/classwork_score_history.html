@@ -1,0 +1,86 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="section-head-row">
+  <div>
+    <h1>ค้นหาคะแนนในคาบย้อนหลัง</h1>
+    <p class="muted">ค้นจากรายการคะแนนที่เคยบันทึกจริง แยกตามวันที่ วิชา ห้อง และคาบ แล้วกดกลับไปแก้คะแนนรายการเดิมได้</p>
+  </div>
+  <a class="btn secondary" href="{{ url_for('records_center') }}">กลับเช็กชื่อ/คะแนน</a>
+</div>
+
+<section class="card">
+  <h2>ตัวกรอง</h2>
+  <form method="get" class="form-grid classwork-history-filter">
+    <label>รายวิชา
+      <select name="subject_id">
+        <option value="">ทุกวิชา</option>
+        {% for s in subjects %}
+        <option value="{{ s.id }}" {% if subject_id == s.id %}selected{% endif %}>{{ s.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>ห้องเรียน
+      <select name="classroom_id">
+        <option value="">ทุกห้อง</option>
+        {% for r in classrooms %}
+        <option value="{{ r.id }}" {% if classroom_id == r.id %}selected{% endif %}>{{ r.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>คาบ
+      <select name="period_no">
+        <option value="">ทุกคาบ</option>
+        {% for p in range(1, 9) %}
+        <option value="{{ p }}" {% if period_no == p %}selected{% endif %}>คาบ {{ p }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>ตั้งแต่วันที่
+      <input type="date" name="date_from" value="{{ date_from_text }}">
+    </label>
+    <label>ถึงวันที่
+      <input type="date" name="date_to" value="{{ date_to_text }}">
+    </label>
+    <label>ค้นชื่อหัวข้อคะแนน
+      <input type="text" name="q" value="{{ keyword }}" placeholder="เช่น ปฏิบัติ / แบบฝึก">
+    </label>
+    <div class="actions-row">
+      <button class="btn" type="submit">ค้นหา</button>
+      <a class="btn secondary" href="{{ url_for('classwork_score_history') }}">ล้างตัวกรอง</a>
+    </div>
+  </form>
+</section>
+
+<section class="card">
+  <div class="section-head-row">
+    <div>
+      <h2>รายการที่เคยคีย์คะแนน</h2>
+      <p class="muted">พบ {{ items|length }} รายการ{% if items|length >= 1000 %} (แสดงสูงสุด 1,000 รายการ){% endif %} · ถ้าคาบใดไม่มีรายการ แปลว่ายังไม่มีหัวข้อคะแนนในคาบถูกบันทึกไว้</p>
+    </div>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <tr>
+        <th>วันที่</th><th>คาบ</th><th>รายวิชา</th><th>ห้อง</th><th>หัวข้อ</th><th>เต็ม</th><th>คีย์แล้ว</th><th>ผู้บันทึก</th><th>จัดการ</th>
+      </tr>
+      {% for item in items %}
+      <tr>
+        <td data-label="วันที่"><b>{{ item.date.strftime('%d/%m/%Y') if item.date else '-' }}</b></td>
+        <td data-label="คาบ">{{ item.period_no or '-' }}</td>
+        <td data-label="รายวิชา">{{ item.subject.name if item.subject else '-' }}</td>
+        <td data-label="ห้อง">{{ item.classroom.name if item.classroom else '-' }}</td>
+        <td data-label="หัวข้อ">{{ item.title }}</td>
+        <td data-label="เต็ม">{{ item.max_score }}</td>
+        <td data-label="คีย์แล้ว">{{ score_counts.get(item.id, 0) }} คน</td>
+        <td data-label="ผู้บันทึก">{{ item.created_by.full_name if item.created_by else '-' }}</td>
+        <td data-label="จัดการ">
+          <a class="btn small" href="{{ url_for('attendance', subject_id=item.subject_id, classroom_id=item.classroom_id, date=item.date.isoformat(), period_no=item.period_no, schedule_id=item.schedule_id) }}#classwork-score">ดู/แก้คะแนน</a>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="9">ไม่พบรายการคะแนนในคาบตามตัวกรองนี้</td></tr>
+      {% endfor %}
+    </table>
+  </div>
+</section>
+{% endblock %}

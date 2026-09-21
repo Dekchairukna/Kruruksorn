@@ -54,8 +54,10 @@
     <div class="actions-row">
       <a class="btn secondary small" href="{{ url_for('absence_risk_report', range='term', threshold=threshold, include_sick=1 if include_sick else none) }}">ภาคเรียนปัจจุบัน</a>
       <a class="btn small" href="{{ url_for('absence_risk_export', start_date=start_date.isoformat(), end_date=end_date.isoformat(), threshold=threshold, include_sick=1 if include_sick else none, subject_id=selected_subject_id, classroom_id=selected_classroom_id) }}">⬇️ Export Excel</a>
+      <a class="btn secondary small" href="{{ url_for('line_absence') }}" title="ไปหน้าแจ้งเตือนผู้ปกครองผ่าน LINE สำหรับนักเรียนที่ขาดเรียนวันนี้">📨 แจ้งผู้ปกครอง (LINE)</a>
     </div>
   </div>
+  <p class="muted" style="margin-top:4px">พบนักเรียนเกินเกณฑ์แล้วอยากแจ้งผู้ปกครองทันที ไปที่ปุ่ม “แจ้งผู้ปกครอง (LINE)” เพื่อเลือกส่งข้อความแจ้งขาดเรียนของวันนั้น ๆ</p>
   <div class="table-wrap">
     <table>
       <tr>
