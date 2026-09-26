@@ -1,0 +1,34 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>kruruksorn</groupId>
+  <artifactId>accdbtool</artifactId>
+  <version>1.0</version>
+  <packaging>jar</packaging>
+  <properties>
+    <maven.compiler.source>17</maven.compiler.source>
+    <maven.compiler.target>17</maven.compiler.target>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+  </properties>
+  <dependencies>
+    <dependency><groupId>com.healthmarketscience.jackcess</groupId><artifactId>jackcess</artifactId><version>4.0.5</version></dependency>
+    <dependency><groupId>com.healthmarketscience.jackcess</groupId><artifactId>jackcess-encrypt</artifactId><version>4.0.1</version></dependency>
+    <dependency><groupId>org.json</groupId><artifactId>json</artifactId><version>20240303</version></dependency>
+  </dependencies>
+  <build>
+    <finalName>accdbtool</finalName>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-shade-plugin</artifactId>
+        <version>3.5.1</version>
+        <executions><execution><phase>package</phase><goals><goal>shade</goal></goals>
+          <configuration><transformers>
+            <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+              <mainClass>AccdbTool</mainClass>
+            </transformer>
+          </transformers></configuration>
+        </execution></executions>
+      </plugin>
+    </plugins>
+  </build>
+</project>

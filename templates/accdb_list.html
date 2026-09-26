@@ -1,0 +1,51 @@
+{% extends 'base.html' %}
+{% block content %}
+<style>
+.acc-wrap{max-width:1000px}
+.acc-card{background:#fff;border:1px solid #e2e7f0;border-radius:14px;padding:18px;margin-bottom:16px;box-shadow:0 1px 2px rgba(20,30,50,.05),0 6px 18px rgba(20,30,50,.05)}
+.acc-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px}
+.acc-sub{border:1px solid #e2e7f0;border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:6px}
+.acc-sub .code{font-weight:700;font-size:1.1rem;color:#0a4f47}
+.acc-btn{display:inline-block;background:#0f6e63;color:#fff;border:none;border-radius:9px;padding:9px 14px;font-weight:600;text-decoration:none;cursor:pointer}
+.acc-btn.sm{padding:6px 10px;font-size:.85rem}
+.acc-badge{background:#eef4f3;border:1px solid #cfe3df;border-radius:20px;padding:2px 10px;font-size:.85rem;color:#0a4f47}
+.acc-inp{width:100%;border:1px solid #cdd5e2;border-radius:9px;padding:9px 11px;font-family:inherit}
+.acc-note{background:#fff7ea;border:1px solid #f0d9a8;color:#7a5a1a;border-radius:10px;padding:10px 13px;font-size:.9rem}
+</style>
+<div class="acc-wrap">
+<h1>📒 สมุดคะแนน (.accdb)</h1>
+<div class="acc-card">
+  <p style="margin:0;color:#5d6a7e">คีย์คะแนนที่นี่ครั้งเดียว ระบบเก็บลงฐานข้อมูลถาวร · ตัวช่วยในเครื่อง (Windows) ดึงคะแนนไปเขียนลงไฟล์ BookMark .accdb ให้ ไม่ต้องคีย์ซ้ำ</p>
+</div>
+{% if not has_data %}
+<div class="acc-card" style="text-align:center">
+  <p>ยังไม่มีข้อมูล — นำเข้ารายชื่อนักเรียนตั้งต้น {{ seed.subjects|length }} วิชา ({{ seed.teacher }})</p>
+  <form method="post" action="{{ url_for('accdb_seed') }}"><button class="acc-btn">⬇️ นำเข้ารายชื่อตั้งต้น</button></form>
+</div>
+{% else %}
+<div class="acc-card">
+  <div class="acc-grid">
+    {% for s in subjects %}
+    <div class="acc-sub">
+      <div style="display:flex;justify-content:space-between;align-items:start">
+        <div><span class="code">{{ s.code }}</span><br><span style="color:#5d6a7e;font-size:.9rem">{{ s.title }} · {{ s.level }}</span></div>
+        <span class="acc-badge">{{ counts[s.id] }} คน</span>
+      </div>
+      <a class="acc-btn sm" href="{{ url_for('accdb_subject', sid=s.id) }}">✏️ คีย์คะแนน</a>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+<div class="acc-card">
+  <h3 style="margin-top:0">🔌 ลิงก์ดึงข้อมูลสำหรับตัวช่วยเขียน .accdb ในเครื่อง</h3>
+  <p style="color:#5d6a7e">คัดลอกลิงก์นี้ไปวางในตัวช่วยในเครื่อง (โปรแกรม PowerShell) เพื่อให้มันดึงคะแนนล่าสุดไปเขียนลงไฟล์ .accdb — เก็บเป็นความลับ</p>
+  <input class="acc-inp" id="expUrl" value="{{ export_url }}" readonly style="margin-bottom:8px">
+  <button class="acc-btn sm" onclick="navigator.clipboard&&navigator.clipboard.writeText(document.getElementById('expUrl').value);this.textContent='คัดลอกแล้ว'">คัดลอกลิงก์</button>
+  <form method="post" action="{{ url_for('accdb_reset_token') }}" style="display:inline" onsubmit="return confirm('สร้างลิงก์ใหม่? ลิงก์เดิมจะใช้ไม่ได้')">
+    <button class="acc-btn sm" style="background:#c0392b">สร้างลิงก์ใหม่</button>
+  </form>
+  <div class="acc-note" style="margin-top:10px">ตัวช่วยในเครื่องจะจับคู่ไฟล์ .accdb กับวิชาจากชื่อไฟล์/รหัส แล้วปลดล็อกด้วยรหัสที่ฝังไว้ให้อัตโนมัติ</div>
+</div>
+</div>
+{% endblock %}

@@ -1,0 +1,145 @@
+{% extends 'base.html' %}
+{% block content %}
+<style>
+.soft-card{background:#fff;border:1px solid #e2e7f0;border-radius:12px;box-shadow:0 1px 2px rgba(20,30,50,.05)}
+.nav-pills{display:flex;gap:6px;flex-wrap:wrap;list-style:none;padding:0;margin:0 0 14px}
+.nav-pills .nav-link{border:1px solid #cdd5e2;background:#f6f8fb;color:#5d6a7e;padding:7px 14px;border-radius:20px;font-weight:600;cursor:pointer;font-family:inherit}
+.nav-pills .nav-link.active{background:#0f6e63;border-color:#0f6e63;color:#fff}
+.btn{border:1px solid #cdd5e2;background:#f6f8fb;border-radius:9px;padding:8px 14px;font-weight:600;cursor:pointer;font-family:inherit;text-decoration:none;color:#18202f}
+.btn-success{background:#1f9d63;border-color:#1f9d63;color:#fff}
+.btn-outline-secondary{background:#fff}
+.btn-outline-primary{background:#eef4f3;border-color:#0f6e63;color:#0a4f47}
+.btn-sm{padding:4px 9px;font-size:.85rem}
+.table{width:100%;border-collapse:collapse}
+.table th,.table td{border-bottom:1px solid #e6ebf2;padding:5px 7px}
+.table-sm th,.table-sm td{padding:4px 6px}
+.table-hover tbody tr:hover{background:#f6f8fb}
+.table-responsive{overflow-x:auto}
+.text-muted{color:#5d6a7e}.text-success{color:#1f9d63}.text-danger{color:#d64545}
+.fw-bold{font-weight:700}.small{font-size:.85rem}
+.d-flex{display:flex}.justify-content-between{justify-content:space-between}.align-items-center{align-items:center}
+.flex-wrap{flex-wrap:wrap}.gap-2{gap:8px}.mb-2{margin-bottom:8px}.mb-3{margin-bottom:12px}.ms-2{margin-left:8px}.p-3{padding:14px}.mt-3{margin-top:14px}
+select,input{font-family:inherit}
+</style>
+<div class="soft-card p-3 mb-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
+  <div><b style="font-size:1.15rem">{{ sub.code }}</b> · {{ sub.title }} · {{ sub.level }}
+    <a class="btn btn-sm btn-outline-secondary ms-2" href="{{ url_for('accdb_home') }}"><i class="bi bi-arrow-left"></i> กลับ</a></div>
+  <div class="d-flex align-items-center gap-2">
+    <span id="saveLog" class="text-muted small"></span>
+    <button class="btn btn-success" id="btnSave"><i class="bi bi-save"></i> บันทึกลงฐานข้อมูล</button>
+  </div>
+</div>
+<ul class="nav nav-pills mb-3" id="subtabs">
+  <li class="nav-item"><button class="nav-link active" data-t="score">คะแนน / เกรด</button></li>
+  <li class="nav-item"><button class="nav-link" data-t="unit">หน่วยย่อย (ย่อย1-5)</button></li>
+  <li class="nav-item"><button class="nav-link" data-t="qual">คุณลักษณะฯ</button></li>
+  <li class="nav-item"><button class="nav-link" data-t="read">อ่าน-คิด-เขียน</button></li>
+</ul>
+<div id="panel" class="table-responsive"></div>
+<div class="soft-card p-3 mt-3">
+  <h4 style="margin:0 0 8px">📥 เขียนคะแนนลงไฟล์ .accdb แล้วดาวน์โหลด</h4>
+  <p class="text-muted small" style="margin:0 0 10px">1) กด "บันทึกลงฐานข้อมูล" ด้านบนก่อน · 2) อัปโหลดไฟล์ .accdb ของวิชานี้ (ไฟล์ที่วิชาการส่งมา) · ระบบจะเขียนคะแนนล่าสุดลงไฟล์ แล้วให้ดาวน์โหลดกลับไปส่ง — ทำได้ทุกเครื่อง ไม่ต้องลงโปรแกรม</p>
+  <form method="post" action="{{ url_for('accdb_to_accdb', sid=sub.id) }}" enctype="multipart/form-data" class="d-flex gap-2 flex-wrap align-items-center">
+    <input type="file" name="accdb_file" accept=".accdb" required style="font-family:inherit">
+    <input type="password" name="password" placeholder="รหัสไฟล์ (ไม่รู้เว้นว่าง)" style="border:1px solid #cdd5e2;border-radius:8px;padding:7px 10px;font-family:inherit">
+    <button class="btn btn-success" type="submit">⬇️ เขียน + ดาวน์โหลด .accdb</button>
+  </form>
+</div>
+<script id="gdata" type="application/json">{{ data_json | safe }}</script>
+<style>
+#panel table{font-size:14px}#panel th{white-space:nowrap;text-align:center;vertical-align:bottom}
+#panel td{text-align:center;vertical-align:middle}.gname{text-align:left;white-space:nowrap}
+.sc{width:56px;text-align:center;border:1px solid #ccc;border-radius:6px;padding:4px}
+.sc.rate{width:42px}.sc.over{color:#d64545;font-weight:700;border-color:#d64545}
+.bulkbox input{width:44px;text-align:center}.bulkbox{white-space:nowrap;margin-top:3px}
+.gsel{border:1px solid #ccc;border-radius:6px;padding:3px}
+</style>
+<script>
+const DATA=JSON.parse(document.getElementById('gdata').textContent);
+const COLS=[{key:'um01',label:'เก็บก่อนกลาง',max:30},{key:'mid',label:'กลางภาค',max:20},{key:'um02',label:'เก็บหลังกลาง',max:30},{key:'final',label:'ปลายภาค',max:20}];
+const QN=DATA.quality,LN=DATA.literature,GS=DATA.gradeScale;
+const LVTXT={'3':'ดีเยี่ยม','2':'ดี','1':'ผ่าน','0':'ไม่ผ่าน','':'-'};
+let rows=DATA.rows, sub='score', curUnit=1;
+rows.forEach(r=>{['um01','um02','mid','final','q1','q2','q3','q4','q5','q6','q7','q8','l1','l2','l3','l4','l5'].forEach(k=>{if(r[k]===0||r[k]==null)r[k]='';});if(!r.sub)r.sub={};});
+function num(v){const n=parseFloat(v);return isNaN(n)?0:n;}
+function fmt(n){return (Math.round(n*100)/100).toString();}
+function gradeOf(p){for(const g of GS){if(p>=g.min&&p<=g.max)return g.g;}return"0";}
+function maxTotal(){return COLS.reduce((a,c)=>a+c.max,0);}
+function rowTotal(r){let t=0;COLS.forEach(c=>{const v=parseFloat(r[c.key]);if(!isNaN(v))t+=v;});return t;}
+function hasSc(r){return COLS.some(c=>r[c.key]!==''&&r[c.key]!=null);}
+function grd(r){const mx=maxTotal(),t=rowTotal(r),p=mx?t/mx*100:0;return gradeOf(p);}
+function nm(r){return (r.prefix||'')+r.first+' '+r.last;}
+function rateAvg(r,keys){let s=0,n=0;keys.forEach(k=>{if(r[k]!==''&&r[k]!=null){s+=num(r[k]);n++;}});return n?s/n:null;}
+function rateLevel(a){if(a==null)return'';if(a>=2.5)return'3';if(a>=1.5)return'2';if(a>=0.5)return'1';return'0';}
+function subArr(r){if(!r.sub[curUnit])r.sub[curUnit]=[0,0,0,0,0];return r.sub[curUnit];}
+function subSum(r){return subArr(r).reduce((a,v)=>a+num(v),0);}
+
+function render(){
+  document.querySelectorAll('#subtabs .nav-link').forEach(b=>b.classList.toggle('active',b.dataset.t===sub));
+  if(sub==='score')renderScore();else if(sub==='unit')renderUnit();
+  else if(sub==='qual')renderRate('q',8,QN,'qgrade','ข้อ');else renderRate('l',5,LN,'lgrade','อ');
+}
+function tbl(head,body){return '<table class="table table-sm table-hover"><thead><tr>'+head+'</tr></thead><tbody>'+body+'</tbody></table>';}
+function renderScore(){
+  let head='<th>ที่</th><th class="gname">ชื่อ-สกุล</th>';
+  COLS.forEach((c,ci)=>head+=`<th>${c.label}<br><small class="text-muted">เต็ม ${c.max}</small><div class="bulkbox"><input class="bv" data-key="${c.key}" placeholder="ทุกคน"><button class="btn btn-sm btn-outline-primary bb" data-key="${c.key}">เติม</button></div></th>`);
+  head+=`<th>รวม<br><small class="text-muted">${maxTotal()}</small></th><th>เกรด</th>`;
+  let body='';rows.forEach((r,i)=>{body+=`<tr data-i="${i}"><td>${i+1}</td><td class="gname">${nm(r)}</td>`;
+    COLS.forEach(c=>body+=`<td><input class="sc" inputmode="decimal" data-i="${i}" data-key="${c.key}" data-max="${c.max}" value="${r[c.key]}"></td>`);
+    body+=`<td class="gtot fw-bold">${fmt(rowTotal(r))}</td><td class="ggr fw-bold">${hasSc(r)?grd(r):''}</td></tr>`;});
+  document.getElementById('panel').innerHTML=tbl(head,body);bindScore();
+}
+function renderRate(pfx,cnt,labels,gk,pre){
+  let head='<th>ที่</th><th class="gname">ชื่อ-สกุล</th>';
+  for(let i=1;i<=cnt;i++)head+=`<th title="${(labels[i-1]||'')}">${pre}${i}<div class="bulkbox"><input class="bv" data-key="${pfx+i}" maxlength="1" placeholder="ทุกคน"><button class="btn btn-sm btn-outline-primary bb" data-key="${pfx+i}">เติม</button></div></th>`;
+  head+='<th>ผลรวม</th>';
+  const keys=[];for(let i=1;i<=cnt;i++)keys.push(pfx+i);
+  let body='';rows.forEach((r,i)=>{body+=`<tr data-i="${i}"><td>${i+1}</td><td class="gname">${nm(r)}</td>`;
+    keys.forEach(k=>body+=`<td><input class="sc rate" inputmode="numeric" data-i="${i}" data-key="${k}" data-max="3" value="${r[k]}"></td>`);
+    const lv=r[gk]&&r[gk]!==''?String(r[gk]):rateLevel(rateAvg(r,keys));
+    body+=`<td>${gselHtml(i,gk,lv)}</td></tr>`;});
+  document.getElementById('panel').innerHTML='<div class="mb-2 text-muted small">ระดับ 3=ดีเยี่ยม · 2=ดี · 1=ผ่าน · 0=ไม่ผ่าน</div>'+tbl(head,body);
+  bindRate(pfx,cnt,gk);
+}
+function renderUnit(){
+  let opts='';for(let u=1;u<=20;u++)opts+=`<option value="${u}"${u===curUnit?' selected':''}>หน่วยที่ ${u}</option>`;
+  let head='<th>ที่</th><th class="gname">ชื่อ-สกุล</th>';
+  for(let k=1;k<=5;k++)head+=`<th>ย่อย ${k}<div class="bulkbox"><input class="bv" data-k="${k}" placeholder="ทุกคน"><button class="btn btn-sm btn-outline-primary bb2" data-k="${k}">เติม</button></div></th>`;
+  head+='<th>รวม</th>';
+  let body='';rows.forEach((r,i)=>{const a=subArr(r);body+=`<tr data-i="${i}"><td>${i+1}</td><td class="gname">${nm(r)}</td>`;for(let k=0;k<5;k++)body+=`<td><input class="sc us" inputmode="decimal" data-i="${i}" data-k="${k}" value="${a[k]?a[k]:''}"></td>`;body+=`<td class="usum fw-bold">${fmt(subSum(r))}</td></tr>`;});
+  document.getElementById('panel').innerHTML='<div class="mb-2">เลือกหน่วย <select id="unitSel" class="gsel">'+opts+'</select> แล้วคีย์ย่อย 1-5</div>'+tbl(head,body);
+  document.getElementById('unitSel').onchange=e=>{curUnit=+e.target.value;renderUnit();};
+  bindUnit();
+}
+function gselHtml(i,gk,val){let o='';['','3','2','1','0'].forEach(v=>o+=`<option value="${v}"${String(val)===v?' selected':''}>${v===''?'-':LVTXT[v]}</option>`);return `<select class="gsel gs" data-i="${i}" data-key="${gk}">${o}</select>`;}
+function bindScore(){
+  document.querySelectorAll('#panel .sc').forEach(inp=>inp.addEventListener('input',()=>{let v=inp.value.replace(/[^0-9.]/g,'');inp.value=v;rows[+inp.dataset.i][inp.dataset.key]=v;inp.classList.toggle('over',v!==''&&+v>+inp.dataset.max);const tr=inp.closest('tr');tr.querySelector('.gtot').textContent=fmt(rowTotal(rows[+inp.dataset.i]));const g=grd(rows[+inp.dataset.i]);tr.querySelector('.ggr').textContent=hasSc(rows[+inp.dataset.i])?g:'';}));
+  bulk();
+}
+function bindRate(pfx,cnt,gk){
+  const keys=[];for(let i=1;i<=cnt;i++)keys.push(pfx+i);
+  document.querySelectorAll('#panel .sc').forEach(inp=>inp.addEventListener('input',()=>{let v=inp.value.replace(/[^0-9.]/g,'');if(v!==''){if(+v>3)v='3';v=v.replace('.','');}inp.value=v;const r=rows[+inp.dataset.i];r[inp.dataset.key]=v;const tr=inp.closest('tr');const lv=rateLevel(rateAvg(r,keys));const sel=tr.querySelector('.gs');sel.value=lv;r[gk]=lv;}));
+  document.querySelectorAll('#panel .gs').forEach(s=>s.addEventListener('change',()=>{rows[+s.dataset.i][s.dataset.key]=s.value;}));
+  bulk();
+}
+function bindUnit(){
+  document.querySelectorAll('#panel .us').forEach(inp=>inp.addEventListener('input',()=>{let v=inp.value.replace(/[^0-9.]/g,'');inp.value=v;subArr(rows[+inp.dataset.i])[+inp.dataset.k]=v;inp.closest('tr').querySelector('.usum').textContent=fmt(subSum(rows[+inp.dataset.i]));}));
+  document.querySelectorAll('#panel .bb2').forEach(b=>b.addEventListener('click',()=>{const k=+b.dataset.k-1;const val=document.querySelector(`#panel .bv[data-k="${b.dataset.k}"]`).value.replace(/[^0-9.]/g,'');rows.forEach(r=>subArr(r)[k]=val);renderUnit();}));
+}
+function bulk(){document.querySelectorAll('#panel .bb').forEach(b=>b.addEventListener('click',()=>{const key=b.dataset.key;const val=document.querySelector(`#panel .bv[data-key="${key}"]`).value.replace(/[^0-9.]/g,'');rows.forEach(r=>r[key]=val);render();}));}
+document.querySelectorAll('#subtabs .nav-link').forEach(b=>b.addEventListener('click',()=>{sub=b.dataset.t;render();}));
+document.getElementById('btnSave').onclick=async()=>{
+  const log=document.getElementById('saveLog');log.textContent='กำลังบันทึก...';
+  const mx=maxTotal();
+  const out=rows.map(r=>{const qk=['q1','q2','q3','q4','q5','q6','q7','q8'],lk=['l1','l2','l3','l4','l5'];
+    return {sid:r.sid,um01:num(r.um01),um02:num(r.um02),mid:num(r.mid),final:num(r.final),grade:hasSc(r)?grd(r):'',
+      q1:num(r.q1),q2:num(r.q2),q3:num(r.q3),q4:num(r.q4),q5:num(r.q5),q6:num(r.q6),q7:num(r.q7),q8:num(r.q8),
+      qgrade:r.qgrade||rateLevel(rateAvg(r,qk)),l1:num(r.l1),l2:num(r.l2),l3:num(r.l3),l4:num(r.l4),l5:num(r.l5),
+      lgrade:r.lgrade||rateLevel(rateAvg(r,lk)),sub:r.sub};});
+  try{const res=await fetch(window.location.pathname+'/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rows:out})});
+    const j=await res.json();log.textContent=j.ok?('✓ บันทึกแล้ว '+j.saved+' คน'):'บันทึกไม่ได้';log.className=j.ok?'text-success small':'text-danger small';}
+  catch(e){log.textContent='ผิดพลาด: '+e.message;log.className='text-danger small';}
+};
+render();
+</script>
+{% endblock %}

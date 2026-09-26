@@ -8301,6 +8301,231 @@ def sync_schedule_teacher_links():
     if changed:
         db.session.commit()
 
+
+# ==================== โมดูลสมุดคะแนน .accdb (BookMark bridge) ====================
+# เก็บคะแนนถาวรในฐานข้อมูล + API ส่งออกให้ตัวช่วยในเครื่องดึงไปเขียนไฟล์ .accdb
+from flask import jsonify as _accdb_jsonify, abort as _accdb_abort
+import json as _accdb_json, secrets as _accdb_secrets
+
+class AccdbSubject(db.Model):
+    __tablename__ = 'accdb_subjects'
+    id = db.Column(db.Integer, primary_key=True)
+    owner_id = db.Column(db.Integer, index=True, nullable=False)
+    code = db.Column(db.String(40), nullable=False)
+    title = db.Column(db.String(200), default='')
+    level = db.Column(db.String(40), default='')
+    credit = db.Column(db.String(20), default='')
+    filename = db.Column(db.String(200), default='')
+    sig = db.Column(db.String(40), default='')
+    term = db.Column(db.String(10), default='')
+    year = db.Column(db.String(10), default='')
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+class AccdbRow(db.Model):
+    __tablename__ = 'accdb_rows'
+    id = db.Column(db.Integer, primary_key=True)
+    subject_id = db.Column(db.Integer, index=True, nullable=False)
+    sid = db.Column(db.String(40), nullable=False)
+    prefix = db.Column(db.String(40), default='')
+    first = db.Column(db.String(120), default='')
+    last = db.Column(db.String(120), default='')
+    room = db.Column(db.String(20), default='')
+    no = db.Column(db.String(20), default='')
+    um01 = db.Column(db.Float, default=0); um02 = db.Column(db.Float, default=0)
+    mid = db.Column(db.Float, default=0); final = db.Column(db.Float, default=0)
+    grade = db.Column(db.String(10), default='')
+    q1 = db.Column(db.Integer, default=0); q2 = db.Column(db.Integer, default=0); q3 = db.Column(db.Integer, default=0); q4 = db.Column(db.Integer, default=0)
+    q5 = db.Column(db.Integer, default=0); q6 = db.Column(db.Integer, default=0); q7 = db.Column(db.Integer, default=0); q8 = db.Column(db.Integer, default=0)
+    qgrade = db.Column(db.String(10), default='')
+    l1 = db.Column(db.Integer, default=0); l2 = db.Column(db.Integer, default=0); l3 = db.Column(db.Integer, default=0); l4 = db.Column(db.Integer, default=0); l5 = db.Column(db.Integer, default=0)
+    lgrade = db.Column(db.String(10), default='')
+    subjson = db.Column(db.Text, default='')
+
+class AccdbToken(db.Model):
+    __tablename__ = 'accdb_tokens'
+    id = db.Column(db.Integer, primary_key=True)
+    owner_id = db.Column(db.Integer, unique=True, index=True, nullable=False)
+    token = db.Column(db.String(64), nullable=False)
+
+_ACCDB_SEED = None
+def _accdb_seed_data():
+    global _ACCDB_SEED
+    if _ACCDB_SEED is None:
+        p = os.path.join(BASE_DIR, 'grades_seed.json')
+        with open(p, encoding='utf-8') as f:
+            _ACCDB_SEED = _accdb_json.load(f)
+    return _ACCDB_SEED
+
+def _accdb_get_token():
+    t = AccdbToken.query.filter_by(owner_id=current_user.id).first()
+    if not t:
+        t = AccdbToken(owner_id=current_user.id, token=_accdb_secrets.token_hex(16))
+        db.session.add(t); db.session.commit()
+    return t
+
+def _accdb_row_dict(r):
+    sub = {}
+    if r.subjson:
+        try: sub = _accdb_json.loads(r.subjson)
+        except Exception: sub = {}
+    return dict(sid=r.sid, prefix=r.prefix, first=r.first, last=r.last, room=r.room, no=r.no,
+                um01=r.um01 or 0, um02=r.um02 or 0, mid=r.mid or 0, final=r.final or 0, grade=r.grade or '',
+                q1=r.q1 or 0, q2=r.q2 or 0, q3=r.q3 or 0, q4=r.q4 or 0, q5=r.q5 or 0, q6=r.q6 or 0, q7=r.q7 or 0, q8=r.q8 or 0, qgrade=r.qgrade or '',
+                l1=r.l1 or 0, l2=r.l2 or 0, l3=r.l3 or 0, l4=r.l4 or 0, l5=r.l5 or 0, lgrade=r.lgrade or '', sub=sub)
+
+@app.route('/accdb')
+@login_required
+def accdb_home():
+    token = _accdb_get_token()
+    subs = AccdbSubject.query.filter_by(owner_id=current_user.id).order_by(AccdbSubject.code).all()
+    seed = _accdb_seed_data()
+    counts = {s.id: AccdbRow.query.filter_by(subject_id=s.id).count() for s in subs}
+    export_url = url_for('accdb_export', _external=True) + '?token=' + token.token
+    return render_template('accdb_list.html', subjects=subs, counts=counts, token=token,
+                           export_url=export_url, seed=seed, has_data=bool(subs))
+
+@app.route('/accdb/seed', methods=['POST'])
+@login_required
+def accdb_seed():
+    seed = _accdb_seed_data()
+    for s in seed['subjects']:
+        if AccdbSubject.query.filter_by(owner_id=current_user.id, code=s['code']).first():
+            continue
+        gs = AccdbSubject(owner_id=current_user.id, code=s['code'], title=s.get('title',''),
+                          level=s.get('level',''), credit=str(s.get('credit','')), filename=s.get('filename',''),
+                          sig=s.get('sig',''), term=str(seed.get('term','')), year=str(seed.get('year','')))
+        db.session.add(gs); db.session.flush()
+        for st in s['students']:
+            db.session.add(AccdbRow(subject_id=gs.id, sid=st['sid'], prefix=st.get('prefix',''),
+                                    first=st.get('first',''), last=st.get('last',''),
+                                    room=str(st.get('room','')), no=str(st.get('no',''))))
+    db.session.commit()
+    flash('นำเข้ารายชื่อตั้งต้นเรียบร้อย', 'success')
+    return redirect(url_for('accdb_home'))
+
+@app.route('/accdb/reset-token', methods=['POST'])
+@login_required
+def accdb_reset_token():
+    t = _accdb_get_token(); t.token = _accdb_secrets.token_hex(16); db.session.commit()
+    return redirect(url_for('accdb_home'))
+
+@app.route('/accdb/<int:sid>')
+@login_required
+def accdb_subject(sid):
+    sub = AccdbSubject.query.get(sid)
+    if not sub or sub.owner_id != current_user.id:
+        _accdb_abort(404)
+    seed = _accdb_seed_data()
+    rows = [_accdb_row_dict(r) for r in AccdbRow.query.filter_by(subject_id=sub.id).order_by(AccdbRow.id).all()]
+    data = dict(code=sub.code, title=sub.title, level=sub.level, credit=sub.credit,
+                rows=rows, quality=seed['quality'], literature=seed['literature'], gradeScale=seed['gradeScale'])
+    return render_template('accdb_subject.html', sub=sub, data_json=_accdb_json.dumps(data, ensure_ascii=False))
+
+@app.route('/accdb/<int:sid>/save', methods=['POST'])
+@login_required
+def accdb_save(sid):
+    sub = AccdbSubject.query.get(sid)
+    if not sub or sub.owner_id != current_user.id:
+        _accdb_abort(404)
+    payload = request.get_json(force=True)
+    rows = {r.sid: r for r in AccdbRow.query.filter_by(subject_id=sub.id).all()}
+    n = 0
+    for rd in payload.get('rows', []):
+        r = rows.get(str(rd.get('sid')))
+        if not r: continue
+        for k in ('um01','um02','mid','final'):
+            setattr(r, k, float(rd.get(k) or 0))
+        for k in ('q1','q2','q3','q4','q5','q6','q7','q8','l1','l2','l3','l4','l5'):
+            setattr(r, k, int(float(rd.get(k) or 0)))
+        r.grade = str(rd.get('grade') or ''); r.qgrade = str(rd.get('qgrade') or ''); r.lgrade = str(rd.get('lgrade') or '')
+        if isinstance(rd.get('sub'), dict):
+            r.subjson = _accdb_json.dumps(rd['sub'], ensure_ascii=False)
+        n += 1
+    db.session.commit()
+    return _accdb_jsonify(ok=True, saved=n)
+
+@app.route('/api/accdb/export')
+def accdb_export():
+    token = request.args.get('token','')
+    t = AccdbToken.query.filter_by(token=token).first() if token else None
+    if not t:
+        return _accdb_jsonify(ok=False, error='invalid token'), 403
+    subs = AccdbSubject.query.filter_by(owner_id=t.owner_id).order_by(AccdbSubject.code).all()
+    out = []
+    for s in subs:
+        rows = [_accdb_row_dict(r) for r in AccdbRow.query.filter_by(subject_id=s.id).order_by(AccdbRow.id).all()]
+        out.append(dict(code=s.code, filename=s.filename, sig=s.sig, level=s.level, title=s.title, rows=rows))
+    return _accdb_jsonify(ok=True, subjects=out)
+
+import subprocess as _accdb_sp, tempfile as _accdb_tmp
+from flask import send_file as _accdb_send_file
+_ACCDB_JAR = os.path.join(BASE_DIR, 'accdbtool.jar')
+
+def _accdb_pw_for(sub):
+    seed = _accdb_seed_data()
+    pm = seed.get('pwmap', {})
+    return pm.get(sub.sig or '', '')
+
+def _accdb_rows_for_write(sub):
+    rows = []
+    for r in AccdbRow.query.filter_by(subject_id=sub.id).order_by(AccdbRow.id).all():
+        um01=float(r.um01 or 0); um02=float(r.um02 or 0); mid=float(r.mid or 0); fin=float(r.final or 0)
+        qsum=sum(int(getattr(r,'q%d'%i) or 0) for i in range(1,9))
+        lsum=sum(int(getattr(r,'l%d'%i) or 0) for i in range(1,6))
+        sub_json = {}
+        if r.subjson:
+            try: sub_json=_accdb_json.loads(r.subjson)
+            except Exception: sub_json={}
+        d=dict(sid=r.sid, UM01=um01, UM02=um02, MidtermMark=mid, FinalMark=fin,
+               UnitMark=um01+um02, TotalMark=um01+um02+mid+fin, TotalPercent=um01+um02+mid+fin,
+               grade=r.grade or '', qgrade=r.qgrade or '', lgrade=r.lgrade or '',
+               QM1=int(r.q1 or 0),QM2=int(r.q2 or 0),QM3=int(r.q3 or 0),QM4=int(r.q4 or 0),QM5=int(r.q5 or 0),QM6=int(r.q6 or 0),QM7=int(r.q7 or 0),QM8=int(r.q8 or 0),
+               QualityMark=qsum, LM1=int(r.l1 or 0),LM2=int(r.l2 or 0),LM3=int(r.l3 or 0),LM4=int(r.l4 or 0),LM5=int(r.l5 or 0),
+               LiteratureMark=lsum, sub=sub_json)
+        rows.append(d)
+    return rows
+
+@app.route('/accdb/<int:sid>/to-accdb', methods=['POST'])
+@login_required
+def accdb_to_accdb(sid):
+    sub = AccdbSubject.query.get(sid)
+    if not sub or sub.owner_id != current_user.id:
+        _accdb_abort(404)
+    f = request.files.get('accdb_file')
+    if not f or not f.filename.lower().endswith('.accdb'):
+        flash('กรุณาเลือกไฟล์ .accdb ของวิชานี้', 'danger'); return redirect(url_for('accdb_subject', sid=sid))
+    pw = (request.form.get('password') or '').strip() or _accdb_pw_for(sub)
+    tmpdir = _accdb_tmp.mkdtemp(prefix='accdb_')
+    in_path = os.path.join(tmpdir, secure_filename(f.filename) or 'data.accdb')
+    f.save(in_path)
+    scores_path = os.path.join(tmpdir, 'scores.json')
+    with open(scores_path, 'w', encoding='utf-8') as sf:
+        _accdb_json.dump({'rows': _accdb_rows_for_write(sub)}, sf, ensure_ascii=False)
+    try:
+        res = _accdb_sp.run(['java','-jar',_ACCDB_JAR,'write',in_path,pw,scores_path],
+                            capture_output=True, text=True, timeout=120)
+    except Exception as e:
+        flash('เรียกเอนจินเขียนไฟล์ไม่สำเร็จ: %s' % e, 'danger'); return redirect(url_for('accdb_subject', sid=sid))
+    if res.returncode != 0 or '"ok":true' not in (res.stdout or ''):
+        flash('เขียนไฟล์ .accdb ไม่สำเร็จ: %s' % ((res.stderr or res.stdout or '')[:400]), 'danger')
+        return redirect(url_for('accdb_subject', sid=sid))
+    return _accdb_send_file(in_path, as_attachment=True, download_name=f.filename)
+
+@app.route('/accdb/engine-status')
+@login_required
+def accdb_engine_status():
+    exists = os.path.exists(_ACCDB_JAR)
+    ver = ''
+    try:
+        r = _accdb_sp.run(['java','-version'], capture_output=True, text=True, timeout=15)
+        ver = (r.stderr or r.stdout or '').splitlines()[0] if (r.stderr or r.stdout) else ''
+    except Exception as e:
+        ver = 'java not found: %s' % e
+    return _accdb_jsonify(jar_exists=exists, jar=_ACCDB_JAR, java=ver)
+
+# ==================== จบโมดูลสมุดคะแนน .accdb ====================
+
+
 def init_db():
     db.create_all(); ensure_schema_columns(); seed(); sync_schedule_teacher_links()
 
