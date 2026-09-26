@@ -53,10 +53,25 @@ select,input{font-family:inherit}
   <p class="text-muted small" style="margin:0 0 10px">1) กด "บันทึกลงฐานข้อมูล" ด้านบนก่อน · 2) อัปโหลดไฟล์ .accdb ของวิชานี้ (ไฟล์ที่วิชาการส่งมา) · ระบบจะเขียนคะแนนล่าสุดลงไฟล์ แล้วให้ดาวน์โหลดกลับไปส่ง — ทำได้ทุกเครื่อง ไม่ต้องลงโปรแกรม</p>
   <form method="post" action="{{ url_for('accdb_to_accdb', sid=sub.id) }}" enctype="multipart/form-data" class="d-flex gap-2 flex-wrap align-items-center">
     <input type="file" name="accdb_file" accept=".accdb" required style="font-family:inherit">
-    <input type="password" name="password" placeholder="รหัสไฟล์ (ไม่รู้เว้นว่าง)" style="border:1px solid #cdd5e2;border-radius:8px;padding:7px 10px;font-family:inherit">
+    <span class="d-inline-flex align-items-center gap-1">
+      <input id="accdb-password" type="password" name="password" placeholder="รหัสไฟล์ (ไม่รู้เว้นว่าง)" style="border:1px solid #cdd5e2;border-radius:8px;padding:7px 10px;font-family:inherit">
+      <button id="accdb-password-toggle" class="btn btn-outline-secondary" type="button" aria-label="แสดงรหัสผ่าน" aria-pressed="false" onclick="toggleAccdbPassword()"><i class="bi bi-eye"></i></button>
+    </span>
     <button class="btn btn-success" type="submit">⬇️ เขียน + ดาวน์โหลด .accdb</button>
   </form>
 </div>
+<script>
+function toggleAccdbPassword(){
+  const input=document.getElementById('accdb-password');
+  const button=document.getElementById('accdb-password-toggle');
+  const showing=input.type==='text';
+  input.type=showing?'password':'text';
+  button.setAttribute('aria-label',showing?'แสดงรหัสผ่าน':'ซ่อนรหัสผ่าน');
+  button.setAttribute('aria-pressed',showing?'false':'true');
+  button.innerHTML=showing?'<i class="bi bi-eye"></i>':'<i class="bi bi-eye-slash"></i>';
+  input.focus();
+}
+</script>
 <script id="gdata" type="application/json">{{ data_json | safe }}</script>
 <style>
 #panel table{font-size:14px}#panel th{white-space:nowrap;text-align:center;vertical-align:bottom;padding:8px}

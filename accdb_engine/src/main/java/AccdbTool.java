@@ -2,6 +2,7 @@ import com.healthmarketscience.jackcess.*;
 import com.healthmarketscience.jackcess.crypt.CryptCodecProvider;
 import org.json.*;
 import java.io.*;
+import java.math.BigDecimal;
 import java.nio.file.*;
 import java.util.*;
 
@@ -83,16 +84,18 @@ public class AccdbTool {
         // TRANSCRIPTS
         Table tr = db.getTable("TRANSCRIPTS");
         stripIndexes(tr);
-        Set<String> trCols = new HashSet<>();
-        for (Column c : tr.getColumns()) trCols.add(c.getName());
+        Map<String, Column> trCols = new HashMap<>();
+        for (Column c : tr.getColumns()) trCols.put(c.getName(), c);
         java.util.List<Row> trRows = new java.util.ArrayList<>();
         for (Row row : tr) trRows.add(row);
         for (Row row : trRows) {
             String id = str(row.get("ID"));
             JSONObject r = byId.get(id);
             if (r == null) continue;
-            for (String f : NUMF) if (trCols.contains(f) && r.has(f)) row.put(f, r.optDouble(f, 0));
-            for (String f : GRADEF) if (trCols.contains(f)) {
+            for (String f : NUMF) if (trCols.containsKey(f) && r.has(f)) {
+                putCompatible(row, trCols.get(f), r.opt(f));
+            }
+            for (String f : GRADEF) if (trCols.containsKey(f)) {
                 String key = f.equals("Grade") ? "grade" : (f.equals("QGrade") ? "qgrade" : "lgrade");
                 String v = r.optString(key, "").trim();
                 row.put(f, v.isEmpty() ? null : v);
@@ -126,6 +129,28 @@ public class AccdbTool {
         } catch (Exception ignore) {}
         db.flush();
         System.out.println("{\"ok\":true,\"updated\":" + rows.length() + "}");
+    }
+
+    // Some BookMark files declare QM/LM score columns as short TEXT while
+    // others use numeric columns.  Writing optDouble produced strings such as
+    // "0.0", which do not fit TEXT(2).  Preserve a compact representation for
+    // text columns and let Jackcess handle numbers for numeric columns.
+    static void putCompatible(Row row, Column column, Object value) {
+        if (value == null || value == JSONObject.NULL) {
+            row.put(column.getName(), null);
+            return;
+        }
+        if (column.getType() == DataType.TEXT || column.getType() == DataType.MEMO) {
+            String text;
+            if (value instanceof Number) {
+                text = new BigDecimal(value.toString()).stripTrailingZeros().toPlainString();
+            } else {
+                text = String.valueOf(value).trim();
+            }
+            row.put(column.getName(), text);
+        } else {
+            row.put(column.getName(), value);
+        }
     }
 
     static String str(Object o) { return o == null ? "" : String.valueOf(o); }
