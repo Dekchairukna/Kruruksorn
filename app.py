@@ -8628,6 +8628,20 @@ def _accdb_password_candidates(sub, filename, typed_password=''):
             out.append(value)
     return out
 
+def _accdb_engine_error(res):
+    """Extract the safe exception summary emitted by AccdbTool, without its trace."""
+    if not res:
+        return ''
+    for line in reversed((res.stdout or '').splitlines()):
+        try:
+            payload = _accdb_json.loads(line)
+        except Exception:
+            continue
+        if isinstance(payload, dict) and payload.get('error'):
+            message = str(payload['error']).replace('\r', ' ').replace('\n', ' ').strip()
+            return message[:500]
+    return ''
+
 def _accdb_rows_for_write(sub):
     rows = []
     for r in AccdbRow.query.filter_by(subject_id=sub.id).order_by(AccdbRow.id).all():
@@ -8695,7 +8709,9 @@ def accdb_to_accdb(sid):
             flash('เปิดไฟล์ .accdb ไม่สำเร็จ: รหัสผ่านที่ระบบรู้จักไม่ตรงกับไฟล์นี้ '
                   'กรุณาใช้ไฟล์ต้นฉบับของวิชานี้ หรือกรอกรหัสผ่านจริงของไฟล์', 'danger')
         else:
-            flash('เอนจินเปิดไฟล์ได้แต่เขียนข้อมูลไม่สำเร็จ กรุณาตรวจบันทึกของเซิร์ฟเวอร์', 'danger')
+            detail = _accdb_engine_error(res)
+            flash('เอนจินเปิดไฟล์ได้แต่เขียนข้อมูลไม่สำเร็จ%s' %
+                  (': ' + detail if detail else ' กรุณาตรวจบันทึกของเซิร์ฟเวอร์'), 'danger')
         return redirect(url_for('accdb_subject', sid=sid))
     return _accdb_send_file(in_path, as_attachment=True, download_name=f.filename)
 
