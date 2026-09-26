@@ -47,11 +47,11 @@ select,input{font-family:inherit}
 </div>
 <script id="gdata" type="application/json">{{ data_json | safe }}</script>
 <style>
-#panel table{font-size:14px}#panel th{white-space:nowrap;text-align:center;vertical-align:bottom}
+#panel table{font-size:14px}#panel th{white-space:nowrap;text-align:center;vertical-align:bottom;padding:8px}
 #panel td{text-align:center;vertical-align:middle}.gname{text-align:left;white-space:nowrap}
 .sc{width:56px;text-align:center;border:1px solid #ccc;border-radius:6px;padding:4px}
 .sc.rate{width:42px}.sc.over{color:#d64545;font-weight:700;border-color:#d64545}
-.bulkbox input{width:44px;text-align:center}.bulkbox{white-space:nowrap;margin-top:3px}
+.bulkbox{display:flex;width:fit-content;margin:6px auto 0;align-items:center;gap:4px;padding:3px;background:#f1f5f4;border:1px solid #dde6e4;border-radius:9px}.bulkbox input{width:58px;text-align:center;border:1px solid #cdd5e2;border-radius:6px;padding:4px 5px;font-size:.8rem;font-weight:600;background:#fff}.bulkbox input::placeholder{color:#9aa6b5;font-weight:400}.bulkbox .bb,.bulkbox .bb2{padding:4px 9px;font-size:.78rem;white-space:nowrap;line-height:1}
 .gsel{border:1px solid #ccc;border-radius:6px;padding:3px}
 </style>
 <script>
