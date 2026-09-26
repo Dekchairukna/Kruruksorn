@@ -8478,14 +8478,18 @@ def accdb_pull_preview(sid):
     room = Classroom.query.get(body.get('classroom_id'))
     if not subject or not room or not owns_subject(subject):
         return _accdb_jsonify(ok=False, error='ไม่พบวิชา/ห้อง หรือไม่มีสิทธิ์')
-    values = {}
+
+    def _norm(*parts):
+        x = ''.join((q or '') for q in parts)
+        for pre in ('เด็กชาย','เด็กหญิง','นางสาว','นาย','นาง','ด.ช.','ด.ญ.'):
+            x = x.replace(pre, '')
+        return ''.join(x.split()).strip()
+
+    by_no, by_name, main_samples = {}, {}, []
     links = ClassroomStudent.query.filter_by(classroom_id=room.id).all()
     for link in links:
         stu = link.student or User.query.get(link.student_id)
         if not stu:
-            continue
-        key = (getattr(stu, 'student_no', '') or '').strip()
-        if not key:
             continue
         try:
             row = calculate_grade_row(subject, room, stu, create_manual=False)
@@ -8504,9 +8508,37 @@ def accdb_pull_preview(sid):
         att_n = (row.get('present',0)+row.get('absent',0)+row.get('leave',0)+row.get('late',0)+row.get('activity',0)+row.get('skipped',0))
         if att_n > 0:
             v['um02'] = round((row.get('attendance_percent') or 0) * 30.0 / 100.0, 2)
+        no = (getattr(stu, 'student_no', '') or '').strip()
+        nm = _norm(getattr(stu, 'first_name', ''), getattr(stu, 'last_name', '')) or _norm(getattr(stu, 'full_name', ''))
+        if no:
+            by_no[no] = v
+        if nm:
+            by_name[nm] = v
+        if len(main_samples) < 6:
+            disp = (getattr(stu, 'full_name', '') or (getattr(stu,'first_name','')+' '+getattr(stu,'last_name',''))).strip()
+            main_samples.append(dict(no=no, name=disp))
+
+    values, acc_samples = {}, []
+    arows = AccdbRow.query.filter_by(subject_id=sub.id).all()
+    m_no = m_name = 0
+    for ar in arows:
+        v = None
+        no = (ar.sid or '').strip()
+        if no and no in by_no:
+            v = by_no[no]; m_no += 1
+        else:
+            nm = _norm(ar.first, ar.last)
+            if nm and nm in by_name:
+                v = by_name[nm]; m_name += 1
         if v:
-            values[key] = v
-    return _accdb_jsonify(ok=True, values=values, matched=len(values))
+            values[ar.sid] = v
+        elif len(acc_samples) < 6:
+            acc_samples.append(dict(sid=ar.sid, name=((ar.prefix or '')+(ar.first or '')+' '+(ar.last or '')).strip()))
+
+    return _accdb_jsonify(ok=True, values=values, matched=len(values),
+                          debug=dict(by_no=m_no, by_name=m_name,
+                                     main_students=len(links), accdb_rows=len(arows),
+                                     sample_main=main_samples, sample_accdb=acc_samples))
 
 
 @app.route('/api/accdb/export')

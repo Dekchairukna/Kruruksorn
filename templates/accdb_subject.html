@@ -179,7 +179,9 @@ document.getElementById('pullGo').onclick=async()=>{
     let filled=0,matched=0;
     rows.forEach(r0=>{const v=j.values[String(r0.sid).trim()];if(v){matched++;['mid','final','um01','um02'].forEach(k=>{if(v[k]!=null){r0[k]=v[k];filled++;}});}});
     render();
-    log.innerHTML=matched?('<span class="text-success">✓ ดึงมา '+matched+' คน (เติม '+filled+' ช่อง) — ตรวจแล้วกด “บันทึกลงฐานข้อมูล”</span>'):'จับคู่นักเรียนไม่ได้ (student_no ไม่ตรงกับ sid) — เช็ครหัสนักเรียน';
+    if(matched){log.innerHTML='<span class="text-success">✓ ดึงมา '+matched+' คน (เติม '+filled+' ช่อง) — ตรวจแล้วกด “บันทึกลงฐานข้อมูล”</span>';}
+    else{const d=j.debug||{};const mm=(d.sample_main||[]).map(x=>(x.no||'(ไม่มีรหัส)')+' | '+x.name).join('<br>');const aa=(d.sample_accdb||[]).map(x=>x.sid+' | '+x.name).join('<br>');
+      log.innerHTML='<span class="text-danger">จับคู่ไม่ได้</span> (ระบบหลัก '+(d.main_students||0)+' คน · .accdb '+(d.accdb_rows||0)+' คน)<br><small><b>ระบบหลัก (รหัส | ชื่อ):</b><br>'+mm+'<br>—<br><b>.accdb (sid | ชื่อ):</b><br>'+aa+'</small>';}
   }catch(e){log.textContent='ผิดพลาด: '+e.message;}
 };
 render();
