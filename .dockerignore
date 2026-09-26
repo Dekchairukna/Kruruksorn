@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+.venv/
+.git/
+.DS_Store
+Kruruksorn-PathB-webengine.zip
+PROJECT_HANDOFF.md

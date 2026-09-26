@@ -1,0 +1,30 @@
+name: Build accdb jar
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'accdb_engine/**'
+      - '.github/workflows/build-accdb-jar.yml'
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Build shaded jar
+        run: mvn -q -DskipTests -f accdb_engine/pom.xml package
+      - name: Place jar at repo root
+        run: cp accdb_engine/target/accdbtool.jar accdbtool.jar
+      - name: Commit jar
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -f accdbtool.jar
+          git diff --cached --quiet || git commit -m "CI: build accdbtool.jar [skip ci]"
+          git push
