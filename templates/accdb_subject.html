@@ -39,7 +39,7 @@ select,input{font-family:inherit}
     <button class="btn btn-sm btn-outline-secondary" id="pullCancel">ปิด</button>
     <span id="pullLog" class="text-muted small"></span>
   </div>
-  <p class="text-muted small" style="margin:8px 0 0">เติมให้เฉพาะช่องที่มีข้อมูลจริง: กลางภาค←สอบกลางภาค · ปลายภาค←สอบปลายภาค (แปลง 100→20) · เก็บก่อนกลาง←คะแนนในคาบ · เก็บหลังกลาง←เวลาเรียน (สเกลเป็น 30) · <b>ยังไม่บันทึก</b> จนกว่าจะกด “บันทึกลงฐานข้อมูล”</p>
+  <p id="pullHint" class="text-muted small" style="margin:8px 0 0">เติมให้เฉพาะช่องที่มีคะแนนจริง: กลางภาค←สอบกลางภาค · ปลายภาค←สอบปลายภาค · เก็บก่อนกลาง←คะแนนในคาบ · เก็บหลังกลาง←เวลาเรียน โดยใช้น้ำหนักที่ตั้งไว้ในวิชาหลัก · <b>ยังไม่บันทึก</b> จนกว่าจะกด “บันทึกลงฐานข้อมูล”</p>
 </div>
 <ul class="nav nav-pills mb-3" id="subtabs">
   <li class="nav-item"><button class="nav-link active" data-t="score">คะแนน / เกรด</button></li>
@@ -191,6 +191,10 @@ document.getElementById('pullGo').onclick=async()=>{
   try{const r=await fetch(window.location.pathname+'/pull-preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({subject_id:+subId,classroom_id:+roomId})});
     const j=await r.json();
     if(!j.ok){log.textContent=j.error||'ดึงไม่สำเร็จ';return;}
+    if(j.weights){
+      COLS.forEach(c=>{if(j.weights[c.key]!=null)c.max=Number(j.weights[c.key]);});
+      document.getElementById('pullHint').innerHTML='ใช้น้ำหนักจากวิชาหลัก: เก็บก่อนกลาง '+j.weights.um01+' · กลางภาค '+j.weights.mid+' · เก็บหลังกลาง '+j.weights.um02+' · ปลายภาค '+j.weights.final+' · <b>ยังไม่บันทึก</b> จนกว่าจะกด “บันทึกลงฐานข้อมูล”';
+    }
     let filled=0,matched=0;
     rows.forEach(r0=>{const v=j.values[String(r0.sid).trim()];if(v){matched++;['mid','final','um01','um02'].forEach(k=>{if(v[k]!=null){r0[k]=v[k];filled++;}});}});
     render();

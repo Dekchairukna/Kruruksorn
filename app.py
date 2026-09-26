@@ -8490,6 +8490,14 @@ def accdb_pull_preview(sid):
     if not subject or not room or not owns_subject(subject):
         return _accdb_jsonify(ok=False, error='ไม่พบวิชา/ห้อง หรือไม่มีสิทธิ์')
 
+    setting = get_grade_setting(subject.id)
+    weights = dict(
+        um01=float(getattr(setting, 'classwork_weight', 0) or 0),
+        mid=float(getattr(setting, 'midterm_weight', 0) or 0),
+        um02=float(getattr(setting, 'attendance_weight', 0) or 0),
+        final=float(getattr(setting, 'final_weight', 0) or 0),
+    )
+
     def _norm(*parts):
         x = ''.join((q or '') for q in parts)
         for pre in ('เด็กชาย','เด็กหญิง','นางสาว','นาย','นาง','ด.ช.','ด.ญ.'):
@@ -8511,14 +8519,14 @@ def accdb_pull_preview(sid):
         mt = float(getattr(manual, 'midterm', 0) or 0) if manual else 0
         fn = float(getattr(manual, 'final', 0) or 0) if manual else 0
         if mt > 0:
-            v['mid'] = round(mt * 20.0 / 100.0, 2)
+            v['mid'] = round(float(row.get('midterm_score') or 0), 2)
         if fn > 0:
-            v['final'] = round(fn * 20.0 / 100.0, 2)
+            v['final'] = round(float(row.get('final_score') or 0), 2)
         if (row.get('classwork_max') or 0) > 0:
-            v['um01'] = round((row.get('classwork_percent') or 0) * 30.0 / 100.0, 2)
+            v['um01'] = round(float(row.get('classwork_score') or 0), 2)
         att_n = (row.get('present',0)+row.get('absent',0)+row.get('leave',0)+row.get('late',0)+row.get('activity',0)+row.get('skipped',0))
         if att_n > 0:
-            v['um02'] = round((row.get('attendance_percent') or 0) * 30.0 / 100.0, 2)
+            v['um02'] = round(float(row.get('attendance_score') or 0), 2)
         no = (getattr(stu, 'student_no', '') or '').strip()
         nm = _norm(getattr(stu, 'first_name', ''), getattr(stu, 'last_name', '')) or _norm(getattr(stu, 'full_name', ''))
         if no:
@@ -8546,7 +8554,7 @@ def accdb_pull_preview(sid):
         elif len(acc_samples) < 6:
             acc_samples.append(dict(sid=ar.sid, name=((ar.prefix or '')+(ar.first or '')+' '+(ar.last or '')).strip()))
 
-    return _accdb_jsonify(ok=True, values=values, matched=len(values),
+    return _accdb_jsonify(ok=True, values=values, matched=len(values), weights=weights,
                           debug=dict(by_no=m_no, by_name=m_name,
                                      main_students=len(links), accdb_rows=len(arows),
                                      sample_main=main_samples, sample_accdb=acc_samples))
