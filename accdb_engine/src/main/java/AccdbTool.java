@@ -10,16 +10,49 @@ public class AccdbTool {
         "QM1","QM2","QM3","QM4","QM5","QM6","QM7","QM8","QualityMark","LM1","LM2","LM3","LM4","LM5","LiteratureMark"};
     static final String[] GRADEF = {"Grade","QGrade","LGrade"};
 
-    public static void main(String[] args) throws Exception {
-        String cmd = args[0], path = args[1], pw = args[2];
-        Database db = new DatabaseBuilder(new File(path))
-                .setCodecProvider(new CryptCodecProvider(pw))
-                .setReadOnly(cmd.equals("read"))
-                .open();
+    public static void main(String[] args) {
+        // silence jackcess java.util.logging WARNINGs so stderr stays clean and Flask can read our stdout error
+        try { java.util.logging.LogManager.getLogManager().reset(); } catch (Throwable ignore) {}
+        Database db = null;
         try {
+            String cmd = args[0], path = args[1], pw = args[2];
+            db = new DatabaseBuilder(new File(path))
+                    .setCodecProvider(new CryptCodecProvider(pw))
+                    .setReadOnly(cmd.equals("read"))
+                    .open();
             if (cmd.equals("read")) doRead(db);
             else doWrite(db, args[3]);
-        } finally { db.close(); }
+            db.close(); db = null;
+        } catch (Throwable t) {
+            if (db != null) { try { db.close(); } catch (Throwable ignore) {} }
+            StringWriter sw = new StringWriter();
+            t.printStackTrace(new PrintWriter(sw));
+            System.out.println("{\"ok\":false,\"error\":" + js(t.toString()) + ",\"trace\":" + js(sw.toString()) + "}");
+            System.exit(1);
+        }
+    }
+
+    static String js(String s){ return JSONObject.quote(s == null ? "" : s); }
+
+    // Jackcess marks tables read-only when they carry an index whose collating sort order
+    // it cannot maintain (e.g. Thai, LCID 1054). We only change numeric score columns, never
+    // the indexed text columns, so dropping in-memory index maintenance is safe: updateRow
+    // locates the row by RowId and the on-disk index stays valid because indexed values don't change.
+    static void stripIndexes(Table t) {
+        Class<?> c = t.getClass();
+        while (c != null) {
+            for (java.lang.reflect.Field f : c.getDeclaredFields()) {
+                try {
+                    if (!java.util.List.class.isAssignableFrom(f.getType())) continue;
+                    f.setAccessible(true);
+                    java.util.List<?> lst = (java.util.List<?>) f.get(t);
+                    if (lst == null || lst.isEmpty()) continue;
+                    String cn = lst.get(0).getClass().getName().toLowerCase();
+                    if (cn.contains("index")) { try { lst.clear(); } catch (Throwable ignore) {} }
+                } catch (Throwable ignore) {}
+            }
+            c = c.getSuperclass();
+        }
     }
 
     static void doRead(Database db) throws Exception {
@@ -39,8 +72,8 @@ public class AccdbTool {
     }
 
     static void doWrite(Database db, String scoresPath) throws Exception {
-        String js = new String(Files.readAllBytes(Paths.get(scoresPath)), "UTF-8");
-        JSONObject payload = new JSONObject(js);
+        String jsn = new String(Files.readAllBytes(Paths.get(scoresPath)), "UTF-8");
+        JSONObject payload = new JSONObject(jsn);
         JSONArray rows = payload.getJSONArray("rows");
         Map<String, JSONObject> byId = new HashMap<>();
         for (int i = 0; i < rows.length(); i++) {
@@ -49,6 +82,7 @@ public class AccdbTool {
         }
         // TRANSCRIPTS
         Table tr = db.getTable("TRANSCRIPTS");
+        stripIndexes(tr);
         Set<String> trCols = new HashSet<>();
         for (Column c : tr.getColumns()) trCols.add(c.getName());
         java.util.List<Row> trRows = new java.util.ArrayList<>();
@@ -68,6 +102,7 @@ public class AccdbTool {
         // TRANSCRIPTS2 (sub-scores um<nn>_<k>)
         try {
             Table t2 = db.getTable("TRANSCRIPTS2");
+            stripIndexes(t2);
             Set<String> t2cols = new HashSet<>();
             for (Column c : t2.getColumns()) t2cols.add(c.getName());
             java.util.List<Row> t2Rows = new java.util.ArrayList<>();
