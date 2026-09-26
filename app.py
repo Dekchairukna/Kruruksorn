@@ -8642,6 +8642,21 @@ def _accdb_engine_error(res):
             return message[:500]
     return ''
 
+def _accdb_run_write(in_path, scores_path, password_candidates):
+    """Run the Java writer, retrying only failures caused by a wrong password."""
+    res = None
+    password_failure = True
+    for pw in password_candidates:
+        res = _accdb_sp.run(['java','-jar',_ACCDB_JAR,'write',in_path,pw,scores_path],
+                            capture_output=True, text=True, timeout=120)
+        if res.returncode == 0 and '"ok":true' in (res.stdout or ''):
+            return res, False
+        engine_output = (res.stderr or '') + (res.stdout or '')
+        if 'InvalidCredentialsException' not in engine_output:
+            password_failure = False
+            break
+    return res, password_failure
+
 def _accdb_rows_for_write(sub):
     rows = []
     for r in AccdbRow.query.filter_by(subject_id=sub.id).order_by(AccdbRow.id).all():
@@ -8686,18 +8701,8 @@ def accdb_to_accdb(sid):
     scores_path = os.path.join(tmpdir, 'scores.json')
     with open(scores_path, 'w', encoding='utf-8') as sf:
         _accdb_json.dump({'rows': _accdb_rows_for_write(sub)}, sf, ensure_ascii=False)
-    res = None
-    password_failure = True
     try:
-        for pw in password_candidates:
-            res = _accdb_sp.run(['java','-jar',_ACCDB_JAR,'write',in_path,pw,scores_path],
-                                capture_output=True, text=True, timeout=120)
-            if res.returncode == 0 and '"ok":true' in (res.stdout or ''):
-                break
-            engine_output = (res.stderr or '') + (res.stdout or '')
-            if 'InvalidCredentialsException' not in engine_output:
-                password_failure = False
-                break
+        res, password_failure = _accdb_run_write(in_path, scores_path, password_candidates)
     except Exception as e:
         app.logger.exception('ACCDB engine invocation failed')
         flash('เรียกเอนจินเขียนไฟล์ไม่สำเร็จ กรุณาตรวจสถานะ Java/เอนจินแล้วลองใหม่', 'danger')
@@ -8714,6 +8719,69 @@ def accdb_to_accdb(sid):
                   (': ' + detail if detail else ' กรุณาตรวจบันทึกของเซิร์ฟเวอร์'), 'danger')
         return redirect(url_for('accdb_subject', sid=sid))
     return _accdb_send_file(in_path, as_attachment=True, download_name=f.filename)
+
+@app.route('/accdb/to-accdb-batch', methods=['POST'])
+@login_required
+def accdb_to_accdb_batch():
+    files = [f for f in request.files.getlist('accdb_files') if f and f.filename]
+    if not files:
+        flash('กรุณาเลือกไฟล์ .accdb อย่างน้อย 1 ไฟล์', 'danger')
+        return redirect(url_for('accdb_home'))
+    if len(files) > 20:
+        flash('เลือกได้ครั้งละไม่เกิน 20 ไฟล์', 'danger')
+        return redirect(url_for('accdb_home'))
+
+    typed_pw = (request.form.get('password') or '').strip()
+    tmpdir = _accdb_tmp.mkdtemp(prefix='accdb_batch_')
+    zip_path = os.path.join(tmpdir, 'accdb_results.zip')
+    successes, failures = 0, []
+
+    with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as archive:
+        for index, uploaded in enumerate(files):
+            original_name = os.path.basename(uploaded.filename)
+            if not original_name.lower().endswith('.accdb'):
+                failures.append('%s: ไม่ใช่ไฟล์ .accdb' % original_name)
+                continue
+            seeded = _accdb_subject_from_filename(original_name)
+            if not seeded:
+                failures.append('%s: จับคู่รายวิชาจากชื่อไฟล์ไม่ได้' % original_name)
+                continue
+            sub = AccdbSubject.query.filter_by(owner_id=current_user.id,
+                                               code=seeded.get('code')).first()
+            if not sub:
+                failures.append('%s: ไม่พบรายวิชา %s ในบัญชีนี้' %
+                                (original_name, seeded.get('code')))
+                continue
+
+            in_path = os.path.join(tmpdir, '%02d.accdb' % index)
+            scores_path = os.path.join(tmpdir, '%02d.json' % index)
+            uploaded.save(in_path)
+            with open(scores_path, 'w', encoding='utf-8') as sf:
+                _accdb_json.dump({'rows': _accdb_rows_for_write(sub)}, sf, ensure_ascii=False)
+            candidates = _accdb_password_candidates(sub, original_name, typed_pw)
+            try:
+                res, password_failure = _accdb_run_write(in_path, scores_path, candidates)
+            except Exception:
+                app.logger.exception('ACCDB batch engine invocation failed for %s', original_name)
+                failures.append('%s: เรียกเอนจินไม่สำเร็จ' % original_name)
+                continue
+            if not res or res.returncode != 0 or '"ok":true' not in (res.stdout or ''):
+                detail = ('รหัสผ่านไม่ถูกต้อง' if password_failure else
+                          (_accdb_engine_error(res) or 'เขียนข้อมูลไม่สำเร็จ'))
+                failures.append('%s: %s' % (original_name, detail))
+                continue
+            archive.write(in_path, arcname=original_name)
+            successes += 1
+
+        if failures:
+            archive.writestr('ผลการทำงาน.txt',
+                             ('สำเร็จ %d ไฟล์\nไม่สำเร็จ %d ไฟล์\n\n%s' %
+                              (successes, len(failures), '\n'.join(failures))).encode('utf-8'))
+
+    if not successes:
+        flash('เขียนไฟล์ไม่สำเร็จทั้งหมด: %s' % ' | '.join(failures[:3]), 'danger')
+        return redirect(url_for('accdb_home'))
+    return _accdb_send_file(zip_path, as_attachment=True, download_name='accdb_results.zip')
 
 @app.route('/accdb/engine-status')
 @login_required

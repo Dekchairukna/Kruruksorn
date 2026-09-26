@@ -37,6 +37,23 @@
   </div>
 </div>
 {% endif %}
+{% if has_data %}
+<div class="acc-card">
+  <h3 style="margin-top:0">📦 เขียนหลายไฟล์พร้อมกัน</h3>
+  <p style="color:#5d6a7e">เลือกไฟล์ .accdb ได้หลายวิชา ระบบจะจับคู่จากชื่อไฟล์และดาวน์โหลดผลลัพธ์รวมเป็น ZIP</p>
+  <form method="post" action="{{ url_for('accdb_to_accdb_batch') }}" enctype="multipart/form-data">
+    <input class="acc-inp" type="file" name="accdb_files" accept=".accdb" multiple required style="margin-bottom:8px">
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <input class="acc-inp" id="batch-password" type="password" name="password" placeholder="รหัสไฟล์ (ไม่รู้เว้นว่าง)" style="width:240px">
+      <label style="display:flex;gap:5px;align-items:center;margin:0">
+        <input type="checkbox" onchange="document.getElementById('batch-password').type=this.checked?'text':'password'"> แสดงรหัส
+      </label>
+      <button class="acc-btn" type="submit">⬇️ เขียนทั้งหมดและดาวน์โหลด ZIP</button>
+    </div>
+  </form>
+  <div class="acc-note" style="margin-top:10px">เลือกได้ครั้งละไม่เกิน 20 ไฟล์ หากบางไฟล์ไม่สำเร็จ จะมีไฟล์ “ผลการทำงาน.txt” อยู่ใน ZIP</div>
+</div>
+{% endif %}
 <div class="acc-card">
   <h3 style="margin-top:0">🔌 ลิงก์ดึงข้อมูลสำหรับตัวช่วยเขียน .accdb ในเครื่อง</h3>
   <p style="color:#5d6a7e">คัดลอกลิงก์นี้ไปวางในตัวช่วยในเครื่อง (โปรแกรม PowerShell) เพื่อให้มันดึงคะแนนล่าสุดไปเขียนลงไฟล์ .accdb — เก็บเป็นความลับ</p>
