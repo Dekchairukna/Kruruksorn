@@ -8389,7 +8389,18 @@ def accdb_home():
 def accdb_seed():
     seed = _accdb_seed_data()
     for s in seed['subjects']:
-        if AccdbSubject.query.filter_by(owner_id=current_user.id, code=s['code']).first():
+        existing = AccdbSubject.query.filter_by(owner_id=current_user.id, code=s['code']).first()
+        if existing:
+            # Backfill metadata for subjects imported by an older version.  In
+            # particular, a missing sig makes the export code pass an empty
+            # password to jackcess-encrypt.
+            existing.title = s.get('title', existing.title or '')
+            existing.level = s.get('level', existing.level or '')
+            existing.credit = str(s.get('credit', existing.credit or ''))
+            existing.filename = s.get('filename', existing.filename or '')
+            existing.sig = s.get('sig', existing.sig or '')
+            existing.term = str(seed.get('term', existing.term or ''))
+            existing.year = str(seed.get('year', existing.year or ''))
             continue
         gs = AccdbSubject(owner_id=current_user.id, code=s['code'], title=s.get('title',''),
                           level=s.get('level',''), credit=str(s.get('credit','')), filename=s.get('filename',''),
@@ -8561,7 +8572,61 @@ _ACCDB_JAR = os.path.join(BASE_DIR, 'accdbtool.jar')
 def _accdb_pw_for(sub):
     seed = _accdb_seed_data()
     pm = seed.get('pwmap', {})
-    return pm.get(sub.sig or '', '')
+    # Prefer the value stored with the subject, but support records imported
+    # before the sig column was populated.
+    pw = pm.get((sub.sig or '').strip(), '')
+    if pw:
+        return pw
+    for item in seed.get('subjects', []):
+        if item.get('code') == sub.code or (sub.filename and item.get('filename') == sub.filename):
+            return pm.get(str(item.get('sig') or '').strip(), '')
+    return ''
+
+def _accdb_subject_from_filename(filename):
+    """Return the seeded subject matching an uploaded BookMark filename."""
+    seed = _accdb_seed_data()
+    name = os.path.basename(filename or '')
+    for item in seed.get('subjects', []):
+        if name == item.get('filename'):
+            return item
+    # BookMark's signature is the ASCII digits in the filename joined together.
+    sig = ''.join(ch for ch in name if '0' <= ch <= '9')
+    for item in seed.get('subjects', []):
+        if sig and sig == str(item.get('sig') or '').strip():
+            return item
+    return None
+
+def _accdb_pw_from_filename(filename):
+    """Resolve the password from the uploaded BookMark filename when possible."""
+    item = _accdb_subject_from_filename(filename)
+    if not item:
+        return ''
+    return _accdb_seed_data().get('pwmap', {}).get(str(item.get('sig') or '').strip(), '')
+
+def _accdb_password_candidates(sub, filename, typed_password=''):
+    """Known passwords, ordered from most to least likely, without duplicates."""
+    seed = _accdb_seed_data()
+    values = [typed_password]
+    # Some BookMark installations store a Thai birth date either literally,
+    # without separators, or after converting the Buddhist year to Gregorian.
+    # Try those equivalent spellings only when the user supplied a date.
+    m = re.fullmatch(r'(\d{1,2})[/-](\d{1,2})[/-](\d{4})', str(typed_password or '').strip())
+    if m:
+        day, month, year = m.groups()
+        day, month = day.zfill(2), month.zfill(2)
+        values.extend([day + month + year])
+        if int(year) > 2400:
+            gregorian_year = str(int(year) - 543)
+            values.extend([day + '/' + month + '/' + gregorian_year,
+                           day + month + gregorian_year])
+    values.extend([_accdb_pw_from_filename(filename), _accdb_pw_for(sub)])
+    values.extend(seed.get('pwmap', {}).values())
+    out = []
+    for value in values:
+        value = str(value or '').strip()
+        if value and value not in out:
+            out.append(value)
+    return out
 
 def _accdb_rows_for_write(sub):
     rows = []
@@ -8591,20 +8656,46 @@ def accdb_to_accdb(sid):
     f = request.files.get('accdb_file')
     if not f or not f.filename.lower().endswith('.accdb'):
         flash('กรุณาเลือกไฟล์ .accdb ของวิชานี้', 'danger'); return redirect(url_for('accdb_subject', sid=sid))
-    pw = (request.form.get('password') or '').strip() or _accdb_pw_for(sub)
+    file_subject = _accdb_subject_from_filename(f.filename)
+    if file_subject and file_subject.get('code') != sub.code:
+        flash('ไฟล์ที่เลือกเป็นวิชา %s แต่หน้าปัจจุบันเป็นวิชา %s กรุณาเลือกไฟล์ให้ตรงกัน' %
+              (file_subject.get('code'), sub.code), 'danger')
+        return redirect(url_for('accdb_subject', sid=sid))
+    typed_pw = (request.form.get('password') or '').strip()
+    password_candidates = _accdb_password_candidates(sub, f.filename, typed_pw)
+    if not password_candidates:
+        flash('หารหัสผ่านของไฟล์นี้ไม่พบ กรุณาเลือกรายวิชา/ไฟล์ให้ตรงกัน หรือกรอกรหัสไฟล์', 'danger')
+        return redirect(url_for('accdb_subject', sid=sid))
     tmpdir = _accdb_tmp.mkdtemp(prefix='accdb_')
     in_path = os.path.join(tmpdir, secure_filename(f.filename) or 'data.accdb')
     f.save(in_path)
     scores_path = os.path.join(tmpdir, 'scores.json')
     with open(scores_path, 'w', encoding='utf-8') as sf:
         _accdb_json.dump({'rows': _accdb_rows_for_write(sub)}, sf, ensure_ascii=False)
+    res = None
+    password_failure = True
     try:
-        res = _accdb_sp.run(['java','-jar',_ACCDB_JAR,'write',in_path,pw,scores_path],
-                            capture_output=True, text=True, timeout=120)
+        for pw in password_candidates:
+            res = _accdb_sp.run(['java','-jar',_ACCDB_JAR,'write',in_path,pw,scores_path],
+                                capture_output=True, text=True, timeout=120)
+            if res.returncode == 0 and '"ok":true' in (res.stdout or ''):
+                break
+            engine_output = (res.stderr or '') + (res.stdout or '')
+            if 'InvalidCredentialsException' not in engine_output:
+                password_failure = False
+                break
     except Exception as e:
-        flash('เรียกเอนจินเขียนไฟล์ไม่สำเร็จ: %s' % e, 'danger'); return redirect(url_for('accdb_subject', sid=sid))
-    if res.returncode != 0 or '"ok":true' not in (res.stdout or ''):
-        flash('เขียนไฟล์ .accdb ไม่สำเร็จ: %s' % ((res.stderr or res.stdout or '')[:400]), 'danger')
+        app.logger.exception('ACCDB engine invocation failed')
+        flash('เรียกเอนจินเขียนไฟล์ไม่สำเร็จ กรุณาตรวจสถานะ Java/เอนจินแล้วลองใหม่', 'danger')
+        return redirect(url_for('accdb_subject', sid=sid))
+    if not res or res.returncode != 0 or '"ok":true' not in (res.stdout or ''):
+        app.logger.error('ACCDB open/write failed for %s: %s', f.filename,
+                         ((res.stderr or res.stdout or '')[:2000] if res else 'no result'))
+        if password_failure:
+            flash('เปิดไฟล์ .accdb ไม่สำเร็จ: รหัสผ่านที่ระบบรู้จักไม่ตรงกับไฟล์นี้ '
+                  'กรุณาใช้ไฟล์ต้นฉบับของวิชานี้ หรือกรอกรหัสผ่านจริงของไฟล์', 'danger')
+        else:
+            flash('เอนจินเปิดไฟล์ได้แต่เขียนข้อมูลไม่สำเร็จ กรุณาตรวจบันทึกของเซิร์ฟเวอร์', 'danger')
         return redirect(url_for('accdb_subject', sid=sid))
     return _accdb_send_file(in_path, as_attachment=True, download_name=f.filename)
 
