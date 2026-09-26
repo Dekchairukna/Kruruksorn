@@ -8444,6 +8444,71 @@ def accdb_save(sid):
     db.session.commit()
     return _accdb_jsonify(ok=True, saved=n)
 
+@app.route('/accdb/<int:sid>/pull-options')
+@login_required
+def accdb_pull_options(sid):
+    sub = AccdbSubject.query.get(sid)
+    if not sub or sub.owner_id != current_user.id:
+        _accdb_abort(404)
+    subj_ids = teacher_subject_ids() or [-1]
+    subjects = Subject.query.filter(Subject.id.in_(subj_ids)).order_by(Subject.name).all()
+    out = []
+    for s in subjects:
+        rooms = []
+        for sc in SubjectClassroom.query.filter_by(subject_id=s.id).all():
+            if sc.classroom:
+                rooms.append(dict(id=sc.classroom.id, name=sc.classroom.name))
+        if not rooms:
+            for cid in (teacher_classroom_ids() or []):
+                c = Classroom.query.get(cid)
+                if c:
+                    rooms.append(dict(id=c.id, name=c.name))
+        out.append(dict(id=s.id, name=s.name, rooms=rooms))
+    return _accdb_jsonify(ok=True, subjects=out)
+
+
+@app.route('/accdb/<int:sid>/pull-preview', methods=['POST'])
+@login_required
+def accdb_pull_preview(sid):
+    sub = AccdbSubject.query.get(sid)
+    if not sub or sub.owner_id != current_user.id:
+        _accdb_abort(404)
+    body = request.get_json(force=True) or {}
+    subject = Subject.query.get(body.get('subject_id'))
+    room = Classroom.query.get(body.get('classroom_id'))
+    if not subject or not room or not owns_subject(subject):
+        return _accdb_jsonify(ok=False, error='ไม่พบวิชา/ห้อง หรือไม่มีสิทธิ์')
+    values = {}
+    links = ClassroomStudent.query.filter_by(classroom_id=room.id).all()
+    for link in links:
+        stu = link.student or User.query.get(link.student_id)
+        if not stu:
+            continue
+        key = (getattr(stu, 'student_no', '') or '').strip()
+        if not key:
+            continue
+        try:
+            row = calculate_grade_row(subject, room, stu, create_manual=False)
+        except Exception:
+            continue
+        manual = row.get('manual')
+        v = {}
+        mt = float(getattr(manual, 'midterm', 0) or 0) if manual else 0
+        fn = float(getattr(manual, 'final', 0) or 0) if manual else 0
+        if mt > 0:
+            v['mid'] = round(mt * 20.0 / 100.0, 2)
+        if fn > 0:
+            v['final'] = round(fn * 20.0 / 100.0, 2)
+        if (row.get('classwork_max') or 0) > 0:
+            v['um01'] = round((row.get('classwork_percent') or 0) * 30.0 / 100.0, 2)
+        att_n = (row.get('present',0)+row.get('absent',0)+row.get('leave',0)+row.get('late',0)+row.get('activity',0)+row.get('skipped',0))
+        if att_n > 0:
+            v['um02'] = round((row.get('attendance_percent') or 0) * 30.0 / 100.0, 2)
+        if v:
+            values[key] = v
+    return _accdb_jsonify(ok=True, values=values, matched=len(values))
+
+
 @app.route('/api/accdb/export')
 def accdb_export():
     token = request.args.get('token','')

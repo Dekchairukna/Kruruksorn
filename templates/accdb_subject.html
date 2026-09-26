@@ -26,8 +26,20 @@ select,input{font-family:inherit}
     <a class="btn btn-sm btn-outline-secondary ms-2" href="{{ url_for('accdb_home') }}"><i class="bi bi-arrow-left"></i> กลับ</a></div>
   <div class="d-flex align-items-center gap-2">
     <span id="saveLog" class="text-muted small"></span>
+    <button class="btn btn-outline-primary" id="btnPull">⬇️ ดึงจากระบบหลัก</button>
     <button class="btn btn-success" id="btnSave"><i class="bi bi-save"></i> บันทึกลงฐานข้อมูล</button>
   </div>
+</div>
+<div id="pullBox" class="soft-card p-3 mb-3" style="display:none">
+  <div class="d-flex align-items-center gap-2 flex-wrap">
+    <b>ดึงคะแนนจากระบบหลัก:</b>
+    <select id="pullSubject" class="gsel"><option value="">— เลือกวิชา —</option></select>
+    <select id="pullRoom" class="gsel"><option value="">— เลือกห้อง —</option></select>
+    <button class="btn btn-sm btn-success" id="pullGo">ดึงมาแสดง</button>
+    <button class="btn btn-sm btn-outline-secondary" id="pullCancel">ปิด</button>
+    <span id="pullLog" class="text-muted small"></span>
+  </div>
+  <p class="text-muted small" style="margin:8px 0 0">เติมให้เฉพาะช่องที่มีข้อมูลจริง: กลางภาค←สอบกลางภาค · ปลายภาค←สอบปลายภาค (แปลง 100→20) · เก็บก่อนกลาง←คะแนนในคาบ · เก็บหลังกลาง←เวลาเรียน (สเกลเป็น 30) · <b>ยังไม่บันทึก</b> จนกว่าจะกด “บันทึกลงฐานข้อมูล”</p>
 </div>
 <ul class="nav nav-pills mb-3" id="subtabs">
   <li class="nav-item"><button class="nav-link active" data-t="score">คะแนน / เกรด</button></li>
@@ -139,6 +151,36 @@ document.getElementById('btnSave').onclick=async()=>{
   try{const res=await fetch(window.location.pathname+'/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rows:out})});
     const j=await res.json();log.textContent=j.ok?('✓ บันทึกแล้ว '+j.saved+' คน'):'บันทึกไม่ได้';log.className=j.ok?'text-success small':'text-danger small';}
   catch(e){log.textContent='ผิดพลาด: '+e.message;log.className='text-danger small';}
+};
+// ---- ดึงจากระบบหลัก ----
+const _pullBox=document.getElementById('pullBox');
+document.getElementById('btnPull').onclick=async()=>{
+  _pullBox.style.display=(_pullBox.style.display==='none')?'block':'none';
+  if(_pullBox.dataset.loaded)return;
+  const log=document.getElementById('pullLog');
+  try{const r=await fetch(window.location.pathname+'/pull-options');const j=await r.json();
+    if(!j.ok){log.textContent='โหลดรายการวิชาไม่ได้';return;}
+    const ss=document.getElementById('pullSubject');
+    j.subjects.forEach(sb=>{const o=document.createElement('option');o.value=sb.id;o.textContent=sb.name;o.dataset.rooms=JSON.stringify(sb.rooms||[]);ss.appendChild(o);});
+    ss.onchange=()=>{const rs=document.getElementById('pullRoom');rs.innerHTML='<option value="">— เลือกห้อง —</option>';const rooms=JSON.parse(ss.selectedOptions[0]?.dataset.rooms||'[]');rooms.forEach(rm=>{const o=document.createElement('option');o.value=rm.id;o.textContent=rm.name;rs.appendChild(o);});};
+    if(!j.subjects.length)log.textContent='ไม่พบวิชาในระบบหลัก';
+    _pullBox.dataset.loaded='1';
+  }catch(e){log.textContent='ผิดพลาด: '+e.message;}
+};
+document.getElementById('pullCancel').onclick=()=>{_pullBox.style.display='none';};
+document.getElementById('pullGo').onclick=async()=>{
+  const subId=document.getElementById('pullSubject').value,roomId=document.getElementById('pullRoom').value;
+  const log=document.getElementById('pullLog');
+  if(!subId||!roomId){log.textContent='เลือกวิชาและห้องก่อน';return;}
+  log.textContent='กำลังดึง...';
+  try{const r=await fetch(window.location.pathname+'/pull-preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({subject_id:+subId,classroom_id:+roomId})});
+    const j=await r.json();
+    if(!j.ok){log.textContent=j.error||'ดึงไม่สำเร็จ';return;}
+    let filled=0,matched=0;
+    rows.forEach(r0=>{const v=j.values[String(r0.sid).trim()];if(v){matched++;['mid','final','um01','um02'].forEach(k=>{if(v[k]!=null){r0[k]=v[k];filled++;}});}});
+    render();
+    log.innerHTML=matched?('<span class="text-success">✓ ดึงมา '+matched+' คน (เติม '+filled+' ช่อง) — ตรวจแล้วกด “บันทึกลงฐานข้อมูล”</span>'):'จับคู่นักเรียนไม่ได้ (student_no ไม่ตรงกับ sid) — เช็ครหัสนักเรียน';
+  }catch(e){log.textContent='ผิดพลาด: '+e.message;}
 };
 render();
 </script>
