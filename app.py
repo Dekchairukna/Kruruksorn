@@ -8227,6 +8227,7 @@ def ensure_schema_columns():
             add_column('attendance', 'substitute_for_teacher_id', 'INTEGER')
             add_column('grade_setting', 'classwork_weight', 'FLOAT DEFAULT 10')
             add_column('classroom_activity', 'target_scope', "VARCHAR(30) DEFAULT 'classroom'")
+            add_column('accdb_subjects', 'password', "VARCHAR(255) DEFAULT ''")
             conn.commit()
             return
 
@@ -8275,6 +8276,7 @@ def ensure_schema_columns():
         add_column('attendance', 'substitute_for_teacher_id', 'INTEGER', 'INTEGER')
         add_column('grade_setting', 'classwork_weight', 'FLOAT DEFAULT 10', 'DOUBLE PRECISION DEFAULT 10')
         add_column('classroom_activity', 'target_scope', "VARCHAR(30) DEFAULT 'classroom'", "VARCHAR(30) DEFAULT 'classroom'")
+        add_column('accdb_subjects', 'password', "VARCHAR(255) DEFAULT ''", "VARCHAR(255) DEFAULT ''")
         conn.commit()
 
 def sync_schedule_teacher_links():
@@ -8319,6 +8321,7 @@ class AccdbSubject(db.Model):
     sig = db.Column(db.String(40), default='')
     term = db.Column(db.String(10), default='')
     year = db.Column(db.String(10), default='')
+    password = db.Column(db.String(255), default='')
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 class AccdbRow(db.Model):
@@ -8404,7 +8407,8 @@ def accdb_seed():
             continue
         gs = AccdbSubject(owner_id=current_user.id, code=s['code'], title=s.get('title',''),
                           level=s.get('level',''), credit=str(s.get('credit','')), filename=s.get('filename',''),
-                          sig=s.get('sig',''), term=str(seed.get('term','')), year=str(seed.get('year','')))
+                          sig=s.get('sig',''), term=str(seed.get('term','')), year=str(seed.get('year','')),
+                          password=seed.get('pwmap',{}).get(str(s.get('sig') or '').strip(),''))
         db.session.add(gs); db.session.flush()
         for st in s['students']:
             db.session.add(AccdbRow(subject_id=gs.id, sid=st['sid'], prefix=st.get('prefix',''),
@@ -8413,6 +8417,64 @@ def accdb_seed():
     db.session.commit()
     flash('นำเข้ารายชื่อตั้งต้นเรียบร้อย', 'success')
     return redirect(url_for('accdb_home'))
+
+@app.route('/accdb/upload-import', methods=['POST'])
+@login_required
+def accdb_upload_import():
+    f = request.files.get('accdb_file')
+    if not f or not (f.filename or '').lower().endswith('.accdb'):
+        flash('กรุณาเลือกไฟล์ .accdb', 'danger'); return redirect(url_for('accdb_home'))
+    pw = (request.form.get('password') or '').strip()
+    if not pw:
+        flash('กรุณากรอกรหัสไฟล์ .accdb', 'danger'); return redirect(url_for('accdb_home'))
+    code = (request.form.get('code') or '').strip()
+    title = (request.form.get('title') or '').strip()
+    level = (request.form.get('level') or '').strip()
+    name = os.path.basename(f.filename)
+    tmpdir = _accdb_tmp.mkdtemp(prefix='accdb_imp_')
+    in_path = os.path.join(tmpdir, secure_filename(name) or 'data.accdb')
+    f.save(in_path)
+    try:
+        res = _accdb_sp.run(['java','-jar',_ACCDB_JAR,'read',in_path,pw],
+                            capture_output=True, text=True, timeout=120)
+    except Exception:
+        app.logger.exception('ACCDB read failed')
+        flash('เรียกเอนจินอ่านไฟล์ไม่สำเร็จ กรุณาตรวจสถานะเอนจินแล้วลองใหม่', 'danger')
+        return redirect(url_for('accdb_home'))
+    combined = (res.stderr or '') + (res.stdout or '')
+    if res.returncode != 0 or '"ok":true' not in (res.stdout or ''):
+        if 'InvalidCredentialsException' in combined:
+            flash('รหัสไฟล์ไม่ถูกต้อง กรุณากรอกรหัสไฟล์ .accdb ให้ถูก', 'danger')
+        else:
+            detail = _accdb_engine_error(res)
+            flash('อ่านไฟล์ไม่สำเร็จ%s' % ((': ' + detail) if detail else ''), 'danger')
+        return redirect(url_for('accdb_home'))
+    students = []
+    for line in reversed((res.stdout or '').splitlines()):
+        try:
+            payload = _accdb_json.loads(line)
+        except Exception:
+            continue
+        if isinstance(payload, dict) and payload.get('students') is not None:
+            students = payload['students']; break
+    if not students:
+        flash('เปิดไฟล์ได้แต่ไม่พบรายชื่อนักเรียน (ตาราง STUDENTS ว่างหรือรูปแบบไฟล์ต่างจาก BookMark)', 'danger')
+        return redirect(url_for('accdb_home'))
+    sig = ''.join(ch for ch in name if '0' <= ch <= '9')
+    if not code:
+        code = (os.path.splitext(name)[0] or name)[:40]
+    if not title:
+        title = os.path.splitext(name)[0][:200]
+    gs = AccdbSubject(owner_id=current_user.id, code=code[:40], title=title, level=level,
+                      credit='', filename=name, sig=sig, term='', year='', password=pw)
+    db.session.add(gs); db.session.flush()
+    for st in students:
+        db.session.add(AccdbRow(subject_id=gs.id, sid=str(st.get('id','')), prefix=st.get('prefix',''),
+                                first=st.get('fn',''), last=st.get('ln',''),
+                                room=str(st.get('room','')), no=str(st.get('no',''))))
+    db.session.commit()
+    flash('นำเข้าไฟล์ %s สำเร็จ (นักเรียน %d คน) — รหัสไฟล์ถูกจำไว้แล้ว' % (name, len(students)), 'success')
+    return redirect(url_for('accdb_subject', sid=gs.id))
 
 @app.route('/accdb/reset-token', methods=['POST'])
 @login_required
@@ -8578,6 +8640,9 @@ from flask import send_file as _accdb_send_file
 _ACCDB_JAR = os.path.join(BASE_DIR, 'accdbtool.jar')
 
 def _accdb_pw_for(sub):
+    stored = (getattr(sub, 'password', '') or '').strip()
+    if stored:
+        return stored
     seed = _accdb_seed_data()
     pm = seed.get('pwmap', {})
     # Prefer the value stored with the subject, but support records imported

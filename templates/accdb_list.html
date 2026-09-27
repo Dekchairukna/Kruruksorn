@@ -17,6 +17,25 @@
 <div class="acc-card">
   <p style="margin:0;color:#5d6a7e">คีย์คะแนนที่นี่ครั้งเดียว ระบบเก็บลงฐานข้อมูลถาวร · ตัวช่วยในเครื่อง (Windows) ดึงคะแนนไปเขียนลงไฟล์ BookMark .accdb ให้ ไม่ต้องคีย์ซ้ำ</p>
 </div>
+<div class="acc-card">
+  <h3 style="margin-top:0">➕ เริ่มจากไฟล์ .accdb ของคุณ (ครูทุกคนใช้ได้)</h3>
+  <p style="color:#5d6a7e">อัปโหลดไฟล์ BookMark .accdb + ใส่รหัสไฟล์ → ระบบเปิดไฟล์ อ่านรายชื่อนักเรียน สร้างวิชาให้อัตโนมัติ แล้ว<b>จำรหัสไฟล์ไว้</b> (เขียนกลับได้เลยไม่ต้องกรอกซ้ำ)</p>
+  <form method="post" action="{{ url_for('accdb_upload_import') }}" enctype="multipart/form-data">
+    <input class="acc-inp" type="file" name="accdb_file" accept=".accdb" required style="margin-bottom:8px">
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
+      <input class="acc-inp" id="imp-pw" type="password" name="password" placeholder="รหัสไฟล์ .accdb" required style="width:220px">
+      <label style="display:flex;gap:5px;align-items:center;margin:0">
+        <input type="checkbox" onchange="document.getElementById('imp-pw').type=this.checked?'text':'password'"> แสดงรหัส
+      </label>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+      <input class="acc-inp" type="text" name="code" placeholder="รหัสวิชา (เว้นว่าง=ใช้ชื่อไฟล์)" style="width:220px">
+      <input class="acc-inp" type="text" name="title" placeholder="ชื่อวิชา (ไม่บังคับ)" style="width:240px">
+      <input class="acc-inp" type="text" name="level" placeholder="ชั้น เช่น ม.1 (ไม่บังคับ)" style="width:170px">
+    </div>
+    <button class="acc-btn" type="submit">⬆️ อัปโหลด + สร้างวิชา</button>
+  </form>
+</div>
 {% if not has_data %}
 <div class="acc-card" style="text-align:center">
   <p>ยังไม่มีข้อมูล — นำเข้ารายชื่อนักเรียนตั้งต้น {{ seed.subjects|length }} วิชา ({{ seed.teacher }})</p>
