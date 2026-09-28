@@ -1,0 +1,23 @@
+{% extends 'base.html' %}
+{% block content %}
+<style>
+.es-wrap{max-width:960px;margin:auto}.es-head{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:14px}.es-card{background:#fff;border:1px solid #dbe4ea;border-radius:16px;padding:18px}.es-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.es-grid .wide{grid-column:1/-1}.es-card label{font-weight:700}.es-card input,.es-card select,.es-card textarea{width:100%;box-sizing:border-box;border:1px solid #cbd5df;border-radius:9px;padding:9px;font-family:inherit}.es-card textarea{min-height:110px;resize:vertical}.es-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}@media(max-width:700px){.es-grid{grid-template-columns:1fr}.es-grid .wide{grid-column:auto}}
+</style>
+<div class="es-wrap">
+  <div class="es-head"><div><h1>{{ report_types[report_type] }}</h1><p class="muted">{{ pair.subject.name }} · {{ pair.classroom.name }} · {{ semester.name if semester else 'ภาคเรียนปัจจุบัน' }}</p></div><a class="btn secondary" href="{{ url_for('endterm_dashboard') }}">กลับ</a></div>
+  <div class="es-card">
+    <form method="post">
+      <input type="hidden" name="pair_id" value="{{ pair.id }}"><input type="hidden" name="report_type" value="{{ report_type }}">
+      <div class="es-grid">
+        <label class="wide">ชื่อเรื่อง<input name="title" value="{{ record.title if record else '' }}" placeholder="ชื่อสื่อ หัวข้อวิจัย ประเด็น PLC หรือชื่อผลงาน"></label>
+        <label class="wide">วัตถุประสงค์<textarea name="objective">{{ record.objective if record else '' }}</textarea></label>
+        <label class="wide">วิธีดำเนินงานและกิจกรรม<textarea name="activity">{{ record.activity if record else '' }}</textarea></label>
+        <label class="wide">ผลการดำเนินงาน<textarea name="result">{{ record.result if record else '' }}</textarea></label>
+        <label>สรุปและสะท้อนผล<textarea name="reflection">{{ record.reflection if record else '' }}</textarea></label>
+        <label>หลักฐานประกอบ<textarea name="evidence" placeholder="ชื่อไฟล์ รูปภาพ ลิงก์ หรือเอกสารแนบ">{{ record.evidence if record else '' }}</textarea></label>
+      </div>
+      <div class="es-actions"><button class="btn" type="submit">บันทึกข้อมูล</button>{% if record %}<a class="btn secondary" href="{{ url_for('endterm_supplement_docx',record_id=record.id) }}">ดาวน์โหลด Word</a>{% endif %}</div>
+    </form>
+  </div>
+</div>
+{% endblock %}

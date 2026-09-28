@@ -1072,6 +1072,26 @@ class GradeSetting(db.Model):
     final_weight = db.Column(db.Float, default=15)
     subject = db.relationship('Subject')
 
+
+class EndTermReportData(db.Model):
+    __tablename__ = 'endterm_report_data'
+    id = db.Column(db.Integer, primary_key=True)
+    owner_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True)
+    semester_id = db.Column(db.Integer, db.ForeignKey('semester.id'), nullable=True, index=True)
+    subject_id = db.Column(db.Integer, db.ForeignKey('subject.id'), nullable=False, index=True)
+    classroom_id = db.Column(db.Integer, db.ForeignKey('classroom.id'), nullable=False, index=True)
+    report_type = db.Column(db.String(40), nullable=False, index=True)
+    title = db.Column(db.String(500), default='')
+    objective = db.Column(db.Text, default='')
+    activity = db.Column(db.Text, default='')
+    result = db.Column(db.Text, default='')
+    reflection = db.Column(db.Text, default='')
+    evidence = db.Column(db.Text, default='')
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    subject = db.relationship('Subject')
+    classroom = db.relationship('Classroom')
+    semester = db.relationship('Semester')
+
 class ManualScore(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     subject_id = db.Column(db.Integer, db.ForeignKey('subject.id'), nullable=False)
@@ -6877,6 +6897,317 @@ def pp5_export(subject_id, classroom_id):
     path = os.path.join(UPLOAD_DIR, f'pp5_{subject_id}_{classroom_id}.xlsx')
     wb.save(path)
     return send_file(path, as_attachment=True, download_name=f'pp5_{subject.name}_{room.name}.xlsx')
+
+
+# -----------------------------
+# End-of-term report center
+# -----------------------------
+_ENDTERM_GRADES = ['4', '3.5', '3', '2.5', '2', '1.5', '1', '0', 'ร', 'มส']
+_ENDTERM_REPORT_TYPES = {
+    'media': 'รายงานการใช้สื่อการเรียนการสอน',
+    'research': 'รายงานการวิจัยในชั้นเรียน',
+    'plc': 'รายงานผลการจัดกิจกรรมชุมชนการเรียนรู้ทางวิชาชีพ',
+    'plc_plan': 'รายงานวิเคราะห์เพื่อออกแบบแผนการจัดการเรียนรู้',
+    'best_practice': 'รายงานวิธีการปฏิบัติที่เป็นเลิศ',
+}
+
+
+def endterm_pair_rows():
+    rows = []
+    for pair in phase1_subject_room_pairs():
+        status = phase1_pair_status(pair)
+        units = Unit.query.filter_by(subject_id=pair.subject_id).all()
+        unit_ids = [u.id for u in units]
+        lessons = Lesson.query.filter(Lesson.unit_id.in_(unit_ids)).all() if unit_ids else []
+        lesson_ids = [x.id for x in lessons]
+        media_count = sum(1 for x in lessons if (x.media_url or '').strip())
+        if lesson_ids:
+            media_count += LessonFile.query.filter(LessonFile.lesson_id.in_(lesson_ids)).count()
+        quiz_count = Quiz.query.filter(Quiz.lesson_id.in_(lesson_ids)).count() if lesson_ids else 0
+        rows.append({
+            'pair': pair, **status,
+            'unit_count': len(units), 'lesson_count': len(lessons),
+            'media_count': media_count, 'quiz_count': quiz_count,
+            'grade_ready': bool(status['student_count']) and status['graded_count'] == status['student_count'],
+            'attendance_ready': status['attendance_slots'] > 0,
+            'exam_ready': quiz_count > 0,
+        })
+    return rows
+
+
+def endterm_grade_analysis(pair):
+    pp5_rows = build_pp5_rows(pair.subject, pair.classroom)
+    counts = {g: 0 for g in _ENDTERM_GRADES}
+    for row in pp5_rows:
+        grade = str(row.get('grade') or '')
+        if grade in counts:
+            counts[grade] += 1
+    total = len(pp5_rows)
+    good = counts['4'] + counts['3.5'] + counts['3']
+    return {
+        'pair': pair, 'rows': pp5_rows, 'counts': counts, 'total': total,
+        'good': good, 'good_percent': round(good * 100 / total, 2) if total else 0,
+        'average': round(sum(float(x.get('total') or 0) for x in pp5_rows) / total, 2) if total else 0,
+    }
+
+
+def _endterm_docx(title, intro, analyses=None):
+    from docx import Document as WordDocument
+    from docx.enum.section import WD_ORIENT
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.shared import Inches, Pt
+    from docx.oxml.ns import qn
+    document = WordDocument()
+    section = document.sections[0]
+    section.orientation = WD_ORIENT.LANDSCAPE
+    section.page_width, section.page_height = section.page_height, section.page_width
+    section.left_margin = Inches(.45); section.right_margin = Inches(.45)
+    section.top_margin = Inches(.45); section.bottom_margin = Inches(.45)
+    normal = document.styles['Normal']
+    normal.font.name = 'Arial Unicode MS'; normal.font.size = Pt(12)
+    normal._element.rPr.rFonts.set(qn('w:eastAsia'), 'Arial Unicode MS')
+    heading = document.add_paragraph()
+    heading.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    run = heading.add_run(title); run.bold = True; run.font.size = Pt(22)
+    school = get_school_setting()
+    semester = Semester.query.filter_by(is_active=True).first()
+    meta = document.add_paragraph()
+    meta.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    meta.add_run('%s\n%s\n%s' % (
+        school.school_name or 'โรงเรียนเปรมติณสูลานนท์',
+        current_user.full_name,
+        semester.name if semester else 'ภาคเรียนปัจจุบัน'))
+    document.add_paragraph(intro)
+    if analyses:
+        table = document.add_table(rows=1, cols=17)
+        table.style = 'Table Grid'
+        table.autofit = True
+        headers = ['รหัสวิชา','ห้อง','นักเรียน'] + _ENDTERM_GRADES + ['3 ขึ้นไป','ร้อยละ','เฉลี่ย','สถานะ']
+        for i, value in enumerate(headers):
+            table.cell(0, i).text = value
+        for analysis in analyses:
+            pair = analysis['pair']
+            code = extract_subject_code(pair.subject.name) or pair.subject.name
+            values = [code, pair.classroom.name, analysis['total']]
+            values += [analysis['counts'][g] for g in _ENDTERM_GRADES]
+            values += [analysis['good'], analysis['good_percent'], analysis['average'],
+                       'ครบ' if analysis['total'] else 'ไม่มีข้อมูล']
+            cells = table.add_row().cells
+            for i, value in enumerate(values):
+                cells[i].text = str(value)
+        for row_index, row in enumerate(table.rows):
+            for cell in row.cells:
+                for paragraph in cell.paragraphs:
+                    paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    for run in paragraph.runs:
+                        run.font.name = 'Arial Unicode MS'; run.font.size = Pt(8)
+                        run._element.rPr.rFonts.set(qn('w:eastAsia'), 'Arial Unicode MS')
+                        if row_index == 0: run.bold = True
+    bio = BytesIO()
+    document.save(bio); bio.seek(0)
+    return bio
+
+
+def _endterm_narrative_docx(record):
+    from docx import Document as WordDocument
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.shared import Pt
+    from docx.oxml.ns import qn
+    document = WordDocument()
+    normal = document.styles['Normal']
+    normal.font.name = 'Arial Unicode MS'; normal.font.size = Pt(14)
+    normal._element.rPr.rFonts.set(qn('w:eastAsia'), 'Arial Unicode MS')
+    title = _ENDTERM_REPORT_TYPES.get(record.report_type, 'รายงานงานปิดภาคเรียน')
+    p = document.add_paragraph(); p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    run = p.add_run(title); run.bold = True; run.font.size = Pt(20)
+    p = document.add_paragraph(); p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p.add_run('%s\n%s ห้อง %s\n%s' % (
+        current_user.full_name, record.subject.name, record.classroom.name,
+        record.semester.name if record.semester else 'ภาคเรียนปัจจุบัน'))
+    analysis_pair = SubjectClassroom.query.filter_by(
+        subject_id=record.subject_id, classroom_id=record.classroom_id).first()
+    analysis = endterm_grade_analysis(analysis_pair) if analysis_pair else None
+    sections = [
+        ('ชื่อเรื่อง', record.title), ('วัตถุประสงค์', record.objective),
+        ('วิธีดำเนินงานและกิจกรรม', record.activity), ('ผลการดำเนินงาน', record.result),
+        ('สรุปและสะท้อนผล', record.reflection), ('หลักฐานประกอบ', record.evidence),
+    ]
+    if analysis:
+        sections.insert(3, ('ข้อมูลผลสัมฤทธิ์จากครูรักสอน',
+                            'นักเรียน %d คน คะแนนเฉลี่ย %.2f นักเรียนที่ได้ระดับ 3 ขึ้นไป %d คน คิดเป็นร้อยละ %.2f' %
+                            (analysis['total'], analysis['average'], analysis['good'], analysis['good_percent'])))
+    for heading, content in sections:
+        h = document.add_paragraph(); r = h.add_run(heading); r.bold = True
+        document.add_paragraph(content or 'ยังไม่ได้บันทึกข้อมูล')
+    document.add_paragraph('\nลงชื่อ........................................................ ผู้รายงาน/ผู้สอน')
+    document.add_paragraph('(%s)' % current_user.full_name)
+    bio = BytesIO(); document.save(bio); bio.seek(0)
+    return bio
+
+
+def _endterm_exam_workbook(pair):
+    wb = Workbook(); ws = wb.active; ws.title = 'วิเคราะห์ข้อสอบ'
+    ws.append(['รายงานการวิเคราะห์ข้อสอบ', pair.subject.name, pair.classroom.name])
+    ws.append(['ข้อ', 'คำถาม', 'จำนวนตอบ', 'ตอบถูก', 'ความยาก (p)', 'แปลผล', 'สถานะ'])
+    assignments = Assignment.query.filter_by(subject_id=pair.subject_id, classroom_id=pair.classroom_id).all()
+    assignment_ids = [a.id for a in assignments]
+    lesson_ids = list({a.lesson_id for a in assignments if a.lesson_id})
+    quizzes = Quiz.query.filter(Quiz.lesson_id.in_(lesson_ids)).all() if lesson_ids else []
+    quiz_ids = [q.id for q in quizzes]
+    questions = QuizQuestion.query.filter(QuizQuestion.quiz_id.in_(quiz_ids)).order_by(QuizQuestion.id).all() if quiz_ids else []
+    for index, question in enumerate(questions, 1):
+        answers = QuizAnswer.query.filter(
+            QuizAnswer.question_id == question.id,
+            QuizAnswer.assignment_id.in_(assignment_ids or [-1])
+        ).all()
+        attempted = len(answers); correct = sum(1 for x in answers if x.is_correct)
+        p = round(correct / attempted, 3) if attempted else None
+        if p is None: interpretation = 'ไม่มีคำตอบ'
+        elif p < .2: interpretation = 'ยากมาก'
+        elif p < .4: interpretation = 'ค่อนข้างยาก'
+        elif p <= .8: interpretation = 'ปานกลาง'
+        elif p <= .9: interpretation = 'ค่อนข้างง่าย'
+        else: interpretation = 'ง่ายมาก'
+        status = 'ใช้ได้' if p is not None and .2 <= p <= .8 else 'ควรตรวจสอบ'
+        ws.append([index, question.question_text, attempted, correct, p, interpretation, status])
+    ws.append([])
+    ws.append(['หมายเหตุ', 'ค่า p คำนวณจากสัดส่วนผู้ตอบถูก ระบบจะเพิ่มค่าอำนาจจำแนกเมื่อมีข้อมูลคำตอบเพียงพอ'])
+    for col in ws.columns:
+        max_len = max(len(str(c.value or '')) for c in col)
+        ws.column_dimensions[col[0].column_letter].width = min(max(max_len + 2, 10), 55)
+    bio = BytesIO(); wb.save(bio); bio.seek(0)
+    return bio
+
+
+@app.route('/endterm')
+@login_required
+@role_required('teacher', 'admin')
+def endterm_dashboard():
+    rows = endterm_pair_rows()
+    semester = Semester.query.filter_by(is_active=True).first()
+    totals = {
+        'pairs': len(rows),
+        'grade_ready': sum(1 for r in rows if r['grade_ready']),
+        'attendance_ready': sum(1 for r in rows if r['attendance_ready']),
+        'exam_ready': sum(1 for r in rows if r['exam_ready']),
+    }
+    return render_template('endterm_dashboard.html', rows=rows, totals=totals,
+                           semester=semester, school=get_school_setting(),
+                           report_types=_ENDTERM_REPORT_TYPES)
+
+
+@app.route('/endterm/supplement', methods=['GET', 'POST'])
+@login_required
+@role_required('teacher', 'admin')
+def endterm_supplement():
+    pair_id = request.values.get('pair_id', type=int)
+    report_type = request.values.get('report_type', 'media')
+    if report_type not in _ENDTERM_REPORT_TYPES:
+        _accdb_abort(404)
+    pairs = phase1_subject_room_pairs()
+    pair = next((x for x in pairs if x.id == pair_id), None) if pair_id else (pairs[0] if pairs else None)
+    if not pair:
+        flash('ยังไม่มีรายวิชาและห้องเรียนสำหรับจัดทำรายงาน', 'danger')
+        return redirect(url_for('endterm_dashboard'))
+    semester = Semester.query.filter_by(is_active=True).first()
+    record = EndTermReportData.query.filter_by(
+        owner_id=current_user.id, semester_id=semester.id if semester else None,
+        subject_id=pair.subject_id, classroom_id=pair.classroom_id,
+        report_type=report_type).first()
+    if request.method == 'POST':
+        if not record:
+            record = EndTermReportData(
+                owner_id=current_user.id, semester_id=semester.id if semester else None,
+                subject_id=pair.subject_id, classroom_id=pair.classroom_id,
+                report_type=report_type)
+            db.session.add(record)
+        for field in ('title', 'objective', 'activity', 'result', 'reflection', 'evidence'):
+            setattr(record, field, (request.form.get(field) or '').strip())
+        db.session.commit()
+        flash('บันทึกข้อมูลรายงานแล้ว', 'success')
+        return redirect(url_for('endterm_supplement', pair_id=pair.id,
+                                report_type=report_type))
+    return render_template('endterm_supplement.html', pairs=pairs, pair=pair,
+                           report_type=report_type, report_types=_ENDTERM_REPORT_TYPES,
+                           record=record, semester=semester)
+
+
+@app.route('/endterm/supplement/<int:record_id>.docx')
+@login_required
+@role_required('teacher', 'admin')
+def endterm_supplement_docx(record_id):
+    record = EndTermReportData.query.get_or_404(record_id)
+    if record.owner_id != current_user.id and current_user.role != 'admin':
+        return deny_redirect('endterm_dashboard')
+    bio = _endterm_narrative_docx(record)
+    filename = '%s_%s_%s.docx' % (record.report_type, record.subject_id, record.classroom_id)
+    return send_file(bio, as_attachment=True, download_name=filename,
+                     mimetype='application/vnd.openxmlformats-officedocument.wordprocessingml.document')
+
+
+@app.route('/endterm/pp05-summary.docx')
+@login_required
+@role_required('teacher', 'admin')
+def endterm_pp05_docx():
+    analyses = [endterm_grade_analysis(p) for p in phase1_subject_room_pairs()]
+    bio = _endterm_docx('แบบบันทึกผลการเรียนประจำวิชา ปถ.05',
+                        'สรุปผลการเรียนของรายวิชาและห้องเรียนที่รับผิดชอบจากข้อมูลในระบบครูรักสอน', analyses)
+    return send_file(bio, as_attachment=True, download_name='endterm_pp05_summary.docx',
+                     mimetype='application/vnd.openxmlformats-officedocument.wordprocessingml.document')
+
+
+@app.route('/endterm/bookmark-summary.docx')
+@login_required
+@role_required('teacher', 'admin')
+def endterm_bookmark_docx():
+    analyses = [endterm_grade_analysis(p) for p in phase1_subject_room_pairs()]
+    bio = _endterm_docx('รายงานผลสัมฤทธิ์ทางการเรียนโดยใช้โปรแกรม Bookmark',
+                        'ข้าพเจ้าได้ดำเนินการจัดทำข้อมูลผลการเรียนและไฟล์สมุดคะแนนประจำภาคเรียนเรียบร้อยแล้ว', analyses)
+    return send_file(bio, as_attachment=True, download_name='endterm_bookmark_summary.docx',
+                     mimetype='application/vnd.openxmlformats-officedocument.wordprocessingml.document')
+
+
+@app.route('/endterm/exam-analysis/<int:subject_id>/<int:classroom_id>.xlsx')
+@login_required
+@role_required('teacher', 'admin')
+def endterm_exam_analysis(subject_id, classroom_id):
+    pair = SubjectClassroom.query.filter_by(subject_id=subject_id, classroom_id=classroom_id).first_or_404()
+    if not owns_subject(pair.subject) or not owns_classroom(pair.classroom):
+        return deny_redirect('endterm_dashboard')
+    bio = _endterm_exam_workbook(pair)
+    return send_file(bio, as_attachment=True,
+                     download_name='exam_analysis_%s_%s.xlsx' % (subject_id, classroom_id),
+                     mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
+
+@app.route('/endterm/package.zip')
+@login_required
+@role_required('teacher', 'admin')
+def endterm_package():
+    pairs = phase1_subject_room_pairs()
+    analyses = [endterm_grade_analysis(p) for p in pairs]
+    semester = Semester.query.filter_by(is_active=True).first()
+    supplements = EndTermReportData.query.filter_by(
+        owner_id=current_user.id,
+        semester_id=semester.id if semester else None).order_by(EndTermReportData.report_type).all()
+    out = BytesIO()
+    with zipfile.ZipFile(out, 'w', zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr('01_ปถ05_สรุป.docx', _endterm_docx(
+            'แบบบันทึกผลการเรียนประจำวิชา ปถ.05',
+            'สรุปผลการเรียนจากข้อมูลในระบบครูรักสอน', analyses).getvalue())
+        archive.writestr('02_ผลสัมฤทธิ์_Bookmark.docx', _endterm_docx(
+            'รายงานผลสัมฤทธิ์ทางการเรียนโดยใช้โปรแกรม Bookmark',
+            'สรุปผลสัมฤทธิ์และรายการวิชาที่รับผิดชอบ', analyses).getvalue())
+        for pair in pairs:
+            name = '03_วิเคราะห์ข้อสอบ_%s_%s.xlsx' % (pair.subject_id, pair.classroom_id)
+            archive.writestr(name, _endterm_exam_workbook(pair).getvalue())
+        for index, record in enumerate(supplements, 1):
+            label = _ENDTERM_REPORT_TYPES.get(record.report_type, record.report_type)
+            name = '04_%02d_%s_%s_%s.docx' % (
+                index, label, record.subject_id, record.classroom_id)
+            archive.writestr(name, _endterm_narrative_docx(record).getvalue())
+    out.seek(0)
+    return send_file(out, as_attachment=True, download_name='endterm_reports.zip', mimetype='application/zip')
 
 # -----------------------------
 # Phase 2: ปพ.6 / ปพ.7 / Parent portal / LINE absence

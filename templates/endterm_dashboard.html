@@ -1,0 +1,55 @@
+{% extends 'base.html' %}
+{% block content %}
+<style>
+.et-hero{background:linear-gradient(135deg,#0f766e,#155e75);color:#fff;border-radius:20px;padding:24px;margin-bottom:18px;display:flex;justify-content:space-between;gap:16px;align-items:center}.et-hero h1{margin:0 0 6px}.et-hero p{margin:0;opacity:.9}.et-actions{display:flex;gap:8px;flex-wrap:wrap}.et-actions .btn{background:#fff;color:#0f5f59}.et-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin-bottom:18px}.et-stat{background:#fff;border:1px solid #dbe4ea;border-radius:15px;padding:16px}.et-stat b{display:block;font-size:1.8rem;color:#0f6e63}.et-card{background:#fff;border:1px solid #dbe4ea;border-radius:15px;padding:18px;margin-bottom:16px}.et-table{width:100%;border-collapse:collapse}.et-table th,.et-table td{padding:9px;border-bottom:1px solid #e8edf1;text-align:left;vertical-align:middle}.et-table th{background:#eef7f6}.et-ok{color:#087f5b;font-weight:700}.et-wait{color:#b26a00;font-weight:700}.et-tag{display:inline-block;border-radius:999px;padding:3px 8px;background:#edf2f7;font-size:.82rem}.et-jobs{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:10px}.et-job{border:1px solid #dde5eb;border-radius:12px;padding:13px}.et-job h3{margin:0 0 5px;font-size:1rem}.et-job p{margin:0;color:#667085;font-size:.9rem}
+</style>
+<div class="et-hero">
+  <div><h1>งานปิดภาคเรียน</h1><p>{{ semester.name if semester else 'ภาคเรียนปัจจุบัน' }} · {{ school.school_name or 'KRURUKSORN' }}</p></div>
+  <div class="et-actions">
+    <a class="btn" href="{{ url_for('endterm_pp05_docx') }}">ดาวน์โหลด ปถ.05</a>
+    <a class="btn" href="{{ url_for('endterm_bookmark_docx') }}">รายงาน Bookmark</a>
+    <a class="btn" href="{{ url_for('endterm_package') }}">ดาวน์โหลดทั้งหมด ZIP</a>
+  </div>
+</div>
+<div class="et-grid">
+  <div class="et-stat"><span>วิชาและห้อง</span><b>{{ totals.pairs }}</b></div>
+  <div class="et-stat"><span>คะแนนครบ</span><b>{{ totals.grade_ready }}</b></div>
+  <div class="et-stat"><span>มีข้อมูลเวลาเรียน</span><b>{{ totals.attendance_ready }}</b></div>
+  <div class="et-stat"><span>มีข้อสอบในระบบ</span><b>{{ totals.exam_ready }}</b></div>
+</div>
+<section class="et-card">
+  <h2>ความพร้อมรายวิชา</h2>
+  <div class="table-wrap"><table class="et-table">
+    <tr><th>รายวิชา</th><th>ห้อง</th><th>นักเรียน</th><th>คะแนน</th><th>เวลาเรียน</th><th>แผนและสื่อ</th><th>ข้อสอบ</th><th>เอกสาร</th></tr>
+    {% for r in rows %}{% set p=r.pair %}
+    <tr>
+      <td><b>{{ p.subject.name }}</b></td><td>{{ p.classroom.name }}</td><td>{{ r.student_count }}</td>
+      <td class="{{ 'et-ok' if r.grade_ready else 'et-wait' }}">{{ r.graded_count }}/{{ r.student_count }}</td>
+      <td class="{{ 'et-ok' if r.attendance_ready else 'et-wait' }}">{{ r.attendance_slots }} ครั้ง</td>
+      <td><span class="et-tag">{{ r.unit_count }} หน่วย</span> <span class="et-tag">{{ r.lesson_count }} แผน</span> <span class="et-tag">{{ r.media_count }} สื่อ</span></td>
+      <td class="{{ 'et-ok' if r.exam_ready else 'et-wait' }}">{{ r.quiz_count }} ชุด</td>
+      <td>
+        <a class="btn small secondary" target="_blank" href="{{ url_for('pp5_print',subject_id=p.subject_id,classroom_id=p.classroom_id) }}">ปพ.5</a>
+        <a class="btn small secondary" href="{{ url_for('endterm_exam_analysis',subject_id=p.subject_id,classroom_id=p.classroom_id) }}">วิเคราะห์ข้อสอบ</a>
+      </td>
+    </tr>
+    {% else %}<tr><td colspan="8">ยังไม่มีรายวิชาที่ผูกกับห้องเรียน</td></tr>{% endfor %}
+  </table></div>
+</section>
+<section class="et-card">
+  <h2>งานที่ต้องเพิ่มข้อมูลประกอบ</h2>
+  {% if rows %}
+  <form method="get" action="{{ url_for('endterm_supplement') }}" style="display:flex;gap:8px;flex-wrap:wrap;align-items:end;margin-bottom:14px">
+    <label>รายวิชาและห้อง<br><select name="pair_id" required>{% for r in rows %}<option value="{{ r.pair.id }}">{{ r.pair.subject.name }} · {{ r.pair.classroom.name }}</option>{% endfor %}</select></label>
+    <label>ประเภทรายงาน<br><select name="report_type" required>{% for key,label in report_types.items() %}<option value="{{ key }}">{{ label }}</option>{% endfor %}</select></label>
+    <button class="btn" type="submit">เปิดแบบกรอกข้อมูล</button>
+  </form>
+  {% endif %}
+  <div class="et-jobs">
+    <div class="et-job"><h3>รายงานการใช้สื่อ</h3><p>ดึงรายวิชา แผน และไฟล์สื่อได้แล้ว ต้องเพิ่มผลประเมินความพึงพอใจและภาพกิจกรรม</p></div>
+    <div class="et-job"><h3>วิจัยในชั้นเรียน</h3><p>ต้องเพิ่มหัวข้อวิจัย คะแนนก่อนเรียน–หลังเรียน เครื่องมือ และผลความพึงพอใจ</p></div>
+    <div class="et-job"><h3>PLC และ PLC PLAN</h3><p>ดึงหน่วย แผน ตัวชี้วัด และงานได้ ต้องเพิ่มสมาชิก วันประชุม ปัญหา แนวทางแก้ และผลสะท้อน</p></div>
+    <div class="et-job"><h3>Best Practice</h3><p>ดึงข้อมูลพื้นฐานและผลสัมฤทธิ์ได้ ต้องเพิ่มกระบวนการ PDCA จุดเด่น ปัจจัยสำเร็จ และหลักฐาน</p></div>
+  </div>
+</section>
+{% endblock %}
