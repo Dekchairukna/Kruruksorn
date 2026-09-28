@@ -9202,6 +9202,78 @@ def accdb_engine_status():
 # ==================== จบโมดูลสมุดคะแนน .accdb ====================
 
 
+# ==================== โมดูลวิเคราะห์ข้อสอบ (Item Analysis) ====================
+class AnalysisSheet(db.Model):
+    __tablename__ = 'analysis_sheets'
+    id = db.Column(db.Integer, primary_key=True)
+    owner_id = db.Column(db.Integer, index=True, nullable=False)
+    title = db.Column(db.String(200), default='')
+    level = db.Column(db.String(40), default='')
+    criterion = db.Column(db.Float, default=50)
+    payload = db.Column(db.Text, default='')   # JSON: {key:[...], nChoices:int, students:[{name, ans:[...]}]}
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+@app.route('/analysis')
+@login_required
+def analysis_home():
+    sheets = AnalysisSheet.query.filter_by(owner_id=current_user.id).order_by(AnalysisSheet.id.desc()).all()
+    return render_template('analysis_list.html', sheets=sheets)
+
+@app.route('/analysis/new', methods=['POST'])
+@login_required
+def analysis_new():
+    title = (request.form.get('title') or 'ชุดข้อสอบใหม่').strip()
+    level = (request.form.get('level') or '').strip()
+    def _int(name, d, lo, hi):
+        try: return max(lo, min(hi, int(float(request.form.get(name) or d))))
+        except Exception: return d
+    n_items = _int('n_items', 20, 1, 200)
+    n_choices = _int('n_choices', 4, 2, 10)
+    try: crit = max(0.0, min(100.0, float(request.form.get('criterion') or 50)))
+    except Exception: crit = 50.0
+    payload = {'key': [None]*n_items, 'nChoices': n_choices, 'students': []}
+    s = AnalysisSheet(owner_id=current_user.id, title=title, level=level, criterion=crit,
+                      payload=_accdb_json.dumps(payload, ensure_ascii=False))
+    db.session.add(s); db.session.commit()
+    return redirect(url_for('analysis_sheet', sid=s.id))
+
+@app.route('/analysis/<int:sid>')
+@login_required
+def analysis_sheet(sid):
+    s = AnalysisSheet.query.get(sid)
+    if not s or s.owner_id != current_user.id:
+        _accdb_abort(404)
+    return render_template('analysis_sheet.html', sheet=s, payload_json=(s.payload or '{}'))
+
+@app.route('/analysis/<int:sid>/save', methods=['POST'])
+@login_required
+def analysis_save(sid):
+    s = AnalysisSheet.query.get(sid)
+    if not s or s.owner_id != current_user.id:
+        _accdb_abort(404)
+    body = request.get_json(force=True) or {}
+    if 'title' in body: s.title = str(body['title'] or '')[:200]
+    if 'level' in body: s.level = str(body['level'] or '')[:40]
+    if 'criterion' in body:
+        try: s.criterion = max(0.0, min(100.0, float(body['criterion'])))
+        except Exception: pass
+    if 'payload' in body and isinstance(body['payload'], dict):
+        s.payload = _accdb_json.dumps(body['payload'], ensure_ascii=False)
+    db.session.commit()
+    return _accdb_jsonify(ok=True)
+
+@app.route('/analysis/<int:sid>/delete', methods=['POST'])
+@login_required
+def analysis_delete(sid):
+    s = AnalysisSheet.query.get(sid)
+    if s and s.owner_id == current_user.id:
+        db.session.delete(s); db.session.commit()
+        flash('ลบชุดข้อสอบแล้ว', 'success')
+    return redirect(url_for('analysis_home'))
+
+# ==================== จบโมดูลวิเคราะห์ข้อสอบ ====================
+
+
 def init_db():
     db.create_all(); ensure_schema_columns(); seed(); sync_schedule_teacher_links()
 

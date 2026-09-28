@@ -1,0 +1,50 @@
+{% extends 'base.html' %}
+{% block content %}
+<style>
+.an-wrap{max-width:1000px}
+.an-card{background:#fff;border:1px solid #e2e7f0;border-radius:14px;padding:18px;margin-bottom:16px;box-shadow:0 1px 2px rgba(20,30,50,.05),0 6px 18px rgba(20,30,50,.05)}
+.an-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px}
+.an-sub{border:1px solid #e2e7f0;border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:8px}
+.an-sub .code{font-weight:700;font-size:1.05rem;color:#0a4f47}
+.an-btn{display:inline-block;background:#0f6e63;color:#fff;border:none;border-radius:9px;padding:9px 14px;font-weight:600;text-decoration:none;cursor:pointer;font-family:inherit}
+.an-btn.sm{padding:6px 10px;font-size:.85rem}
+.an-btn.ghost{background:#fff;border:1px solid #cdd5e2;color:#334}
+.an-inp{border:1px solid #cdd5e2;border-radius:9px;padding:9px 11px;font-family:inherit}
+.an-row{display:flex;gap:10px;flex-wrap:wrap;align-items:end}
+.an-f{display:flex;flex-direction:column;gap:4px;font-size:.85rem;color:#5d6a7e}
+</style>
+<div class="an-wrap">
+<h1>📊 วิเคราะห์ข้อสอบ</h1>
+<div class="an-card">
+  <p style="margin:0 0 12px;color:#5d6a7e">สร้างชุดข้อสอบ แล้ว<b>คีย์เฉลยและคำตอบนักเรียนในเว็บ</b> (หรืออัปไฟล์ Excel) ระบบคำนวณค่าความยากง่าย อำนาจจำแนก และความเชื่อมั่น (อิงกลุ่ม/อิงเกณฑ์) ให้อัตโนมัติ</p>
+  <form method="post" action="{{ url_for('analysis_new') }}" class="an-row">
+    <div class="an-f">ชื่อชุดข้อสอบ<input class="an-inp" name="title" placeholder="เช่น สังคม ม.1 กลางภาค 2/68" required style="width:260px"></div>
+    <div class="an-f">ชั้น<input class="an-inp" name="level" placeholder="ม.1" style="width:90px"></div>
+    <div class="an-f">จำนวนข้อ<input class="an-inp" name="n_items" type="number" min="1" max="200" value="20" style="width:90px"></div>
+    <div class="an-f">ตัวเลือก<input class="an-inp" name="n_choices" type="number" min="2" max="10" value="4" style="width:80px"></div>
+    <div class="an-f">เกณฑ์ผ่าน %<input class="an-inp" name="criterion" type="number" min="0" max="100" value="50" style="width:90px"></div>
+    <button class="an-btn" type="submit">➕ สร้าง + เริ่มคีย์</button>
+  </form>
+</div>
+
+{% if sheets %}
+<div class="an-card">
+  <div class="an-grid">
+    {% for s in sheets %}
+    <div class="an-sub">
+      <div><span class="code">{{ s.title }}</span><br><span style="color:#5d6a7e;font-size:.9rem">{{ s.level }} · เกณฑ์ {{ s.criterion|int }}%</span></div>
+      <div style="display:flex;gap:8px">
+        <a class="an-btn sm" href="{{ url_for('analysis_sheet', sid=s.id) }}">✏️ คีย์ / ดูผล</a>
+        <form method="post" action="{{ url_for('analysis_delete', sid=s.id) }}" onsubmit="return confirm('ลบชุดนี้?')" style="display:inline">
+          <button class="an-btn sm ghost" type="submit">ลบ</button>
+        </form>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% else %}
+<div class="an-card" style="text-align:center;color:#5d6a7e">ยังไม่มีชุดข้อสอบ — สร้างชุดแรกด้านบน</div>
+{% endif %}
+</div>
+{% endblock %}
