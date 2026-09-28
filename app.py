@@ -6912,10 +6912,39 @@ _ENDTERM_REPORT_TYPES = {
 }
 
 
+def _endterm_status_fast(pair):
+    """Cheap readiness for the end-of-term dashboard: no per-student grade calc."""
+    links = ClassroomStudent.query.filter_by(classroom_id=pair.classroom_id).all()
+    sids = [l.student_id for l in links]
+    graded = set()
+    if sids:
+        for ms in ManualScore.query.filter(ManualScore.subject_id == pair.subject_id,
+                                            ManualScore.student_id.in_(sids)).all():
+            if (ms.midterm or 0) or (ms.final or 0) or (ms.behavior or 0):
+                graded.add(ms.student_id)
+        for (sid,) in db.session.query(AssignmentStatus.student_id).join(
+                Assignment, AssignmentStatus.assignment_id == Assignment.id).filter(
+                Assignment.subject_id == pair.subject_id,
+                Assignment.classroom_id == pair.classroom_id,
+                AssignmentStatus.student_id.in_(sids)).distinct().all():
+            graded.add(sid)
+        item_ids = [x.id for x in ClassworkScoreItem.query.filter_by(
+            subject_id=pair.subject_id, classroom_id=pair.classroom_id).all()]
+        if item_ids:
+            for (sid,) in db.session.query(ClassworkScore.student_id).filter(
+                    ClassworkScore.item_id.in_(item_ids),
+                    ClassworkScore.student_id.in_(sids)).distinct().all():
+                graded.add(sid)
+    has_att = db.session.query(Attendance.id).filter_by(
+        subject_id=pair.subject_id, classroom_id=pair.classroom_id).first() is not None
+    return {'student_count': len(sids), 'graded_count': len(graded),
+            'attendance_slots': 1 if has_att else 0}
+
+
 def endterm_pair_rows():
     rows = []
     for pair in phase1_subject_room_pairs():
-        status = phase1_pair_status(pair)
+        status = _endterm_status_fast(pair)
         units = Unit.query.filter_by(subject_id=pair.subject_id).all()
         unit_ids = [u.id for u in units]
         lessons = Lesson.query.filter(Lesson.unit_id.in_(unit_ids)).all() if unit_ids else []
@@ -9262,14 +9291,24 @@ def analysis_new():
     level = (request.form.get('level') or '').strip()
     students = []
     if room:
-        for link in ClassroomStudent.query.filter_by(classroom_id=room.id).all():
+        rooms = [room]
+    elif subject:
+        rooms = [sc.classroom for sc in SubjectClassroom.query.filter_by(subject_id=subject.id).all() if sc.classroom]
+    else:
+        rooms = []
+    seen = set()
+    for rm in rooms:
+        for link in ClassroomStudent.query.filter_by(classroom_id=rm.id).all():
+            if link.student_id in seen:
+                continue
+            seen.add(link.student_id)
             stu = link.student or User.query.get(link.student_id)
             if not stu:
                 continue
             nm = (getattr(stu, 'full_name', '') or '').strip() or ((getattr(stu, 'first_name', '') + ' ' + getattr(stu, 'last_name', '')).strip())
             students.append({'name': nm, 'ans': [None]*n_items})
-        if not level:
-            level = room.name
+    if not level and rooms:
+        level = ', '.join(sorted({rm.name for rm in rooms if rm.name}))
     if not title:
         title = ((subject.name + ' ') if subject else '') + (room.name if room else 'ชุดข้อสอบใหม่')
     payload = {'key': [None]*n_items, 'nChoices': n_choices, 'students': students}
