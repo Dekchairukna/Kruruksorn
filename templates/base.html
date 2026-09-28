@@ -51,6 +51,7 @@
         <summary>🛠️ เครื่องมือ</summary>
         <a href="{{ url_for('ai_assistant') }}">✨ AI Assistant</a>
         <a href="{{ url_for('analysis_home') }}">📊 วิเคราะห์ข้อสอบ</a>
+        <a href="{{ url_for('reports_home') }}">📄 คลังเอกสาร/รายงาน</a>
         <a href="{{ url_for('calendar_events') }}">🌤️ ปฏิทิน</a>
         <a href="{{ url_for('school_settings') }}">⚙️ ตั้งค่าโรงเรียน</a>
         {% if current_user.role=='admin' %}<a href="{{ url_for('semesters') }}">🗓️ ภาคเรียน</a>{% endif %}

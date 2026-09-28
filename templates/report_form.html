@@ -1,0 +1,32 @@
+{% extends 'base.html' %}
+{% block content %}
+<style>
+.rf{max-width:720px}
+.rf .card{background:#fff;border:1px solid #e2e7f0;border-radius:14px;padding:20px;box-shadow:0 1px 2px rgba(20,30,50,.05),0 6px 18px rgba(20,30,50,.05)}
+.rf h1{margin:0 0 6px;font-size:1.4rem}
+.rf .f{display:flex;flex-direction:column;gap:5px;margin-bottom:14px}
+.rf .f label{font-size:.9rem;color:#5d6a7e;font-weight:500}
+.rf .f input{border:1px solid #cdd5e2;border-radius:9px;padding:10px 12px;font-family:inherit;font-size:1rem}
+.rf .btn{background:#0f6e63;color:#fff;border:none;border-radius:9px;padding:11px 18px;font-weight:600;font-family:inherit;font-size:1rem;cursor:pointer}
+.rf .btn.ghost{background:#fff;border:1px solid #cdd5e2;color:#334;text-decoration:none;display:inline-block}
+.rf .note{background:#eef4f3;border:1px solid #cfe3df;color:#0a4f47;border-radius:10px;padding:11px 14px;font-size:.88rem;margin-bottom:16px}
+</style>
+<div class="rf">
+<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:14px">
+  <h1>📝 {{ title }}</h1>
+  <a class="btn ghost" href="{{ url_for('reports_home') }}">← กลับ</a>
+</div>
+<div class="card">
+  <div class="note">กรอกช่องที่ต้องการเปลี่ยน (ค่าที่แสดงคือค่าปัจจุบันในฟอร์ม) — ช่องไหนไม่แก้ จะได้ค่าเดิม · ส่วนเนื้อหา/ตารางที่เหลือแก้ต่อในไฟล์ Word ที่ดาวน์โหลดได้เลย</div>
+  <form method="post" action="{{ url_for('report_generate', key=key) }}">
+    {% for f in fields %}
+    <div class="f">
+      <label>{{ f.label }}</label>
+      <input name="{{ f.key }}" value="{{ f.value }}">
+    </div>
+    {% endfor %}
+    <button class="btn" type="submit">⬇️ สร้าง + ดาวน์โหลด Word (.docx)</button>
+  </form>
+</div>
+</div>
+{% endblock %}

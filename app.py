@@ -9274,6 +9274,59 @@ def analysis_delete(sid):
 # ==================== จบโมดูลวิเคราะห์ข้อสอบ ====================
 
 
+# ==================== โมดูลคลังเอกสาร/รายงาน (Word .docx) ====================
+@app.route('/reports')
+@login_required
+def reports_home():
+    import report_forms as RF
+    forms = [{'key': k, 'title': v['title']} for k, v in RF.FORMS.items()]
+    return render_template('report_list.html', forms=forms)
+
+@app.route('/reports/<key>')
+@login_required
+def report_form(key):
+    import report_forms as RF
+    form = RF.FORMS.get(key)
+    if not form:
+        _accdb_abort(404)
+    fields = []
+    for f in form['fields']:
+        val = f.get('default', '')
+        if f.get('profile') and getattr(current_user, f['profile'], ''):
+            val = getattr(current_user, f['profile'])
+        fields.append({'key': f['key'], 'label': f['label'], 'value': val})
+    return render_template('report_form.html', key=key, title=form['title'], fields=fields)
+
+@app.route('/reports/<key>/generate', methods=['POST'])
+@login_required
+def report_generate(key):
+    import report_forms as RF
+    form = RF.FORMS.get(key)
+    if not form:
+        _accdb_abort(404)
+    mapping = []
+    for f in form['fields']:
+        newval = (request.form.get(f['key']) or f.get('default', '')).strip()
+        for lit in f.get('find', []):
+            mapping.append((lit, newval))
+    src = RF.template_path(key)
+    if not os.path.exists(src):
+        flash('ไม่พบไฟล์เทมเพลตของฟอร์มนี้', 'danger')
+        return redirect(url_for('report_form', key=key))
+    tmpdir = _accdb_tmp.mkdtemp(prefix='rep_')
+    out = os.path.join(tmpdir, key + '.docx')
+    try:
+        RF.fill(src, out, mapping)
+    except Exception:
+        app.logger.exception('report generate failed')
+        flash('สร้างเอกสารไม่สำเร็จ', 'danger')
+        return redirect(url_for('report_form', key=key))
+    dl = (form['title'].replace(' ', '_').replace('/', '-')[:50] or key) + '.docx'
+    return _accdb_send_file(out, as_attachment=True, download_name=dl)
+
+# ==================== จบโมดูลคลังเอกสาร/รายงาน ====================
+
+
 def init_db():
     db.create_all(); ensure_schema_columns(); seed(); sync_schedule_teacher_links()
 

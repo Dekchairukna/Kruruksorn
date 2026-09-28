@@ -1,0 +1,27 @@
+{% extends 'base.html' %}
+{% block content %}
+<style>
+.rp{max-width:920px}
+.rp .card{background:#fff;border:1px solid #e2e7f0;border-radius:14px;padding:18px;margin-bottom:16px;box-shadow:0 1px 2px rgba(20,30,50,.05),0 6px 18px rgba(20,30,50,.05)}
+.rp .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}
+.rp .item{border:1px solid #e2e7f0;border-radius:12px;padding:15px;display:flex;flex-direction:column;gap:10px;justify-content:space-between}
+.rp .ttl{font-weight:600;color:#0a4f47;line-height:1.35}
+.rp .btn{display:inline-block;background:#0f6e63;color:#fff;border-radius:9px;padding:8px 13px;font-weight:600;text-decoration:none;font-size:.9rem;text-align:center}
+</style>
+<div class="rp">
+<h1>📄 คลังเอกสาร/รายงาน</h1>
+<div class="card">
+  <p style="margin:0;color:#5d6a7e">เลือกแบบฟอร์มราชการ กรอกหัวเอกสาร (ชื่อครู/เลขที่หนังสือ/วันที่/ภาคเรียน ฯลฯ) แล้ว<b>ดาวน์โหลดเป็น Word (.docx)</b> ไปแก้ไข/พิมพ์ต่อได้ — ฟอนต์และเลย์เอาต์ตรงกับฟอร์มต้นฉบับเป๊ะ</p>
+</div>
+<div class="card">
+  <div class="grid">
+    {% for f in forms %}
+    <div class="item">
+      <div class="ttl">📝 {{ f.title }}</div>
+      <a class="btn" href="{{ url_for('report_form', key=f.key) }}">กรอก + ดาวน์โหลด →</a>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+</div>
+{% endblock %}
