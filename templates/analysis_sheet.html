@@ -73,6 +73,7 @@
     <button class="btn" id="addStu">＋ เพิ่มคน</button>
     <button class="btn" id="addItem">＋ เพิ่มข้อ</button>
     <button class="btn ghost" id="delItem">− ลบข้อท้าย</button>
+    <a class="btn ghost" href="{{ url_for('analysis_template', sid=sheet.id) }}">⬇️ แบบฟอร์มกรอก (Excel)</a>
     <label class="btn ghost" for="xls">⬆️ อัปไฟล์ Excel<input id="xls" type="file" accept=".xlsx,.xls" hidden></label>
     <button class="btn primary" id="save">💾 บันทึก</button>
     <span class="savelog" id="savelog"></span>

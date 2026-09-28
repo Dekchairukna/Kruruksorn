@@ -18,13 +18,23 @@
 <div class="an-card">
   <p style="margin:0 0 12px;color:#5d6a7e">สร้างชุดข้อสอบ แล้ว<b>คีย์เฉลยและคำตอบนักเรียนในเว็บ</b> (หรืออัปไฟล์ Excel) ระบบคำนวณค่าความยากง่าย อำนาจจำแนก และความเชื่อมั่น (อิงกลุ่ม/อิงเกณฑ์) ให้อัตโนมัติ</p>
   <form method="post" action="{{ url_for('analysis_new') }}" class="an-row">
-    <div class="an-f">ชื่อชุดข้อสอบ<input class="an-inp" name="title" placeholder="เช่น สังคม ม.1 กลางภาค 2/68" required style="width:260px"></div>
-    <div class="an-f">ชั้น<input class="an-inp" name="level" placeholder="ม.1" style="width:90px"></div>
+    <div class="an-f">วิชา<select class="an-inp" id="selSubject" name="subject_id" style="width:220px"><option value="">— เลือกวิชา —</option></select></div>
+    <div class="an-f">ห้อง<select class="an-inp" id="selRoom" name="classroom_id" style="width:150px"><option value="">— เลือกห้อง —</option></select></div>
     <div class="an-f">จำนวนข้อ<input class="an-inp" name="n_items" type="number" min="1" max="200" value="20" style="width:90px"></div>
     <div class="an-f">ตัวเลือก<input class="an-inp" name="n_choices" type="number" min="2" max="10" value="4" style="width:80px"></div>
     <div class="an-f">เกณฑ์ผ่าน %<input class="an-inp" name="criterion" type="number" min="0" max="100" value="50" style="width:90px"></div>
-    <button class="an-btn" type="submit">➕ สร้าง + เริ่มคีย์</button>
+    <button class="an-btn" type="submit">➕ สร้าง + ดึงรายชื่อ</button>
   </form>
+  <div style="color:#8a968f;font-size:.83rem;margin-top:8px">เลือกวิชา+ห้อง → ระบบดึงรายชื่อนักเรียนมาให้อัตโนมัติ เหลือแค่ใส่เฉลย+คำตอบ · ไม่เลือกห้อง = สร้างชุดเปล่าคีย์เอง</div>
+  <script id="subjdata" type="application/json">{{ subjects_json|safe }}</script>
+  <script>
+  (function(){var data=[];try{data=JSON.parse(document.getElementById('subjdata').textContent)||[];}catch(e){}
+    var ss=document.getElementById('selSubject'),rs=document.getElementById('selRoom');
+    data.forEach(function(s){var o=document.createElement('option');o.value=s.id;o.textContent=s.name;o.dataset.rooms=JSON.stringify(s.rooms||[]);ss.appendChild(o);});
+    ss.onchange=function(){rs.innerHTML='<option value="">— เลือกห้อง —</option>';var rooms=[];try{rooms=JSON.parse(ss.selectedOptions[0].dataset.rooms||'[]');}catch(e){}rooms.forEach(function(rm){var o=document.createElement('option');o.value=rm.id;o.textContent=rm.name;rs.appendChild(o);});};
+    if(!data.length){ss.innerHTML='<option value="">— ยังไม่มีวิชา (สร้างชุดเปล่าได้) —</option>';}
+  })();
+  </script>
 </div>
 
 {% if sheets %}

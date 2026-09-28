@@ -8559,6 +8559,8 @@ def ensure_schema_columns():
             add_column('grade_setting', 'classwork_weight', 'FLOAT DEFAULT 10')
             add_column('classroom_activity', 'target_scope', "VARCHAR(30) DEFAULT 'classroom'")
             add_column('accdb_subjects', 'password', "VARCHAR(255) DEFAULT ''")
+            add_column('analysis_sheets', 'subject_id', 'INTEGER')
+            add_column('analysis_sheets', 'classroom_id', 'INTEGER')
             conn.commit()
             return
 
@@ -8608,6 +8610,8 @@ def ensure_schema_columns():
         add_column('grade_setting', 'classwork_weight', 'FLOAT DEFAULT 10', 'DOUBLE PRECISION DEFAULT 10')
         add_column('classroom_activity', 'target_scope', "VARCHAR(30) DEFAULT 'classroom'", "VARCHAR(30) DEFAULT 'classroom'")
         add_column('accdb_subjects', 'password', "VARCHAR(255) DEFAULT ''", "VARCHAR(255) DEFAULT ''")
+        add_column('analysis_sheets', 'subject_id', 'INTEGER', 'INTEGER')
+        add_column('analysis_sheets', 'classroom_id', 'INTEGER', 'INTEGER')
         conn.commit()
 
 def sync_schedule_teacher_links():
@@ -9210,20 +9214,39 @@ class AnalysisSheet(db.Model):
     title = db.Column(db.String(200), default='')
     level = db.Column(db.String(40), default='')
     criterion = db.Column(db.Float, default=50)
+    subject_id = db.Column(db.Integer, nullable=True)
+    classroom_id = db.Column(db.Integer, nullable=True)
     payload = db.Column(db.Text, default='')   # JSON: {key:[...], nChoices:int, students:[{name, ans:[...]}]}
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+def _analysis_subject_options():
+    subj_ids = teacher_subject_ids() or [-1]
+    subjects = Subject.query.filter(Subject.id.in_(subj_ids)).order_by(Subject.name).all()
+    out = []
+    for s in subjects:
+        rooms = []
+        for sc in SubjectClassroom.query.filter_by(subject_id=s.id).all():
+            if sc.classroom:
+                rooms.append({'id': sc.classroom.id, 'name': sc.classroom.name})
+        if not rooms:
+            for cid in (teacher_classroom_ids() or []):
+                c = Classroom.query.get(cid)
+                if c:
+                    rooms.append({'id': c.id, 'name': c.name})
+        out.append({'id': s.id, 'name': s.name, 'rooms': rooms})
+    return out
 
 @app.route('/analysis')
 @login_required
 def analysis_home():
     sheets = AnalysisSheet.query.filter_by(owner_id=current_user.id).order_by(AnalysisSheet.id.desc()).all()
-    return render_template('analysis_list.html', sheets=sheets)
+    subjects = _analysis_subject_options()
+    return render_template('analysis_list.html', sheets=sheets,
+                           subjects_json=_accdb_json.dumps(subjects, ensure_ascii=False))
 
 @app.route('/analysis/new', methods=['POST'])
 @login_required
 def analysis_new():
-    title = (request.form.get('title') or 'ชุดข้อสอบใหม่').strip()
-    level = (request.form.get('level') or '').strip()
     def _int(name, d, lo, hi):
         try: return max(lo, min(hi, int(float(request.form.get(name) or d))))
         except Exception: return d
@@ -9231,11 +9254,57 @@ def analysis_new():
     n_choices = _int('n_choices', 4, 2, 10)
     try: crit = max(0.0, min(100.0, float(request.form.get('criterion') or 50)))
     except Exception: crit = 50.0
-    payload = {'key': [None]*n_items, 'nChoices': n_choices, 'students': []}
-    s = AnalysisSheet(owner_id=current_user.id, title=title, level=level, criterion=crit,
+    subject_id = request.form.get('subject_id') or None
+    classroom_id = request.form.get('classroom_id') or None
+    subject = Subject.query.get(subject_id) if subject_id else None
+    room = Classroom.query.get(classroom_id) if classroom_id else None
+    title = (request.form.get('title') or '').strip()
+    level = (request.form.get('level') or '').strip()
+    students = []
+    if room:
+        for link in ClassroomStudent.query.filter_by(classroom_id=room.id).all():
+            stu = link.student or User.query.get(link.student_id)
+            if not stu:
+                continue
+            nm = (getattr(stu, 'full_name', '') or '').strip() or ((getattr(stu, 'first_name', '') + ' ' + getattr(stu, 'last_name', '')).strip())
+            students.append({'name': nm, 'ans': [None]*n_items})
+        if not level:
+            level = room.name
+    if not title:
+        title = ((subject.name + ' ') if subject else '') + (room.name if room else 'ชุดข้อสอบใหม่')
+    payload = {'key': [None]*n_items, 'nChoices': n_choices, 'students': students}
+    s = AnalysisSheet(owner_id=current_user.id, title=title.strip(), level=level, criterion=crit,
+                      subject_id=(int(subject_id) if subject_id else None),
+                      classroom_id=(int(classroom_id) if classroom_id else None),
                       payload=_accdb_json.dumps(payload, ensure_ascii=False))
     db.session.add(s); db.session.commit()
     return redirect(url_for('analysis_sheet', sid=s.id))
+
+@app.route('/analysis/<int:sid>/template.xlsx')
+@login_required
+def analysis_template(sid):
+    s = AnalysisSheet.query.get(sid)
+    if not s or s.owner_id != current_user.id:
+        _accdb_abort(404)
+    try: data = _accdb_json.loads(s.payload or '{}')
+    except Exception: data = {}
+    key = data.get('key') or []
+    N = len(key) or 20
+    students = data.get('students') or []
+    import openpyxl, io
+    wb = openpyxl.Workbook(); ws = wb.active; ws.title = 'กรอกข้อมูล'
+    ws.cell(1, 1, 'เกณฑ์ผ่าน (ร้อยละ)')
+    ws.cell(2, 1, int(s.criterion or 50))
+    for j in range(N):
+        ws.cell(2, 2 + j, 'ข้อ %d' % (j + 1))
+    ws.cell(3, 1, 'เฉลย (Key)')
+    rows = students if students else [{'name': 'คนที่ %d' % i} for i in range(1, 6)]
+    for i, st in enumerate(rows):
+        ws.cell(4 + i, 1, st.get('name') or ('คนที่ %d' % (i + 1)))
+    ws.column_dimensions['A'].width = 26
+    bio = io.BytesIO(); wb.save(bio); bio.seek(0)
+    return _accdb_send_file(bio, as_attachment=True, download_name='ฟอร์มกรอกคะแนน.xlsx',
+                            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
 @app.route('/analysis/<int:sid>')
 @login_required
