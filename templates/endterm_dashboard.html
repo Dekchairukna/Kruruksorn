@@ -30,7 +30,7 @@
       <td class="{{ 'et-ok' if r.exam_ready else 'et-wait' }}">{{ r.quiz_count }} ชุด</td>
       <td>
         <a class="btn small secondary" target="_blank" href="{{ url_for('pp5_print',subject_id=p.subject_id,classroom_id=p.classroom_id) }}">ปพ.5</a>
-        <a class="btn small secondary" href="{{ url_for('endterm_exam_analysis',subject_id=p.subject_id,classroom_id=p.classroom_id) }}">วิเคราะห์ข้อสอบ</a>
+        <a class="btn small secondary" href="{{ url_for('analysis_for_subject',subject_id=p.subject_id) }}">วิเคราะห์ข้อสอบ</a>
       </td>
     </tr>
     {% else %}<tr><td colspan="8">ยังไม่มีรายวิชาที่ผูกกับห้องเรียน</td></tr>{% endfor %}
@@ -38,18 +38,16 @@
 </section>
 <section class="et-card">
   <h2>งานที่ต้องเพิ่มข้อมูลประกอบ</h2>
-  {% if rows %}
-  <form method="get" action="{{ url_for('endterm_supplement') }}" style="display:flex;gap:8px;flex-wrap:wrap;align-items:end;margin-bottom:14px">
-    <label>รายวิชาและห้อง<br><select name="pair_id" required>{% for r in rows %}<option value="{{ r.pair.id }}">{{ r.pair.subject.name }} · {{ r.pair.classroom.name }}</option>{% endfor %}</select></label>
-    <label>ประเภทรายงาน<br><select name="report_type" required>{% for key,label in report_types.items() %}<option value="{{ key }}">{{ label }}</option>{% endfor %}</select></label>
-    <button class="btn" type="submit">เปิดแบบกรอกข้อมูล</button>
-  </form>
-  {% endif %}
-  <div class="et-jobs">
-    <div class="et-job"><h3>รายงานการใช้สื่อ</h3><p>ดึงรายวิชา แผน และไฟล์สื่อได้แล้ว ต้องเพิ่มผลประเมินความพึงพอใจและภาพกิจกรรม</p></div>
-    <div class="et-job"><h3>วิจัยในชั้นเรียน</h3><p>ต้องเพิ่มหัวข้อวิจัย คะแนนก่อนเรียน–หลังเรียน เครื่องมือ และผลความพึงพอใจ</p></div>
-    <div class="et-job"><h3>PLC และ PLC PLAN</h3><p>ดึงหน่วย แผน ตัวชี้วัด และงานได้ ต้องเพิ่มสมาชิก วันประชุม ปัญหา แนวทางแก้ และผลสะท้อน</p></div>
-    <div class="et-job"><h3>Best Practice</h3><p>ดึงข้อมูลพื้นฐานและผลสัมฤทธิ์ได้ ต้องเพิ่มกระบวนการ PDCA จุดเด่น ปัจจัยสำเร็จ และหลักฐาน</p></div>
+  <p style="color:#667085;margin:0 0 12px">กรอกหัวเอกสารแล้วดาวน์โหลดเป็น Word แก้ต่อได้ — ฟอร์มตรงต้นฉบับราชการ</p>
+  <div style="display:flex;gap:8px;flex-wrap:wrap">
+    <a class="btn small" href="{{ url_for('report_form', key='media_report') }}">รายงานการใช้สื่อ</a>
+    <a class="btn small" href="{{ url_for('report_form', key='research_stad') }}">วิจัยในชั้นเรียน</a>
+    <a class="btn small" href="{{ url_for('report_form', key='plc_report') }}">PLC</a>
+    <a class="btn small" href="{{ url_for('report_form', key='plc_plan') }}">PLC-PLAN</a>
+    <a class="btn small" href="{{ url_for('report_form', key='best_practice') }}">Best Practice</a>
+    <a class="btn small" href="{{ url_for('report_form', key='analysis_math') }}">รายงานวิเคราะห์ข้อสอบ</a>
+    <a class="btn small" href="{{ url_for('report_form', key='grade_ptho5') }}">ปถ.05</a>
+    <a class="btn small secondary" href="{{ url_for('reports_home') }}">ดูฟอร์มทั้งหมด →</a>
   </div>
 </section>
 {% endblock %}

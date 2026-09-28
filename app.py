@@ -9345,6 +9345,33 @@ def analysis_template(sid):
     return _accdb_send_file(bio, as_attachment=True, download_name='ฟอร์มกรอกคะแนน.xlsx',
                             mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
+@app.route('/analysis/for-subject/<int:subject_id>')
+@login_required
+def analysis_for_subject(subject_id):
+    subject = Subject.query.get(subject_id)
+    if not subject or not owns_subject(subject):
+        _accdb_abort(404)
+    s = AnalysisSheet.query.filter_by(owner_id=current_user.id, subject_id=subject_id).order_by(AnalysisSheet.id.desc()).first()
+    if not s:
+        rooms = [sc.classroom for sc in SubjectClassroom.query.filter_by(subject_id=subject_id).all() if sc.classroom]
+        students, seen = [], set()
+        for rm in rooms:
+            for link in ClassroomStudent.query.filter_by(classroom_id=rm.id).all():
+                if link.student_id in seen:
+                    continue
+                seen.add(link.student_id)
+                stu = link.student or User.query.get(link.student_id)
+                if not stu:
+                    continue
+                nm = (getattr(stu, 'full_name', '') or '').strip() or ((getattr(stu, 'first_name', '') + ' ' + getattr(stu, 'last_name', '')).strip())
+                students.append({'name': nm, 'ans': [None]*20})
+        payload = {'key': [None]*20, 'nChoices': 4, 'students': students}
+        level = ', '.join(sorted({rm.name for rm in rooms if rm.name}))
+        s = AnalysisSheet(owner_id=current_user.id, title=subject.name, level=level, criterion=50,
+                          subject_id=subject_id, payload=_accdb_json.dumps(payload, ensure_ascii=False))
+        db.session.add(s); db.session.commit()
+    return redirect(url_for('analysis_sheet', sid=s.id))
+
 @app.route('/analysis/<int:sid>')
 @login_required
 def analysis_sheet(sid):
