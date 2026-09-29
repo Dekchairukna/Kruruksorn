@@ -128,11 +128,16 @@
   </div>
 </div>
 
+<div class="sect">ผลการวิเคราะห์ภาพรวมของข้อสอบ</div>
+<div style="display:flex;justify-content:flex-end;gap:8px;margin:8px 0"><button class="btn sm" id="copyOverall">⧉ คัดลอกตาราง</button><button class="btn sm primary" id="exportX">⬇️ ส่งออก Excel (ครบทุกชีต)</button></div>
+<div class="tw" style="max-width:560px"><table class="r" id="overallT"></table></div>
+
 <div class="sect">ผลวิเคราะห์รายข้อ</div>
 <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin:8px 0">
   <div class="tabs" id="mode"><button class="tab on" data-m="group">อิงกลุ่ม</button><button class="tab" data-m="crit">อิงเกณฑ์</button></div>
   <button class="btn sm" id="copyItems">⧉ คัดลอกตาราง (วางใน Excel)</button>
 </div>
+<div class="hint" id="relNote" style="margin:0 0 8px"></div>
 <div class="tw"><table class="r" id="itemT"></table></div>
 
 <div class="sect">ตัวลวง (Distractor)</div>
@@ -144,7 +149,11 @@
 <div class="tw"><table class="r" id="stuT"></table></div>
 
 <div class="hint" style="margin:18px 0 30px;line-height:1.7">
-เกณฑ์แปลผล — <b>p:</b> 0.20–0.80 ใช้ได้ · <b>r อิงกลุ่ม:</b> point-biserial แก้ไข, Sig ≤ .05 = ใช้ได้ · <b>r อิงเกณฑ์:</b> P(ถูก|ผ่าน) − P(ถูก|ไม่ผ่าน) ≥ 0.20 · <b>ความเชื่อมั่น:</b> KR-20
+<b>เกณฑ์แปลผล</b><br>
+<b>ความยากง่าย (p):</b> 0.00–0.19 ยาก · 0.20–0.39 ค่อนข้างยาก · 0.40–0.60 ปานกลาง · 0.61–0.80 ค่อนข้างง่าย · 0.81–1.00 ง่าย — ใช้ได้เมื่อ 0.20–0.80<br>
+<b>อำนาจจำแนก (r):</b> &lt;0.10 ไม่ดี · 0.10–0.19 ปรับปรุง · 0.20–0.29 พอใช้ · 0.30–0.39 ดี · ≥0.40 ดีมาก — ใช้ได้เมื่อ ≥ 0.20 (บุญชม ศรีสะอาด, 2545; ภัทรา นิคมานนท์, 2538; ชวลิต ชูกำแพง, 2550)<br>
+<b>อิงกลุ่ม:</b> r = Item-Total Correlation (แก้ไข) ทดสอบนัยสำคัญ Sig ≤ .05 · ความเที่ยง Kuder-Richardson (KR-20)<br>
+<b>อิงเกณฑ์:</b> r = ดัชนีของเบรนแนน (Brennan) = P(ถูก|ผ่านเกณฑ์) − P(ถูก|ไม่ผ่าน) · ความเที่ยงแบบโลเวท (Lovett) และลิวิงสตัน (Livingston) (สมนึก ภัททิยธนี, 2537)
 </div>
 </div>
 
@@ -177,6 +186,9 @@ function ibeta(a,b,x){if(x<=0)return 0;if(x>=1)return 1;const bt=Math.exp(gammal
 function tTwoTailP(t,df){if(!isFinite(t)||df<=0)return NaN;return ibeta(df/2,0.5,df/(df+t*t));}
 function pearson(x,y){const n=x.length;let mx=0,my=0;for(let i=0;i<n;i++){mx+=x[i];my+=y[i];}mx/=n;my/=n;let sxy=0,sxx=0,syy=0;for(let i=0;i<n;i++){const dx=x[i]-mx,dy=y[i]-my;sxy+=dx*dy;sxx+=dx*dx;syy+=dy*dy;}return(sxx>0&&syy>0)?sxy/Math.sqrt(sxx*syy):0;}
 function fmt(x,d){return(x==null||!isFinite(x))?'-':x.toFixed(d==null?2:d);}
+const LV={
+ p(p){return p<0.20?['ยาก','bad']:p<0.40?['ค่อนข้างยาก','warn']:p<=0.60?['ปานกลาง','good']:p<=0.80?['ค่อนข้างง่าย','good']:['ง่าย','warn'];},
+ r(r){return r<0.10?['ไม่ดี','bad']:r<0.20?['ปรับปรุง','warn']:r<0.30?['พอใช้','good']:r<0.40?['ดี','good']:['ดีมาก','good'];}};
 const interp={p(p){return(p>=0.20&&p<=0.80)?['ใช้ได้','good']:(p<0.20?['ยากเกินไป','bad']:['ง่ายเกินไป','warn']);},
  rG(sig){return sig<=0.05?['มีนัยสำคัญ','good']:['ไม่มีนัยสำคัญ','bad'];},
  rC(r){return r>=0.20?['ใช้ได้','good']:['ตัดทิ้ง','bad'];},
@@ -205,17 +217,27 @@ function analyze(){
     const rest=total.map((t,s)=>t-v[s]);const rGv=pearson(v,rest);
     const df=N-2,tv=rGv*Math.sqrt(df/Math.max(1e-9,1-rGv*rGv)),sig=tTwoTailP(tv,df);
     const pU=nU?pass.reduce((a,s)=>a+v[s],0)/nU:0,pL=nL?fail.reduce((a,s)=>a+v[s],0)/nL:0;
-    return {idx:ix+1,j,p,rG:rGv,sig,rC:pU-pL};
+    const nAns=ST.students.reduce((a,s)=>a+(s.ans[j]!=null?1:0),0);
+    const isd=N>1?Math.sqrt(N/(N-1)*p*(1-p)):0;
+    return {idx:ix+1,j,p,rG:rGv,sig,rC:pU-pL,correct,nAns,sd:isd,cv:p>0?isd/p*100:NaN};
   });
   const sumpq=rows.reduce((a,r)=>a+r.p*(1-r.p),0);
   const kr20=(K>1&&varSamp>0)?(K/(K-1))*(1-sumpq/varSamp):0;
+  // ความเที่ยงอิงเกณฑ์: โลเวท (Lovett) และ ลิวิงสตัน (Livingston)
+  const C=critScore,sx=total.reduce((a,b)=>a+b,0),sx2=total.reduce((a,b)=>a+b*b,0),sdc=total.reduce((a,b)=>a+(b-C)*(b-C),0);
+  const lovett=(K>1&&sdc>0)?1-(K*sx-sx2)/((K-1)*sdc):NaN;
+  const dC=(mean-C)*(mean-C);
+  const livingston=(varSamp+dC)>0?(kr20*varSamp+dC)/(varSamp+dC):NaN;
+  const maxS=Math.max(...total),minS=Math.min(...total),cvAll=mean>0?sd/mean*100:NaN;
   const nCh=ST.nChoices;
   const distract=items.map(j=>{const c={};for(let o=1;o<=nCh;o++)c[o]=0;let bl=0;ST.students.forEach(s=>{const a=s.ans[j];if(a>=1&&a<=nCh)c[a]++;else bl++;});return {j,key:key[j],c,bl};});
   const full=K+W;
   const scores=total.map((t,s)=>{const w=wOf(ST.students[s]);const sc=t+(w||0);
-    return {no:s+1,name:ST.students[s].name||('คนที่ '+(s+1)),mc:t,w,score:sc,full,pct:sc/full*100,pass:W?(sc/full*100>=crit):(t>=critScore)};});
+    const st=ST.students[s],answered=items.reduce((a,j)=>a+(st.ans[j]!=null?1:0),0),m=t/K,psd=K>1?Math.sqrt(K/(K-1)*m*(1-m)):0;
+    return {no:s+1,name:st.name||('คนที่ '+(s+1)),mc:t,w,score:sc,full,pct:sc/full*100,pass:W?(sc/full*100>=crit):(t>=critScore),
+      answered,mMean:m,mSd:psd,mCv:m>0?psd/m*100:NaN};});
   const meanTot=scores.reduce((a,x)=>a+x.score,0)/N;
-  return {N,K,W,full,mean,meanTot,sd,kr20,nU,nL,critScore,rows,distract,nCh,scores};
+  return {N,K,W,full,mean,meanTot,sd,kr20,nU,nL,critScore,crit,rows,distract,nCh,scores,lovett,livingston,maxS,minS,cvAll,vec,items};
 }
 
 // ---------- grid ----------
@@ -291,15 +313,17 @@ function renderResults(){
   // item table
   let head,body;
   if(MODE==='group'){
-    head='<tr><th class="q">ข้อ</th><th>p</th><th>แปลผล</th><th>r</th><th>Sig.</th><th>แปลผล</th><th>คุณภาพ</th></tr>';
-    body=A.rows.map(r=>{const pi=interp.p(r.p),ri=interp.rG(r.sig),ok=pi[1]==='good'&&r.sig<=0.05,q=interp.q(ok);
-      return '<tr><td class="q">ข้อ '+r.idx+'</td><td class="mono">'+fmt(r.p,2)+'</td><td>'+pill(pi[0],pi[1])+'</td><td class="mono">'+fmt(r.rG,3)+'</td><td class="mono">'+fmt(r.sig,3)+'</td><td>'+pill(ri[0],ri[1])+'</td><td>'+pill(q[0],q[1])+'</td></tr>';}).join('');
+    head='<tr><th class="q">ข้อ</th><th>ตอบถูก</th><th>S.D.</th><th>C.V.%</th><th>p</th><th>ระดับ</th><th>แปลผล</th><th>r</th><th>Sig.</th><th>แปลผล</th><th>คุณภาพ</th></tr>';
+    body=A.rows.map(r=>{const pi=interp.p(r.p),pl=LV.p(r.p),ri=interp.rG(r.sig),ok=pi[1]==='good'&&r.sig<=0.05,q=interp.q(ok);
+      return '<tr><td class="q">ข้อ '+r.idx+'</td><td class="mono">'+r.correct+'/'+A.N+'</td><td class="mono">'+fmt(r.sd,2)+'</td><td class="mono">'+fmt(r.cv,2)+'</td><td class="mono">'+fmt(r.p,2)+'</td><td>'+pill(pl[0],pl[1])+'</td><td>'+pill(pi[0],pi[1])+'</td><td class="mono">'+fmt(r.rG,3)+'</td><td class="mono">'+fmt(r.sig,3)+'</td><td>'+pill(ri[0],ri[1])+'</td><td>'+pill(q[0],q[1])+'</td></tr>';}).join('');
   }else{
-    head='<tr><th class="q">ข้อ</th><th>p</th><th>แปลผล</th><th>r</th><th>แปลผล</th><th>คุณภาพ</th></tr>';
-    body=A.rows.map(r=>{const pi=interp.p(r.p),ri=interp.rC(r.rC),ok=pi[1]==='good'&&r.rC>=0.20,q=interp.q(ok);
-      return '<tr><td class="q">ข้อ '+r.idx+'</td><td class="mono">'+fmt(r.p,2)+'</td><td>'+pill(pi[0],pi[1])+'</td><td class="mono">'+fmt(r.rC,3)+'</td><td>'+pill(ri[0],ri[1])+'</td><td>'+pill(q[0],q[1])+'</td></tr>';}).join('');
+    head='<tr><th class="q">ข้อ</th><th>p</th><th>ระดับ</th><th>แปลผล</th><th>r (Brennan)</th><th>ระดับ r</th><th>แปลผล</th><th>คุณภาพ</th></tr>';
+    body=A.rows.map(r=>{const pi=interp.p(r.p),pl=LV.p(r.p),rl=LV.r(r.rC),ri=interp.rC(r.rC),ok=pi[1]==='good'&&r.rC>=0.20,q=interp.q(ok);
+      return '<tr><td class="q">ข้อ '+r.idx+'</td><td class="mono">'+fmt(r.p,2)+'</td><td>'+pill(pl[0],pl[1])+'</td><td>'+pill(pi[0],pi[1])+'</td><td class="mono">'+fmt(r.rC,3)+'</td><td>'+pill(rl[0],rl[1])+'</td><td>'+pill(ri[0],ri[1])+'</td><td>'+pill(q[0],q[1])+'</td></tr>';}).join('');
   }
   document.getElementById('itemT').innerHTML='<thead>'+head+'</thead><tbody>'+body+'</tbody>';
+  document.getElementById('relNote').innerHTML=MODE==='group'?'ค่าความเที่ยง KR-20 = <b>'+fmt(A.kr20,4)+'</b>':'ค่าความเที่ยงแบบโลเวท (Lovett) = <b>'+fmt(A.lovett,4)+'</b> · แบบลิวิงสตัน (Livingston) = <b>'+fmt(A.livingston,4)+'</b>';
+  renderOverall();
   // distractor
   let dh='<tr><th class="q">ข้อ</th><th>เฉลย</th>';for(let o=1;o<=A.nCh;o++)dh+='<th>ตัวเลือก '+o+'</th>';dh+='<th>ไม่ตอบ</th></tr>';
   const db=A.distract.map((d,i)=>{let c='';for(let o=1;o<=A.nCh;o++){const k=o===d.key;c+='<td class="mono" style="'+(k?'background:#e6f4ec;color:#1f9d63;font-weight:700':'')+'">'+d.c[o]+'</td>';}
@@ -318,10 +342,19 @@ function renderKpis(){
   }
   document.getElementById('kpis').innerHTML=k.map(x=>'<div class="kpi"><div class="l">'+x[0]+'</div><div class="v">'+x[1]+' <small>'+x[2]+'</small></div></div>').join('');
 }
+function renderOverall(){
+  const el=document.getElementById('overallT');if(!A||A.wOnly||A.empty){el.innerHTML='';return;}
+  const rows=[['คะแนนเต็ม (ปรนัย)',A.K],['คะแนนสูงสุด',A.maxS],['คะแนนต่ำสุด',A.minS],['เกณฑ์คะแนน',fmt(A.critScore,2).replace(/\.00$/,'')],['คิดเป็นเกณฑ์ร้อยละ',fmt(A.crit,2)],
+    ['คะแนนเฉลี่ย',fmt(A.mean,2)],['ส่วนเบี่ยงเบนมาตรฐาน',fmt(A.sd,3)],['C.V. (%)',fmt(A.cvAll,3)],
+    ['ค่าความเที่ยง KR-20',fmt(A.kr20,4)],['ความเที่ยงแบบโลเวท',fmt(A.lovett,4)],['ความเที่ยงแบบลิวิงสตัน',fmt(A.livingston,4)],
+    ['จำนวนคนเข้าสอบทั้งหมด',A.N],['จำนวนคนสอบผ่านเกณฑ์',A.nU],['ผ่านเกณฑ์ร้อยละ',fmt(A.nU/A.N*100,2)],['จำนวนคนสอบไม่ผ่านเกณฑ์',A.nL],['ไม่ผ่านเกณฑ์ร้อยละ',fmt(A.nL/A.N*100,2)]];
+  if(A.W)rows.push(['คะแนนเต็มข้อเขียน',A.W],['เฉลี่ยรวม (ปรนัย+ข้อเขียน)',fmt(A.meanTot,2)+' / '+A.full]);
+  el.innerHTML='<thead><tr><th class="q">ผลการวิเคราะห์</th><th>ภาพรวม</th></tr></thead><tbody>'+rows.map(r=>'<tr><td class="q">'+r[0]+'</td><td class="mono"><b>'+r[1]+'</b></td></tr>').join('')+'</tbody>';
+}
 function renderStu(){
   const W=A.W||0;
-  const head='<tr><th class="q">ผู้สอบ</th>'+(A.K?'<th>ปรนัย</th>':'')+(W?'<th>ข้อเขียน</th>':'')+'<th>รวม</th><th>เต็ม</th><th>ร้อยละ</th><th>ผล</th></tr>';
-  const sb=A.scores.map(s=>'<tr><td class="q">'+s.name+'</td>'+(A.K?'<td class="mono">'+s.mc+'</td>':'')+(W?'<td class="mono">'+(s.w==null?'-':fmt(s.w,1).replace(/\.0$/,''))+'</td>':'')+
+  const head='<tr><th>คนที่</th><th class="q">ผู้สอบ</th>'+(A.K?'<th>ตอบ (ข้อ)</th><th>ปรนัย</th><th>Mean</th><th>S.D.</th><th>C.V.%</th>':'')+(W?'<th>ข้อเขียน</th>':'')+'<th>รวม</th><th>เต็ม</th><th>ร้อยละ</th><th>ผล</th></tr>';
+  const sb=A.scores.map(s=>'<tr><td class="mono">'+s.no+'</td><td class="q">'+s.name+'</td>'+(A.K?'<td class="mono">'+s.answered+'</td><td class="mono">'+s.mc+'</td><td class="mono">'+fmt(s.mMean,2)+'</td><td class="mono">'+fmt(s.mSd,2)+'</td><td class="mono">'+fmt(s.mCv,2)+'</td>':'')+(W?'<td class="mono">'+(s.w==null?'-':fmt(s.w,1).replace(/\.0$/,''))+'</td>':'')+
     '<td class="mono"><b>'+fmt(s.score,1).replace(/\.0$/,'')+'</b></td><td class="mono">'+s.full+'</td><td class="mono">'+fmt(s.pct,1)+'</td><td>'+(s.pass?pill('ผ่านเกณฑ์','good'):pill('ไม่ผ่าน','bad'))+'</td></tr>').join('');
   document.getElementById('stuT').innerHTML='<thead>'+head+'</thead><tbody>'+sb+'</tbody>';
 }
@@ -343,6 +376,41 @@ function copyT(tbl,btn){const rows=[...tbl.querySelectorAll('tr')].map(tr=>[...t
   function fb(){const ta=document.createElement('textarea');ta.value=rows;document.body.appendChild(ta);ta.select();try{document.execCommand('copy');done();}catch(_){}ta.remove();}}
 document.getElementById('copyItems').onclick=e=>copyT(document.getElementById('itemT'),e.currentTarget);
 document.getElementById('copyStu').onclick=e=>copyT(document.getElementById('stuT'),e.currentTarget);
+document.getElementById('copyOverall').onclick=e=>copyT(document.getElementById('overallT'),e.currentTarget);
+document.getElementById('exportX').onclick=()=>{
+  if(typeof XLSX==='undefined'){alert('โหลดตัวสร้าง Excel ไม่สำเร็จ ลองรีเฟรชหน้า');return;}
+  if(!A||A.empty||A.wOnly){alert('ยังไม่มีข้อมูลปรนัยให้วิเคราะห์');return;}
+  const r2=x=>(x==null||!isFinite(x))?'':Math.round(x*10000)/10000;
+  const wb=XLSX.utils.book_new(),add=(name,aoa,w)=>{const ws=XLSX.utils.aoa_to_sheet(aoa);if(w)ws['!cols']=w.map(x=>({wch:x}));XLSX.utils.book_append_sheet(wb,ws,name);};
+  const hdr=A.rows.map(r=>'ข้อ '+r.idx);
+  // กรอกข้อมูล
+  add('กรอกข้อมูล',[['เกณฑ์ผ่าน (ร้อยละ)',A.crit],['คนที่/ชื่อ',...hdr,...(A.W?['ข้อเขียน']:[])],['เฉลย (Key)',...A.rows.map(r=>ST.key[r.j]),...(A.W?[A.W]:[])],
+    ...ST.students.map((s,i)=>[s.name||('คนที่ '+(i+1)),...A.rows.map(r=>s.ans[r.j]),...(A.W?[s.written]:[])])],[26]);
+  // ตรวจคะแนน (0/1)
+  add('ตรวจคะแนน',[['คนที่/ชื่อ',...hdr,'รวม'],...ST.students.map((s,i)=>[s.name||('คนที่ '+(i+1)),...A.rows.map(r=>A.vec[r.j][i]),A.scores[i].mc])],[26]);
+  // ผลวิเคราะห์รายคน
+  add('ผลวิเคราะห์รายคน',[['คนที่','ชื่อ','จำนวนข้อที่ตอบ','คะแนนรวม (Sum)','ค่าเฉลี่ย (Mean)','S.D.','C.V. (%)',...(A.W?['ข้อเขียน','รวมทั้งหมด','เต็ม']:[]),'ร้อยละ','ผล'],
+    ...A.scores.map(s=>[s.no,s.name,s.answered,s.mc,r2(s.mMean),r2(s.mSd),r2(s.mCv),...(A.W?[s.w,s.score,s.full]:[]),r2(s.pct),s.pass?'ผ่านเกณฑ์':'ไม่ผ่าน'])],[6,26,12,12,12,8,10]);
+  // ผลวิเคราะห์ข้อสอบ (รายข้อ แนวนอน)
+  add('ผลวิเคราะห์ข้อสอบ',[['วิเคราะห์คะแนนสอบ',...hdr],['จำนวนคน',...A.rows.map(r=>r.nAns)],['คะแนนรวม',...A.rows.map(r=>r.correct)],['ค่าเฉลี่ย',...A.rows.map(r=>r2(r.p))],
+    ['ส่วนเบี่ยงเบนมาตรฐาน',...A.rows.map(r=>r2(r.sd))],['C.V.(%)',...A.rows.map(r=>r2(r.cv))],[],
+    ['วิเคราะห์ข้อสอบอิงกลุ่ม',...hdr],['ค่าความยากง่าย (p)',...A.rows.map(r=>r2(r.p))],['แปลผลความยากง่าย',...A.rows.map(r=>LV.p(r.p)[0])],
+    ['ค่าอำนาจจำแนก (r)',...A.rows.map(r=>r2(r.rG))],['Sig',...A.rows.map(r=>r2(r.sig))],['แปลผลอำนาจจำแนก',...A.rows.map(r=>r.sig<=0.05?'ใช้ได้':'ปรับปรุง')],
+    ['ความเที่ยง KR-20',r2(A.kr20)],[],
+    ['วิเคราะห์ข้อสอบอิงเกณฑ์',...hdr],['คะแนนเต็ม',A.K],['ร้อยละเกณฑ์คะแนน',A.crit],
+    ['ค่าอำนาจจำแนกแบบ Brennan',...A.rows.map(r=>r2(r.rC))],['แปลผลอำนาจจำแนกหลายค่า',...A.rows.map(r=>LV.r(r.rC)[0])],['แปลผลอำนาจจำแนกค่าเดียว',...A.rows.map(r=>r.rC>=0.2?'ใช้ได้':'ปรับปรุง')],
+    ['ค่าความเที่ยงแบบโลเวท',r2(A.lovett)],['ค่าความเที่ยงแบบลิวิงสตัน',r2(A.livingston)]],[26]);
+  const q=(ok)=>ok?'ใช้ได้':'ปรับปรุงหรือตัดทิ้ง',pu=p=>(p>=0.2&&p<=0.8)?'ใช้ได้':'ทิ้ง';
+  add('สรุปรายข้ออิงกลุ่ม',[['ผลการวิเคราะห์ค่าความยากง่ายและค่าอำนาจจำแนกรายข้อของข้อสอบแบบอิงกลุ่ม'],['ค่าความเที่ยง (Reliability) KR-20',r2(A.kr20)],
+    ['ข้อที่','ค่าความยากง่าย','แปลผล','อำนาจจำแนก','Sig.','แปลผล','แปลผลคุณภาพของข้อสอบ'],
+    ...A.rows.map(r=>[r.idx,r2(r.p),pu(r.p),r2(r.rG),r2(r.sig),r.sig<=0.05?'ใช้ได้':'ตัดทิ้ง',q(pu(r.p)==='ใช้ได้'&&r.sig<=0.05)])],[8,14,10,14,10,10,24]);
+  add('สรุปรายข้ออิงเกณฑ์',[['ผลการวิเคราะห์ค่าความยากง่ายและค่าอำนาจจำแนกรายข้อของข้อสอบแบบอิงเกณฑ์'],['ค่าความเที่ยงแบบโลเวท (Lovett)',r2(A.lovett)],['ค่าความเที่ยงแบบลิวิงสตัน (Livingston)',r2(A.livingston)],
+    ['ข้อที่','ค่าความยากง่าย','แปลผล','อำนาจจำแนก','แปลผล','แปลผลคุณภาพของข้อสอบ'],
+    ...A.rows.map(r=>[r.idx,r2(r.p),pu(r.p),r2(r.rC),r.rC>=0.2?'ใช้ได้':'ตัดทิ้ง',q(pu(r.p)==='ใช้ได้'&&r.rC>=0.2)])],[8,14,10,14,10,24]);
+  add('ผลวิเคราะห์รวม',[['ผลการวิเคราะห์','ภาพรวม'],...[...document.querySelectorAll('#overallT tbody tr')].map(tr=>{const c=tr.querySelectorAll('td');const v=c[1].textContent.trim();return [c[0].textContent.trim(),isNaN(+v)?v:+v];})],[30,16]);
+  const fn=(document.getElementById('title').value||'วิเคราะห์ข้อสอบ').replace(/[\\/:*?"<>|]/g,'_');
+  XLSX.writeFile(wb,fn+'.xlsx');
+};
 
 // ---------- save ----------
 let svT=null;function scheduleSave(){clearTimeout(svT);document.getElementById('savelog').textContent='• แก้ไขแล้ว';svT=setTimeout(save,1400);}
