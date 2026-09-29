@@ -16,6 +16,7 @@
     <a class="btn secondary" href="{{ url_for('attendance_print', subject_id=subject.id, classroom_id=room.id, range='month', year=att_date.year, month=att_date.month, substitute='1' if substitute_mode else None) }}" target="_blank">พิมพ์รายเดือน</a>
     <a class="btn" href="{{ url_for('export_attendance', subject_id=subject.id, classroom_id=room.id, range='month', year=att_date.year, month=att_date.month, substitute='1' if substitute_mode else None) }}">Excel รายเดือน</a>
     <a class="btn secondary" href="{{ url_for('grades', subject_id=subject.id, classroom_id=room.id) }}">สมุดคะแนน</a>
+    <a class="btn secondary" href="{{ url_for('analysis_for_subject', subject_id=subject.id, classroom_id=room.id) }}">📊 คะแนนสอบ/วิเคราะห์ข้อสอบ</a>
     {% endif %}
   </div>
 </div>

@@ -205,6 +205,7 @@
       <td>
         <a class="btn small" href="{{ url_for('attendance', subject_id=subject.id, classroom_id=sr.classroom_id) }}">เช็กชื่อ</a>
         <a class="btn secondary small" href="{{ url_for('grades', subject_id=subject.id, classroom_id=sr.classroom_id) }}">สมุดคะแนน/ตัดเกรด</a>
+        <a class="btn secondary small" href="{{ url_for('analysis_for_subject', subject_id=subject.id, classroom_id=sr.classroom_id) }}">📊 คะแนนสอบ</a>
       </td>
     </tr>
     {% else %}<tr><td colspan="2">ยังไม่ได้ผูกวิชานี้กับห้องเรียน</td></tr>{% endfor %}

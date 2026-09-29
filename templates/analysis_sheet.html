@@ -27,7 +27,7 @@
 .ia tr.keyrow .rh{background:#fdf6df;font-weight:700;color:#7a5a1a}
 .ia .cell.bad{color:var(--bad);font-weight:700}
 .ia .nm{width:120px;border:none;background:transparent;font-family:inherit;padding:4px 2px}
-.ia .kpis{display:grid;grid-template-columns:repeat(6,1fr);gap:10px}
+.ia .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px}
 @media(max-width:820px){.ia .kpis{grid-template-columns:repeat(3,1fr)}}
 @media(max-width:470px){.ia .kpis{grid-template-columns:repeat(2,1fr)}}
 .ia .kpi{background:#f8faf9;border:1px solid var(--line);border-radius:12px;padding:11px 12px}
@@ -57,6 +57,21 @@
 .ia .sect{font-size:1.1rem;font-weight:700;margin:22px 0 4px}
 .ia .keyc{color:var(--ac);font-weight:700}
 .ia .hint{color:#8a968f;font-size:.83rem}
+.ia .wcell{width:64px;height:30px;border:none;text-align:center;font-variant-numeric:tabular-nums;background:#f3f8ff;padding:0;font-weight:600}
+.ia .wcell:focus{outline:2px solid #2f6fd6;outline-offset:-2px;border-radius:4px}
+.ia .wcell.bad{color:var(--bad)}
+.ia table.g thead th.wh{background:#e4eefc;color:#1d4f9a}
+.ia tr.keyrow .wcell{background:#fdf1c9;color:#7a5a1a}
+.ia .push{border-color:#cfe0f7;background:linear-gradient(180deg,#f7fbff,#fff)}
+.ia .push h3{margin:0 0 4px;font-size:1.02rem}
+.ia .seg{display:inline-flex;border:1px solid #cdd5e2;border-radius:9px;overflow:hidden}
+.ia .seg label{padding:7px 12px;cursor:pointer;font-weight:600;font-size:.88rem;color:var(--muted);background:#fff}
+.ia .seg input{display:none}
+.ia .seg input:checked+span{color:#fff}
+.ia .seg label:has(input:checked){background:var(--ac);color:#fff}
+.ia .pushres{margin-top:10px;font-size:.9rem;line-height:1.7}
+.ia .pushres a{color:var(--ac);font-weight:600}
+.ia .ok{color:var(--good);font-weight:700}.ia .er{color:var(--bad);font-weight:700}
 </style>
 
 <div class="ia">
@@ -70,6 +85,7 @@
     <div class="f">ชั้น<input id="level" value="{{ sheet.level }}" style="width:90px"></div>
     <div class="f">เกณฑ์ผ่าน %<input id="crit" type="number" min="0" max="100" value="{{ sheet.criterion|int }}" style="width:90px"></div>
     <div class="f">ตัวเลือก (1..n)<input id="nchoice" type="number" min="2" max="10" value="4" style="width:80px"></div>
+    <div class="f">✍️ เต็มข้อเขียน<input id="wmax" type="number" min="0" step="0.5" value="0" style="width:90px" title="0 = ไม่มีข้อเขียน"></div>
     <button class="btn" id="addStu">＋ เพิ่มคน</button>
     <button class="btn" id="addItem">＋ เพิ่มข้อ</button>
     <button class="btn ghost" id="delItem">− ลบข้อท้าย</button>
@@ -78,10 +94,23 @@
     <button class="btn primary" id="save">💾 บันทึก</button>
     <span class="savelog" id="savelog"></span>
   </div>
-  <div class="hint" style="margin-top:8px">พิมพ์ตัวเลือก (เช่น 1–4) ในช่อง — แถวบนสุดสีเหลืองคือ <b>เฉลย</b> · พิมพ์แล้วเลื่อนช่องถัดไปให้อัตโนมัติ · เว้นว่าง = ไม่ตอบ</div>
+  <div class="hint" style="margin-top:8px">พิมพ์ตัวเลือก (เช่น 1–4) ในช่อง — แถวบนสุดสีเหลืองคือ <b>เฉลย</b> · พิมพ์แล้วเลื่อนช่องถัดไปให้อัตโนมัติ · เว้นว่าง = ไม่ตอบ · คอลัมน์ <b>✍️ ข้อเขียน</b> กรอกคะแนนที่ได้ (ช่องในแถวเฉลย = คะแนนเต็ม)</div>
 </div>
 
 <div class="gridwrap card" style="padding:0"><table class="g" id="grid"></table></div>
+
+<div class="card push" id="pushCard">
+  <h3>📒 ส่งคะแนนสอบเข้าสมุดคะแนน</h3>
+  <div class="hint" style="margin-bottom:10px">คะแนนรวม (ปรนัย + ข้อเขียน) จะถูกแปลงเป็นร้อยละ แล้วใส่ในช่อง กลางภาค/ปลายภาค ของสมุดคะแนนรายวิชา — เห็นทันทีในหน้า สมุดคะแนน/ตัดเกรด, ปพ.5 และปุ่ม “ดึงจากระบบหลัก” ในสมุด .accdb</div>
+  <div class="row">
+    <div class="f">รายวิชา<select id="pSubject" style="min-width:220px"></select></div>
+    <div class="f">ใส่เป็นคะแนน<div class="seg"><label><input type="radio" name="pTarget" value="midterm">กลางภาค</label><label><input type="radio" name="pTarget" value="final">ปลายภาค</label></div></div>
+    <div class="f">สมุดคะแนน .accdb (ไม่บังคับ)<select id="pAccdb" style="min-width:200px"><option value="">— ไม่ส่งเข้า .accdb —</option></select></div>
+    <div class="f" id="pAccMaxW">เต็มใน .accdb<input id="pAccMax" type="number" min="1" step="0.5" value="20" style="width:80px"></div>
+    <button class="btn primary" id="pushBtn">📤 ส่งคะแนนเข้าสมุด</button>
+  </div>
+  <div class="pushres" id="pushRes"></div>
+</div>
 
 <div class="sect">ผลวิเคราะห์</div>
 <div class="kpis" id="kpis" style="margin-bottom:16px"></div>
@@ -120,9 +149,12 @@
 </div>
 
 <script id="pdata" type="application/json">{{ payload_json | safe }}</script>
+<script id="subjdata" type="application/json">{{ subjects_json | safe }}</script>
+<script id="accdata" type="application/json">{{ accdb_json | safe }}</script>
 <script>
 "use strict";
 const SID={{ sheet.id }};
+const SHEET_SUBJECT={{ sheet.subject_id or 'null' }};
 // ---------- state ----------
 let ST=(function(){try{return JSON.parse(document.getElementById('pdata').textContent)||{};}catch(e){return {};}})();
 if(!Array.isArray(ST.key))ST.key=[];
@@ -131,8 +163,11 @@ if(!ST.nChoices)ST.nChoices=parseInt(document.getElementById('nchoice').value)||
 document.getElementById('nchoice').value=ST.nChoices;
 if(ST.key.length===0)ST.key=new Array(20).fill(null);
 if(ST.students.length===0)ST.students=Array.from({length:5},(_,i)=>({name:'',ans:new Array(ST.key.length).fill(null)}));
+if(ST.writtenMax==null)ST.writtenMax=0;
+document.getElementById('wmax').value=ST.writtenMax;
+function wOn(){return (+ST.writtenMax||0)>0;}
 // normalize row lengths
-function fix(){const K=ST.key.length;ST.students.forEach(s=>{if(!Array.isArray(s.ans))s.ans=[];while(s.ans.length<K)s.ans.push(null);s.ans.length=K;});}
+function fix(){const K=ST.key.length;ST.students.forEach(s=>{if(!Array.isArray(s.ans))s.ans=[];while(s.ans.length<K)s.ans.push(null);s.ans.length=K;if(s.written===undefined)s.written=null;});}
 fix();
 
 // ---------- stats ----------
@@ -152,7 +187,11 @@ function analyze(){
   const items=[];
   for(let j=0;j<key.length;j++){if(key[j]==null)continue;if(ST.students.some(s=>s.ans[j]!=null))items.push(j);}
   const K=items.length;
-  if(!N||!K)return {N,K,empty:true};
+  const W=+ST.writtenMax||0;
+  const wOf=s=>{if(!W||s.written==null||s.written==='')return null;const v=+s.written;return isFinite(v)?Math.max(0,Math.min(W,v)):null;};
+  if(!N||(!K&&!W))return {N,K,empty:true};
+  if(!K){const sc=ST.students.map((s,i)=>{const w=wOf(s)||0;return {no:i+1,name:s.name||('คนที่ '+(i+1)),mc:0,w:wOf(s),score:w,full:W,pct:w/W*100,pass:w/W*100>=crit};});
+    return {N,K,W,wOnly:true,scores:sc,meanTot:sc.reduce((a,x)=>a+x.score,0)/N,full:W};}
   const vec={};items.forEach(j=>vec[j]=ST.students.map(s=>s.ans[j]===key[j]?1:0));
   const total=ST.students.map((_,s)=>items.reduce((a,j)=>a+vec[j][s],0));
   const critScore=crit/100*K;
@@ -172,24 +211,28 @@ function analyze(){
   const kr20=(K>1&&varSamp>0)?(K/(K-1))*(1-sumpq/varSamp):0;
   const nCh=ST.nChoices;
   const distract=items.map(j=>{const c={};for(let o=1;o<=nCh;o++)c[o]=0;let bl=0;ST.students.forEach(s=>{const a=s.ans[j];if(a>=1&&a<=nCh)c[a]++;else bl++;});return {j,key:key[j],c,bl};});
-  return {N,K,mean,sd,kr20,nU,nL,critScore,rows,distract,nCh,
-    scores:total.map((t,s)=>({no:s+1,name:ST.students[s].name||('คนที่ '+(s+1)),score:t,pct:t/K*100,pass:t>=critScore}))};
+  const full=K+W;
+  const scores=total.map((t,s)=>{const w=wOf(ST.students[s]);const sc=t+(w||0);
+    return {no:s+1,name:ST.students[s].name||('คนที่ '+(s+1)),mc:t,w,score:sc,full,pct:sc/full*100,pass:W?(sc/full*100>=crit):(t>=critScore)};});
+  const meanTot=scores.reduce((a,x)=>a+x.score,0)/N;
+  return {N,K,W,full,mean,meanTot,sd,kr20,nU,nL,critScore,rows,distract,nCh,scores};
 }
 
 // ---------- grid ----------
 const gridEl=document.getElementById('grid');
 function buildGrid(){
   const K=ST.key.length;
-  let h='<thead><tr><th class="rh">ผู้สอบ / เฉลย</th>';
+  let h='<thead><tr><th class="rh">ผู้สอบ / เฉลย</th><th class="wh" title="คะแนนข้อเขียน (แถวเฉลย = คะแนนเต็ม)">✍️ ข้อเขียน</th>';
   for(let j=0;j<K;j++)h+='<th>ข้อ '+(j+1)+'</th>';
   h+='</tr></thead><tbody>';
   // key row
-  h+='<tr class="keyrow"><td class="rh">🔑 เฉลย (Key)</td>';
+  h+='<tr class="keyrow"><td class="rh">🔑 เฉลย (Key)</td><td><input class="wcell" data-wmax="1" inputmode="decimal" placeholder="เต็ม" value="'+(wOn()?ST.writtenMax:'')+'"></td>';
   for(let j=0;j<K;j++)h+='<td><input class="cell" data-k="'+j+'" inputmode="numeric" maxlength="2" value="'+(ST.key[j]==null?'':ST.key[j])+'"></td>';
   h+='</tr>';
   // students
   ST.students.forEach((s,i)=>{
     h+='<tr><td class="rh"><input class="nm" data-nm="'+i+'" placeholder="คนที่ '+(i+1)+'" value="'+(s.name||'').replace(/"/g,'&quot;')+'"></td>';
+    h+='<td><input class="wcell" data-w="'+i+'" inputmode="decimal" value="'+(s.written==null?'':s.written)+'"'+(wOn()?'':' placeholder="–"')+'></td>';
     for(let j=0;j<K;j++)h+='<td><input class="cell" data-s="'+i+'" data-j="'+j+'" inputmode="numeric" maxlength="2" value="'+(s.ans[j]==null?'':s.ans[j])+'"></td>';
     h+='</tr>';
   });
@@ -207,10 +250,18 @@ gridEl.addEventListener('input',e=>{
     // auto-advance when a valid single digit within range
     if(v!==''&&+v>=1&&+v<=ST.nChoices&&ST.nChoices<10){focusNext(t);}
     scheduleRecalc();
+  }else if(t.classList.contains('wcell')){
+    let v=t.value.replace(/[^0-9.]/g,'');t.value=v;
+    if('wmax' in t.dataset){ST.writtenMax=v===''?0:+v;document.getElementById('wmax').value=ST.writtenMax;markW();}
+    else{ST.students[+t.dataset.w].written=v===''?null:+v;markW();}
+    scheduleRecalc();
   }else if('nm' in t.dataset){ST.students[+t.dataset.nm].name=t.value;scheduleSave();}
 });
+function markW(){const W=+ST.writtenMax||0;gridEl.querySelectorAll('.wcell[data-w]').forEach(inp=>{const v=inp.value;inp.classList.toggle('bad',v!==''&&(!W||+v>W));});}
 gridEl.addEventListener('keydown',e=>{
-  const t=e.target;if(!t.classList.contains('cell'))return;
+  const t=e.target;
+  if(t.classList.contains('wcell')&&e.key==='Enter'){e.preventDefault();const ws=[...gridEl.querySelectorAll('.wcell')];const nx=ws[ws.indexOf(t)+1];if(nx)nx.focus();return;}
+  if(!t.classList.contains('cell'))return;
   const cells=[...gridEl.querySelectorAll('.cell')];const i=cells.indexOf(t);
   if(e.key==='Enter'){e.preventDefault();const K=ST.key.length;const nx=cells[i+K];if(nx)nx.focus();}
 });
@@ -222,13 +273,10 @@ let rcT=null;function scheduleRecalc(){clearTimeout(rcT);rcT=setTimeout(()=>{rec
 function recalc(){A=analyze();renderResults();}
 function pill(t,c){return '<span class="pill '+c+'">'+t+'</span>';}
 function renderResults(){
+  if(A&&A.wOnly){renderKpis();['dist','itemT','distT','legend'].forEach(id=>document.getElementById(id).innerHTML='');document.getElementById('dpct').textContent='-';renderStu();return;}
   if(!A||A.empty){document.getElementById('kpis').innerHTML='<div class="hint" style="grid-column:1/-1">กรอกเฉลยและคำตอบอย่างน้อย 1 ข้อ 1 คน เพื่อดูผล</div>';
     ['dist','itemT','distT','stuT','legend'].forEach(id=>document.getElementById(id).innerHTML='');document.getElementById('dpct').textContent='0%';return;}
-  const passPct=A.N?A.nU/A.N*100:0;
-  document.getElementById('kpis').innerHTML=[
-    ['ผู้เข้าสอบ',A.N,''],['จำนวนข้อ',A.K,''],['คะแนนเฉลี่ย',fmt(A.mean,2),'/ '+A.K],
-    ['S.D.',fmt(A.sd,2),''],['KR-20',fmt(A.kr20,3),''],['ผ่านเกณฑ์',fmt(passPct,1)+'%',A.nU+' คน']
-  ].map(k=>'<div class="kpi"><div class="l">'+k[0]+'</div><div class="v">'+k[1]+' <small>'+k[2]+'</small></div></div>').join('');
+  renderKpis();
   const bands=[['ง่ายมาก (>.80)',p=>p>0.80,'#57c9b6'],['ค่อนข้างง่าย (.60–.80)',p=>p>0.60&&p<=0.80,'#4bc07f'],
     ['พอเหมาะ (.40–.60)',p=>p>0.40&&p<=0.60,'#1f9d63'],['ค่อนข้างยาก (.20–.40)',p=>p>=0.20&&p<=0.40,'#c98a04'],['ยากมาก (<.20)',p=>p<0.20,'#d64545']];
   const mx=Math.max(1,...bands.map(b=>A.rows.filter(r=>b[1](r.p)).length));
@@ -257,17 +305,34 @@ function renderResults(){
   const db=A.distract.map((d,i)=>{let c='';for(let o=1;o<=A.nCh;o++){const k=o===d.key;c+='<td class="mono" style="'+(k?'background:#e6f4ec;color:#1f9d63;font-weight:700':'')+'">'+d.c[o]+'</td>';}
     return '<tr><td class="q">ข้อ '+(i+1)+'</td><td class="keyc">'+d.key+'</td>'+c+'<td class="mono">'+(d.bl||0)+'</td></tr>';}).join('');
   document.getElementById('distT').innerHTML='<thead>'+dh+'</thead><tbody>'+db+'</tbody>';
-  // students
-  const sb=A.scores.map(s=>'<tr><td class="q">'+s.name+'</td><td class="mono">'+s.score+'</td><td class="mono">'+A.K+'</td><td class="mono">'+fmt(s.pct,1)+'</td><td>'+(s.pass?pill('ผ่านเกณฑ์','good'):pill('ไม่ผ่าน','bad'))+'</td></tr>').join('');
-  document.getElementById('stuT').innerHTML='<thead><tr><th class="q">ผู้สอบ</th><th>คะแนน</th><th>เต็ม</th><th>ร้อยละ</th><th>ผล</th></tr></thead><tbody>'+sb+'</tbody>';
+  renderStu();
+}
+function renderKpis(){
+  const W=A.W||0,k=[['ผู้เข้าสอบ',A.N,'']];
+  if(A.wOnly){k.push(['เต็มข้อเขียน',W,''],['เฉลี่ยข้อเขียน',fmt(A.meanTot,2),'/ '+W]);}
+  else{
+    const passPct=A.N?A.nU/A.N*100:0;
+    k.push(['จำนวนข้อ',A.K,''],['เฉลี่ยปรนัย',fmt(A.mean,2),'/ '+A.K]);
+    if(W)k.push(['เฉลี่ยรวม (+ข้อเขียน)',fmt(A.meanTot,2),'/ '+A.full]);
+    k.push(['S.D.',fmt(A.sd,2),''],['KR-20',fmt(A.kr20,3),''],['ผ่านเกณฑ์'+(W?' (ปรนัย)':''),fmt(passPct,1)+'%',A.nU+' คน']);
+  }
+  document.getElementById('kpis').innerHTML=k.map(x=>'<div class="kpi"><div class="l">'+x[0]+'</div><div class="v">'+x[1]+' <small>'+x[2]+'</small></div></div>').join('');
+}
+function renderStu(){
+  const W=A.W||0;
+  const head='<tr><th class="q">ผู้สอบ</th>'+(A.K?'<th>ปรนัย</th>':'')+(W?'<th>ข้อเขียน</th>':'')+'<th>รวม</th><th>เต็ม</th><th>ร้อยละ</th><th>ผล</th></tr>';
+  const sb=A.scores.map(s=>'<tr><td class="q">'+s.name+'</td>'+(A.K?'<td class="mono">'+s.mc+'</td>':'')+(W?'<td class="mono">'+(s.w==null?'-':fmt(s.w,1).replace(/\.0$/,''))+'</td>':'')+
+    '<td class="mono"><b>'+fmt(s.score,1).replace(/\.0$/,'')+'</b></td><td class="mono">'+s.full+'</td><td class="mono">'+fmt(s.pct,1)+'</td><td>'+(s.pass?pill('ผ่านเกณฑ์','good'):pill('ไม่ผ่าน','bad'))+'</td></tr>').join('');
+  document.getElementById('stuT').innerHTML='<thead>'+head+'</thead><tbody>'+sb+'</tbody>';
 }
 
 // ---------- controls ----------
-document.getElementById('addStu').onclick=()=>{ST.students.push({name:'',ans:new Array(ST.key.length).fill(null)});buildGrid();recalc();scheduleSave();};
+document.getElementById('addStu').onclick=()=>{ST.students.push({name:'',ans:new Array(ST.key.length).fill(null),written:null});buildGrid();recalc();scheduleSave();};
 document.getElementById('addItem').onclick=()=>{ST.key.push(null);ST.students.forEach(s=>s.ans.push(null));buildGrid();recalc();scheduleSave();};
 document.getElementById('delItem').onclick=()=>{if(ST.key.length<=1)return;ST.key.pop();ST.students.forEach(s=>s.ans.pop());buildGrid();recalc();scheduleSave();};
 document.getElementById('nchoice').onchange=e=>{ST.nChoices=Math.max(2,Math.min(10,+e.target.value||4));e.target.value=ST.nChoices;recalc();scheduleSave();};
 document.getElementById('crit').onchange=()=>{recalc();scheduleSave();};
+document.getElementById('wmax').onchange=e=>{ST.writtenMax=Math.max(0,+e.target.value||0);e.target.value=ST.writtenMax;buildGrid();markW();recalc();scheduleSave();};
 document.querySelectorAll('#mode .tab').forEach(b=>b.onclick=()=>{document.querySelectorAll('#mode .tab').forEach(x=>x.classList.remove('on'));b.classList.add('on');MODE=b.dataset.m;renderResults();});
 document.getElementById('title').oninput=scheduleSave;
 document.getElementById('level').oninput=scheduleSave;
@@ -286,9 +351,9 @@ async function save(){
   try{
     const r=await fetch(window.location.pathname+'/save',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({title:document.getElementById('title').value,level:document.getElementById('level').value,
-        criterion:+document.getElementById('crit').value,payload:{key:ST.key,nChoices:ST.nChoices,students:ST.students}})});
-    const j=await r.json();log.textContent=j.ok?'✓ บันทึกแล้ว':'บันทึกไม่สำเร็จ';
-  }catch(e){log.textContent='บันทึกไม่สำเร็จ (ออฟไลน์?)';}
+        criterion:+document.getElementById('crit').value,payload:ST})});
+    const j=await r.json();log.textContent=j.ok?'✓ บันทึกแล้ว':'บันทึกไม่สำเร็จ';return !!j.ok;
+  }catch(e){log.textContent='บันทึกไม่สำเร็จ (ออฟไลน์?)';return false;}
 }
 document.getElementById('save').onclick=save;
 
@@ -302,20 +367,67 @@ document.getElementById('xls').addEventListener('change',ev=>{
     const rows=XLSX.utils.sheet_to_json(wb.Sheets[nm],{header:1,defval:null});
     let kr=-1;for(let i=0;i<Math.min(rows.length,8);i++){const a=rows[i]&&rows[i][0]!=null?String(rows[i][0]):'';if(/เฉลย|key/i.test(a)){kr=i;break;}}
     if(kr<0)kr=2;
-    const kraw=rows[kr]||[];const key=[];for(let c=1;c<kraw.length;c++){const v=kraw[c];key.push(typeof v==='number'?v:(v!=null&&v!==''&&!isNaN(+v)?+v:null));}
+    const toNum=v=>typeof v==='number'?v:(v!=null&&v!==''&&!isNaN(+v)?+v:null);
+    let wc=-1;for(let i=0;i<kr;i++){const r=rows[i]||[];for(let c=1;c<r.length;c++){if(r[c]!=null&&/ข้อเขียน|อัตนัย|written/i.test(String(r[c]))){wc=c;break;}}if(wc>=0)break;}
+    const kraw=rows[kr]||[];const kend=wc>=0?wc:kraw.length;const key=[];for(let c=1;c<kend;c++){key.push(toNum(kraw[c]));}
     while(key.length&&key[key.length-1]==null)key.pop();
+    const wmaxX=wc>=0?toNum(kraw[wc]):null;
     const students=[];
     for(let i=kr+1;i<rows.length;i++){const r=rows[i]||[];const ans=[];let any=false;
       for(let c=1;c<=key.length;c++){const v=r[c];const num=typeof v==='number'?v:(v!=null&&v!==''&&!isNaN(+v)?+v:null);ans.push(num);if(num!=null)any=true;}
-      if(any)students.push({name:(r[0]!=null&&!/^คนที่/.test(String(r[0])))?String(r[0]):'',ans});}
+      const wv=wc>=0?toNum(r[wc]):null;if(wv!=null)any=true;
+      if(any){const nm=(r[0]!=null&&!/^คนที่/.test(String(r[0])))?String(r[0]).trim():'';
+        const old=ST.students.find(x=>nm&&(x.name||'').trim()===nm);
+        const o={name:nm,ans,written:wv};if(old&&old.sid){o.sid=old.sid;o.no=old.no;}students.push(o);}}
     if(!key.length||!students.length){log.textContent='ไฟล์ไม่ตรงรูปแบบ (ต้องมีแถวเฉลยและคำตอบ)';return;}
     const a2=rows[1]&&rows[1][0];if(a2!=null&&!isNaN(+a2)&&+a2>0&&+a2<=100)document.getElementById('crit').value=Math.round(+a2);
-    ST.key=key;ST.students=students;fix();buildGrid();recalc();save();
+    if(wmaxX!=null){ST.writtenMax=wmaxX;document.getElementById('wmax').value=wmaxX;}
+    else if(students.some(x=>x.written!=null)&&!(+ST.writtenMax>0)){const mx=Math.max(...students.map(x=>+x.written||0));ST.writtenMax=mx;document.getElementById('wmax').value=mx;}
+    ST.key=key;ST.students=students;fix();buildGrid();markW();recalc();save();
   }catch(ex){document.getElementById('savelog').textContent='อ่านไฟล์ไม่สำเร็จ: '+ex.message;}};
   rd.readAsArrayBuffer(f);
 });
 
+// ---------- push to gradebook ----------
+(function(){
+  const SUBJ=JSON.parse(document.getElementById('subjdata').textContent||'[]');
+  const ACC=JSON.parse(document.getElementById('accdata').textContent||'[]');
+  const sel=document.getElementById('pSubject'),acc=document.getElementById('pAccdb'),res=document.getElementById('pushRes');
+  const push=ST.push||{};
+  const curSubj=push.subject_id||SHEET_SUBJECT;
+  sel.innerHTML='<option value="">— เลือกรายวิชา —</option>'+SUBJ.map(s=>'<option value="'+s.id+'"'+(s.id==curSubj?' selected':'')+'>'+s.name+(s.rooms&&s.rooms.length?' ('+s.rooms.map(r=>r.name).join(', ')+')':'')+'</option>').join('');
+  acc.innerHTML+=ACC.map(a=>'<option value="'+a.id+'">'+a.code+(a.title?' · '+a.title:'')+'</option>').join('');
+  function guessAcc(){if(push.accdb_id){acc.value=String(push.accdb_id);return;}
+    const s=SUBJ.find(x=>x.id==sel.value);if(!s)return;const m=ACC.find(a=>a.code&&s.name.replace(/\s/g,'').includes(a.code.replace(/\s/g,'')));if(m)acc.value=String(m.id);}
+  guessAcc();sel.onchange=()=>{if(!push.accdb_id)acc.value='';guessAcc();};
+  const tg=ST.target||push.target||'final';document.querySelector('input[name=pTarget][value='+tg+']').checked=true;
+  document.querySelectorAll('input[name=pTarget]').forEach(r=>r.onchange=()=>{ST.target=r.value;scheduleSave();});
+  const accMaxW=document.getElementById('pAccMaxW');const togg=()=>accMaxW.style.display=acc.value?'':'none';acc.onchange=togg;togg();
+  if(push.at){const d=new Date(push.at);res.innerHTML='ส่งล่าสุด: '+(push.target==='midterm'?'กลางภาค':'ปลายภาค')+' '+push.n+' คน · '+d.toLocaleString('th-TH');}
+  document.getElementById('pushBtn').onclick=async()=>{
+    if(!sel.value){res.innerHTML='<span class="er">กรุณาเลือกรายวิชา</span>';return;}
+    const target=document.querySelector('input[name=pTarget]:checked').value;
+    const lbl=target==='midterm'?'กลางภาค':'ปลายภาค';
+    if(!confirm('ส่งคะแนนรวมเป็นคะแนน'+lbl+' (ร้อยละ) เข้าสมุดคะแนน?\nคะแนน'+lbl+'เดิมของนักเรียนที่มีคะแนนในชุดนี้จะถูกแทนที่'))return;
+    clearTimeout(svT);res.textContent='กำลังบันทึกและส่งคะแนน…';
+    if(!(await save())){res.innerHTML='<span class="er">บันทึกชุดข้อสอบไม่สำเร็จ ลองใหม่อีกครั้ง</span>';return;}
+    try{
+      const r=await fetch(window.location.pathname+'/push-grades',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({subject_id:+sel.value,target,accdb_id:acc.value?+acc.value:null,accdb_max:+document.getElementById('pAccMax').value||20})});
+      const j=await r.json();
+      if(!j.ok){res.innerHTML='<span class="er">'+(j.error||'ส่งไม่สำเร็จ')+'</span>';return;}
+      Object.entries(j.sids||{}).forEach(([i,sid])=>{if(ST.students[+i])ST.students[+i].sid=sid;});
+      ST.target=target;ST.push={target,subject_id:+sel.value,n:j.n,at:new Date().toISOString(),accdb_id:acc.value?+acc.value:null};
+      let h='<span class="ok">✓ ส่งคะแนน'+lbl+'แล้ว '+j.n+' คน</span>';
+      if(j.grades_links&&j.grades_links.length)h+=' · ดูในสมุดคะแนน: '+j.grades_links.map(l=>'<a href="'+l.url+'">'+l.name+'</a>').join(' · ');
+      if(j.accdb_url)h+='<br>📒 .accdb: เขียนแล้ว '+j.accdb_n+' คน'+(j.accdb_unmatched?' (ไม่พบในไฟล์ '+j.accdb_unmatched+' คน)':'')+' — <a href="'+j.accdb_url+'">เปิดสมุด .accdb</a>';
+      if(j.n_unmatched)h+='<br><span class="er">จับคู่ไม่ได้ '+j.n_unmatched+' คน</span> (ชื่อไม่ตรงกับรายชื่อในห้อง): '+j.unmatched.join(', ');
+      res.innerHTML=h;
+    }catch(e){res.innerHTML='<span class="er">ส่งไม่สำเร็จ: '+e.message+'</span>';}
+  };
+})();
+
 // init
-buildGrid();recalc();
+buildGrid();markW();recalc();
 </script>
 {% endblock %}

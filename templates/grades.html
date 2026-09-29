@@ -8,7 +8,20 @@
   <a class="btn" target="_blank" href="{{ url_for('pp5_print', subject_id=subject.id, classroom_id=room.id) }}">พิมพ์ ปพ.5</a>
   <a class="btn secondary" href="{{ url_for('pp5_export', subject_id=subject.id, classroom_id=room.id) }}">Export ปพ.5</a>
   <a class="btn secondary" href="{{ url_for('attendance', subject_id=subject.id, classroom_id=room.id) }}">เช็กชื่อ</a>
+  <a class="btn secondary" href="{{ url_for('analysis_for_subject', subject_id=subject.id, classroom_id=room.id) }}">📊 คะแนนสอบ/วิเคราะห์ข้อสอบ</a>
 </div>
+{% if exam_sheets %}
+<section class="card" style="border-left:4px solid #0f6e63;padding:12px 16px">
+  <b>📊 คะแนนสอบจากระบบวิเคราะห์ข้อสอบ</b>
+  <ul style="margin:6px 0 0;padding-left:20px">
+  {% for ex in exam_sheets %}
+    <li><a href="{{ url_for('analysis_sheet', sid=ex.id) }}">{{ ex.title }}</a>
+      {% if ex.push and ex.push.n %} — ส่งเข้าช่อง <b>{{ 'กลางภาค' if ex.push.target == 'midterm' else 'ปลายภาค' }}</b> แล้ว {{ ex.push.n }} คน (ปรนัย + ข้อเขียน คิดเป็นร้อยละ){% else %} — <span class="muted">ยังไม่ได้ส่งคะแนนเข้าสมุด</span>{% endif %}
+    </li>
+  {% endfor %}
+  </ul>
+</section>
+{% endif %}
 <section class="card">
 <form method="post">
 <h2>ตั้งค่าน้ำหนักคะแนน</h2>

@@ -6736,7 +6736,8 @@ def grades(subject_id, classroom_id):
     for link in links:
         rows.append(calculate_grade_row(subject, room, link.student))
     total_weight = setting.worksheet_weight + setting.quiz_weight + setting.attendance_weight + (getattr(setting, 'classwork_weight', 0) or 0) + setting.midterm_weight + setting.final_weight
-    return render_template('grades.html', subject=subject, room=room, rows=rows, setting=setting, total_weight=total_weight)
+    return render_template('grades.html', subject=subject, room=room, rows=rows, setting=setting, total_weight=total_weight,
+                           exam_sheets=analysis_links_for_subject(subject.id))
 
 @app.route('/export_grades/<int:subject_id>/<int:classroom_id>')
 @login_required
@@ -9305,13 +9306,12 @@ def analysis_new():
             stu = link.student or User.query.get(link.student_id)
             if not stu:
                 continue
-            nm = (getattr(stu, 'full_name', '') or '').strip() or ((getattr(stu, 'first_name', '') + ' ' + getattr(stu, 'last_name', '')).strip())
-            students.append({'name': nm, 'ans': [None]*n_items})
+            students.append(_analysis_stu_entry(stu, n_items))
     if not level and rooms:
         level = ', '.join(sorted({rm.name for rm in rooms if rm.name}))
     if not title:
         title = ((subject.name + ' ') if subject else '') + (room.name if room else 'ชุดข้อสอบใหม่')
-    payload = {'key': [None]*n_items, 'nChoices': n_choices, 'students': students}
+    payload = {'key': [None]*n_items, 'nChoices': n_choices, 'writtenMax': 0, 'target': 'final', 'students': students}
     s = AnalysisSheet(owner_id=current_user.id, title=title.strip(), level=level, criterion=crit,
                       subject_id=(int(subject_id) if subject_id else None),
                       classroom_id=(int(classroom_id) if classroom_id else None),
@@ -9336,10 +9336,17 @@ def analysis_template(sid):
     ws.cell(2, 1, int(s.criterion or 50))
     for j in range(N):
         ws.cell(2, 2 + j, 'ข้อ %d' % (j + 1))
+    wcol = 2 + N
+    ws.cell(2, wcol, 'ข้อเขียน')
     ws.cell(3, 1, 'เฉลย (Key)')
+    wmax = data.get('writtenMax') or 0
+    ws.cell(3, wcol, wmax if wmax else None)
+    ws.cell(1, wcol, 'แถวเฉลย = คะแนนเต็มข้อเขียน')
     rows = students if students else [{'name': 'คนที่ %d' % i} for i in range(1, 6)]
     for i, st in enumerate(rows):
         ws.cell(4 + i, 1, st.get('name') or ('คนที่ %d' % (i + 1)))
+        if st.get('written') is not None:
+            ws.cell(4 + i, wcol, st.get('written'))
     ws.column_dimensions['A'].width = 26
     bio = io.BytesIO(); wb.save(bio); bio.seek(0)
     return _accdb_send_file(bio, as_attachment=True, download_name='ฟอร์มกรอกคะแนน.xlsx',
@@ -9348,10 +9355,17 @@ def analysis_template(sid):
 @app.route('/analysis/for-subject/<int:subject_id>')
 @login_required
 def analysis_for_subject(subject_id):
+    """เปิดชุดวิเคราะห์ข้อสอบของวิชา (จากหน้าเช็กชื่อ/สมุดคะแนน/รายวิชา) — ถ้ายังไม่มีจะสร้างให้พร้อมรายชื่อนักเรียน"""
     subject = Subject.query.get(subject_id)
     if not subject or not owns_subject(subject):
         _accdb_abort(404)
-    s = AnalysisSheet.query.filter_by(owner_id=current_user.id, subject_id=subject_id).order_by(AnalysisSheet.id.desc()).first()
+    classroom_id = request.args.get('classroom_id', type=int)
+    q = AnalysisSheet.query.filter_by(owner_id=current_user.id, subject_id=subject_id)
+    s = None
+    if classroom_id:
+        s = q.filter_by(classroom_id=classroom_id).order_by(AnalysisSheet.id.desc()).first()
+    if not s:
+        s = q.order_by(AnalysisSheet.id.desc()).first()
     if not s:
         rooms = [sc.classroom for sc in SubjectClassroom.query.filter_by(subject_id=subject_id).all() if sc.classroom]
         students, seen = [], set()
@@ -9363,11 +9377,10 @@ def analysis_for_subject(subject_id):
                 stu = link.student or User.query.get(link.student_id)
                 if not stu:
                     continue
-                nm = (getattr(stu, 'full_name', '') or '').strip() or ((getattr(stu, 'first_name', '') + ' ' + getattr(stu, 'last_name', '')).strip())
-                students.append({'name': nm, 'ans': [None]*20})
-        payload = {'key': [None]*20, 'nChoices': 4, 'students': students}
+                students.append(_analysis_stu_entry(stu, 20))
+        payload = {'key': [None]*20, 'nChoices': 4, 'writtenMax': 0, 'target': 'final', 'students': students}
         level = ', '.join(sorted({rm.name for rm in rooms if rm.name}))
-        s = AnalysisSheet(owner_id=current_user.id, title=subject.name, level=level, criterion=50,
+        s = AnalysisSheet(owner_id=current_user.id, title=subject.name, level=level[:40], criterion=50,
                           subject_id=subject_id, payload=_accdb_json.dumps(payload, ensure_ascii=False))
         db.session.add(s); db.session.commit()
     return redirect(url_for('analysis_sheet', sid=s.id))
@@ -9378,7 +9391,12 @@ def analysis_sheet(sid):
     s = AnalysisSheet.query.get(sid)
     if not s or s.owner_id != current_user.id:
         _accdb_abort(404)
-    return render_template('analysis_sheet.html', sheet=s, payload_json=(s.payload or '{}'))
+    subjects = _analysis_subject_options()
+    accdbs = [{'id': a.id, 'code': a.code, 'title': a.title or ''} for a in
+              AccdbSubject.query.filter_by(owner_id=current_user.id).order_by(AccdbSubject.code).all()]
+    return render_template('analysis_sheet.html', sheet=s, payload_json=(s.payload or '{}'),
+                           subjects_json=_accdb_json.dumps(subjects, ensure_ascii=False),
+                           accdb_json=_accdb_json.dumps(accdbs, ensure_ascii=False))
 
 @app.route('/analysis/<int:sid>/save', methods=['POST'])
 @login_required
@@ -9405,6 +9423,201 @@ def analysis_delete(sid):
         db.session.delete(s); db.session.commit()
         flash('ลบชุดข้อสอบแล้ว', 'success')
     return redirect(url_for('analysis_home'))
+
+
+# ---------- คะแนนรวม (ปรนัย + ข้อเขียน) และส่งเข้าสมุดคะแนน ----------
+_ANALYSIS_PREFIXES = ('เด็กชาย', 'เด็กหญิง', 'นางสาว', 'นาย', 'นาง', 'ด.ช.', 'ด.ญ.')
+
+def _analysis_norm_name(*parts):
+    x = ''.join((p or '') for p in parts)
+    for pre in _ANALYSIS_PREFIXES:
+        x = x.replace(pre, '')
+    return ''.join(x.split()).strip()
+
+def _analysis_stu_name(stu):
+    return (getattr(stu, 'full_name', '') or '').strip() or \
+        ((getattr(stu, 'first_name', '') or '') + ' ' + (getattr(stu, 'last_name', '') or '')).strip()
+
+def _analysis_stu_entry(stu, n_items):
+    return {'name': _analysis_stu_name(stu), 'sid': stu.id,
+            'no': (getattr(stu, 'student_no', '') or '').strip(),
+            'ans': [None] * n_items, 'written': None}
+
+def _analysis_num(v):
+    if v is None or v == '':
+        return None
+    try:
+        return float(v)
+    except Exception:
+        return None
+
+def _analysis_scores(data):
+    """คำนวณคะแนนรายคน = ปรนัย (ตอบตรงเฉลย) + ข้อเขียน — กติกาเดียวกับหน้าเว็บ"""
+    key = data.get('key') or []
+    students = data.get('students') or []
+    items = []
+    for j, k in enumerate(key):
+        if k is None:
+            continue
+        if any(j < len(s.get('ans') or []) and (s.get('ans') or [])[j] is not None for s in students):
+            items.append(j)
+    wmax = max(0.0, _analysis_num(data.get('writtenMax')) or 0.0)
+    full = len(items) + wmax
+    out = []
+    for s in students:
+        ans = s.get('ans') or []
+        answered = any(a is not None for a in ans)
+        mc = sum(1 for j in items if j < len(ans) and ans[j] is not None and _analysis_num(ans[j]) == _analysis_num(key[j]))
+        w = _analysis_num(s.get('written'))
+        if w is not None:
+            w = max(0.0, min(wmax, w)) if wmax > 0 else None
+        total = mc + (w or 0)
+        out.append({'mc': mc, 'written': w, 'total': total, 'full': full,
+                    'pct': (total / full * 100) if full else 0.0,
+                    'has': answered or (w is not None)})
+    return items, wmax, out
+
+def _analysis_rooms(sheet, subject):
+    rooms = []
+    if sheet.classroom_id:
+        rm = Classroom.query.get(sheet.classroom_id)
+        if rm:
+            rooms = [rm]
+    if not rooms and subject:
+        rooms = [sc.classroom for sc in SubjectClassroom.query.filter_by(subject_id=subject.id).all() if sc.classroom]
+    if not rooms:
+        rooms = [c for c in (Classroom.query.get(cid) for cid in (teacher_classroom_ids() or [])) if c]
+    return rooms
+
+def _accdb_grade_from_pct(p):
+    try:
+        scale = _accdb_seed_data().get('gradeScale') or []
+    except Exception:
+        scale = []
+    for g in scale:
+        if g['min'] <= p <= g['max']:
+            return str(g['g'])
+    return grade_from_score(p)
+
+@app.route('/analysis/<int:sid>/push-grades', methods=['POST'])
+@login_required
+def analysis_push_grades(sid):
+    s = AnalysisSheet.query.get(sid)
+    if not s or s.owner_id != current_user.id:
+        _accdb_abort(404)
+    body = request.get_json(force=True) or {}
+    target = body.get('target') if body.get('target') in ('midterm', 'final') else 'final'
+    subject_id = body.get('subject_id') or s.subject_id
+    try:
+        subject = Subject.query.get(int(subject_id)) if subject_id else None
+    except Exception:
+        subject = None
+    if not subject or not owns_subject(subject):
+        return _accdb_jsonify(ok=False, error='กรุณาเลือกรายวิชาที่จะส่งคะแนนเข้า')
+    if s.subject_id != subject.id:
+        s.subject_id = subject.id
+        s.classroom_id = None
+    try:
+        data = _accdb_json.loads(s.payload or '{}')
+    except Exception:
+        data = {}
+    items, wmax, scores = _analysis_scores(data)
+    if not items and wmax <= 0:
+        return _accdb_jsonify(ok=False, error='ยังไม่มีเฉลย/คำตอบ หรือคะแนนข้อเขียน')
+
+    # รายชื่อนักเรียนของวิชา (ตามห้องที่ผูกไว้)
+    rooms = _analysis_rooms(s, subject)
+    by_id, by_name = {}, {}
+    for rm in rooms:
+        for link in ClassroomStudent.query.filter_by(classroom_id=rm.id).all():
+            stu = link.student or User.query.get(link.student_id)
+            if not stu or stu.id in by_id:
+                continue
+            by_id[stu.id] = stu
+            for nm in {_analysis_norm_name(_analysis_stu_name(stu)),
+                       _analysis_norm_name(getattr(stu, 'first_name', ''), getattr(stu, 'last_name', ''))}:
+                if nm:
+                    by_name.setdefault(nm, []).append(stu)
+
+    pushed, unmatched, sid_map = {}, [], {}
+    for i, (st, sc) in enumerate(zip(data.get('students') or [], scores)):
+        if not sc['has']:
+            continue
+        stu = None
+        try:
+            stu = by_id.get(int(st.get('sid'))) if st.get('sid') else None
+        except Exception:
+            stu = None
+        if not stu:
+            cand = by_name.get(_analysis_norm_name(st.get('name') or ''), [])
+            if len(cand) == 1:
+                stu = cand[0]
+        if not stu:
+            unmatched.append((st.get('name') or 'คนที่ %d' % (i + 1)))
+            continue
+        st['sid'] = stu.id
+        sid_map[i] = stu.id
+        pct = round(sc['pct'], 2)
+        manual = get_manual_score(subject.id, stu.id)
+        setattr(manual, target, pct)
+        pushed[stu.id] = (stu, pct)
+
+    # เขียนตรงเข้าสมุดคะแนน .accdb (ถ้าเลือก)
+    acc_n, acc_unmatched, acc_sub = 0, 0, None
+    if body.get('accdb_id'):
+        try:
+            acc_sub = AccdbSubject.query.get(int(body.get('accdb_id')))
+        except Exception:
+            acc_sub = None
+        if acc_sub and acc_sub.owner_id == current_user.id:
+            acc_max = _analysis_num(body.get('accdb_max')) or 20.0
+            field = 'mid' if target == 'midterm' else 'final'
+            arows = AccdbRow.query.filter_by(subject_id=acc_sub.id).all()
+            a_no = {(r.sid or '').strip(): r for r in arows if (r.sid or '').strip()}
+            a_nm = {}
+            for r in arows:
+                a_nm.setdefault(_analysis_norm_name(r.first, r.last), []).append(r)
+            for stu, pct in pushed.values():
+                r = a_no.get((getattr(stu, 'student_no', '') or '').strip())
+                if not r:
+                    for nm in (_analysis_norm_name(getattr(stu, 'first_name', ''), getattr(stu, 'last_name', '')),
+                               _analysis_norm_name(_analysis_stu_name(stu))):
+                        c = a_nm.get(nm) or []
+                        if nm and len(c) == 1:
+                            r = c[0]; break
+                if not r:
+                    acc_unmatched += 1
+                    continue
+                setattr(r, field, round(pct / 100.0 * acc_max, 2))
+                tot = float(r.um01 or 0) + float(r.um02 or 0) + float(r.mid or 0) + float(r.final or 0)
+                r.grade = _accdb_grade_from_pct(min(100.0, tot))
+                acc_n += 1
+        else:
+            acc_sub = None
+
+    data['target'] = target
+    data['push'] = {'target': target, 'subject_id': subject.id, 'n': len(pushed),
+                    'at': datetime.utcnow().isoformat(timespec='minutes') + 'Z',
+                    'accdb_id': acc_sub.id if acc_sub else None, 'accdb_n': acc_n}
+    s.payload = _accdb_json.dumps(data, ensure_ascii=False)
+    db.session.commit()
+    links = [{'name': rm.name, 'url': url_for('grades', subject_id=subject.id, classroom_id=rm.id)} for rm in rooms]
+    return _accdb_jsonify(ok=True, n=len(pushed), target=target, unmatched=unmatched[:60],
+                          n_unmatched=len(unmatched), sids={str(k): v for k, v in sid_map.items()},
+                          accdb_n=acc_n, accdb_unmatched=acc_unmatched,
+                          accdb_url=url_for('accdb_subject', sid=acc_sub.id) if acc_sub else None,
+                          grades_links=links)
+
+def analysis_links_for_subject(subject_id):
+    """ชุดวิเคราะห์ข้อสอบที่ผูกกับวิชา + สถานะการส่งคะแนน — ใช้แสดงในหน้าสมุดคะแนน"""
+    out = []
+    for sh in AnalysisSheet.query.filter_by(subject_id=subject_id).order_by(AnalysisSheet.id.desc()).all():
+        try:
+            push = (_accdb_json.loads(sh.payload or '{}') or {}).get('push') or {}
+        except Exception:
+            push = {}
+        out.append({'id': sh.id, 'title': sh.title, 'push': push})
+    return out
 
 # ==================== จบโมดูลวิเคราะห์ข้อสอบ ====================
 
