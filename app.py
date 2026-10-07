@@ -6902,6 +6902,36 @@ def export_term_all_xlsx():
         except Exception:
             pass
 
+    # ---- ชีต 7: วิเคราะห์ข้อสอบ (ภาพรวมคะแนนปลายภาค ทุกวิชา) ----
+    import statistics as _exstat
+    ws = new_sheet('วิเคราะห์ข้อสอบ', ['รายวิชา','ห้องเรียน','จำนวนเข้าสอบ','คะแนนเต็ม','สูงสุด','ต่ำสุด',
+        'เกณฑ์ผ่าน(50%)','เฉลี่ย','S.D.','C.V.(%)','ผ่านเกณฑ์(คน)','ผ่าน(ร้อยละ)','ไม่ผ่าน(คน)','ไม่ผ่าน(ร้อยละ)'])
+    _EX_FULL = 100; _EX_THR = 50.0
+    for p in pairs:
+        try:
+            links = ClassroomStudent.query.filter_by(classroom_id=p.classroom_id).all()
+            finals = []
+            for link in links:
+                r = calculate_grade_row(p.subject, p.classroom, link.student, create_manual=False)
+                try: fv = float(r['manual'].final)
+                except Exception: fv = 0.0
+                if fv and fv > 0:
+                    finals.append(fv)
+            n = len(finals)
+            if n == 0:
+                ws.append([p.subject.name, p.classroom.name, 0, _EX_FULL, '', '', _EX_THR, '', '', '', 0, 0, 0, 0])
+                continue
+            mean = sum(finals) / n
+            sd = _exstat.stdev(finals) if n > 1 else 0.0
+            cv = (sd / mean * 100) if mean else 0.0
+            passed = sum(1 for x in finals if x >= _EX_THR); failed = n - passed
+            ws.append([p.subject.name, p.classroom.name, n, _EX_FULL,
+                round(max(finals), 2), round(min(finals), 2), _EX_THR,
+                round(mean, 2), round(sd, 3), round(cv, 3),
+                passed, round(passed / n * 100, 2), failed, round(failed / n * 100, 2)])
+        except Exception:
+            pass
+
     if 'Sheet' in wb.sheetnames:
         del wb['Sheet']
     bio = BytesIO(); wb.save(bio); bio.seek(0)
