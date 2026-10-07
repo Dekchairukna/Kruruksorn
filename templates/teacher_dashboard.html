@@ -1,6 +1,10 @@
 {% extends 'base.html' %}
 {% block content %}
 <h1>แดชบอร์ดครู</h1>
+<div style="margin:10px 0;padding:14px 16px;background:#0F6E63;border-radius:12px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
+  <span style="color:#fff;font-weight:700;font-size:16px">📦 ส่งออกข้อมูลทั้งเทอมนี้ รวมทุกวิชา (คะแนน/เกรด · เช็กชื่อ · ปพ.5 · รายชื่อ · งานที่สั่ง)</span>
+  <a href="{{ url_for('export_term_all_xlsx') }}" style="background:#fff;color:#0a4f47;border-radius:8px;padding:9px 16px;font-weight:700;text-decoration:none">⬇ ดาวน์โหลด Excel</a>
+</div>
 {% if period_info %}
 <div class="period-alert">
   <div>

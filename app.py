@@ -6755,6 +6755,162 @@ def export_grades(subject_id, classroom_id):
     return send_file(path, as_attachment=True)
 
 
+@app.route('/export_all_grades.csv')
+@login_required
+@role_required('teacher','admin')
+def export_all_grades_csv():
+    """ส่งออกคะแนน+เกรด ของทุกวิชา/ทุกห้องที่ครูสอน เป็น CSV ไฟล์เดียว (เปิดใน Excel ไทยไม่เพี้ยน)
+    ใช้ดึงข้อมูลไปทำรายงานปิดเทอม (ปพ.5 / สมรรถนะ / วิจัย ฯลฯ)"""
+    import csv, io
+    pairs = phase1_subject_room_pairs()
+    buf = io.StringIO(); buf.write('﻿')  # BOM ให้ Excel อ่านภาษาไทย
+    w = csv.writer(buf)
+    w.writerow(['รหัส/ชื่อวิชา','หน่วยกิต','ห้องเรียน','เลขที่','รหัสนักเรียน','ชื่อ-สกุล',
+                'คะแนนเก็บได้','คะแนนเก็บเต็ม','คะแนนเก็บ(%)','แบบทดสอบเฉลี่ย','งานเสร็จ','งานทั้งหมด',
+                'กลางภาค','ปลายภาค','จิตพิสัย','มา','ขาด','สาย','ลา','โดดเรียน','ไปกิจกรรม','เวลาเรียน(%)',
+                'คะแนนรวม','เกรด'])
+    for pair in pairs:
+        subject = pair.subject; room = pair.classroom
+        links = ClassroomStudent.query.filter_by(classroom_id=room.id).join(
+            User, ClassroomStudent.student_id == User.id).order_by(
+            User.student_no.asc(), User.username.asc()).all()
+        for link in links:
+            r = calculate_grade_row(subject, room, link.student, create_manual=False)
+            s = link.student
+            w.writerow([subject.name, subject.credit, room.name,
+                        getattr(s,'student_no','') or '', s.username, s.full_name,
+                        r['classwork_raw'], r['classwork_max'], r['classwork_percent'],
+                        r['quiz_avg'], r['complete'], r['total_assignments'],
+                        r['manual'].midterm or 0, r['manual'].final or 0, r['manual'].behavior or 0,
+                        r['present'], r['absent'], r['late'], r['leave'], r['skipped'], r['activity'],
+                        r['attendance_percent'], r['total'], r['grade']])
+    data = buf.getvalue().encode('utf-8')
+    return send_file(BytesIO(data), as_attachment=True,
+                     download_name='grades_all.csv', mimetype='text/csv; charset=utf-8')
+
+
+@app.route('/export_term_all.xlsx')
+@login_required
+@role_required('teacher','admin')
+def export_term_all_xlsx():
+    """ส่งออก 'ข้อมูลทั้งเทอม รวมทุกวิชา' เป็น Excel ไฟล์เดียว หลายชีต
+    (คะแนน/เกรด, เช็กชื่อ, ปพ.5 การกระจายเกรด, รายชื่อนักเรียน, งานที่สั่ง, คะแนนในคาบ)"""
+    from openpyxl.styles import Font, Alignment, PatternFill
+    wb = Workbook()
+    hdr_font = Font(bold=True, color='FFFFFF')
+    hdr_fill = PatternFill('solid', fgColor='0F6E63')
+    def new_sheet(title, headers):
+        ws = wb.create_sheet(title=title[:31])
+        ws.append(headers)
+        for c in ws[1]:
+            c.font = hdr_font; c.fill = hdr_fill; c.alignment = Alignment(horizontal='center', vertical='center')
+        ws.freeze_panes = 'A2'
+        return ws
+    pairs = phase1_subject_room_pairs()
+
+    # ---- ชีต 1: คะแนน-เกรด ----
+    ws = new_sheet('คะแนน-เกรด', ['รายวิชา','ห้องเรียน','เลขที่','รหัสนักเรียน','ชื่อ-สกุล',
+        'คะแนนเก็บได้','คะแนนเก็บเต็ม','แบบทดสอบเฉลี่ย','กลางภาค','ปลายภาค','จิตพิสัย',
+        'เวลาเรียน(%)','คะแนนรวม','เกรด'])
+    for p in pairs:
+        links = ClassroomStudent.query.filter_by(classroom_id=p.classroom_id).join(
+            User, ClassroomStudent.student_id==User.id).order_by(User.student_no.asc(), User.username.asc()).all()
+        for link in links:
+            try:
+                r = calculate_grade_row(p.subject, p.classroom, link.student, create_manual=False); s = link.student
+                ws.append([p.subject.name, p.classroom.name, getattr(s,'student_no','') or '', s.username, s.full_name,
+                    r['classwork_raw'], r['classwork_max'], r['quiz_avg'], r['manual'].midterm or 0,
+                    r['manual'].final or 0, r['manual'].behavior or 0, r['attendance_percent'], r['total'], r['grade']])
+            except Exception:
+                pass
+
+    # ---- ชีต 2: เช็กชื่อ (สรุปรายวิชา/ห้อง) ----
+    ws = new_sheet('เช็กชื่อ', ['รายวิชา','ห้องเรียน','จำนวนนักเรียน','คาบที่เช็ก','มา','สาย','ขาด','โดดเรียน','ลาป่วย','ไปกิจกรรม','มาเรียน(%)'])
+    for p in pairs:
+        try:
+            links = ClassroomStudent.query.filter_by(classroom_id=p.classroom_id).all()
+            slots, _, summary = build_attendance_summary(p.subject_id, p.classroom_id, links)
+            agg = {k:0 for k in ['มา','สาย','ขาด','โดดเรียน','ลาป่วย','ไปกิจกรรม']}
+            for row in summary:
+                for k in agg: agg[k]+= row.get(k,0)
+            total_units = sum(agg.values())
+            pct = round((agg['มา']+agg['สาย']+agg['ไปกิจกรรม'])/total_units*100,1) if total_units else 100
+            ws.append([p.subject.name, p.classroom.name, len(links), len(slots),
+                agg['มา'],agg['สาย'],agg['ขาด'],agg['โดดเรียน'],agg['ลาป่วย'],agg['ไปกิจกรรม'], pct])
+        except Exception:
+            pass
+
+    # ---- ชีต 3: ปพ.5 การกระจายเกรด ----
+    glevels = ['4','3.5','3','2.5','2','1.5','1','0']
+    ws = new_sheet('ปพ.5-กระจายเกรด', ['รายวิชา','ห้องเรียน','จำนวน']+glevels+['เฉลี่ย','ได้ 3 ขึ้นไป(คน)','ร้อยละ'])
+    for p in pairs:
+        try:
+            links = ClassroomStudent.query.filter_by(classroom_id=p.classroom_id).all()
+            cnt = {g:0 for g in glevels}; tot=0; ssum=0.0; ge3=0
+            for link in links:
+                r = calculate_grade_row(p.subject, p.classroom, link.student, create_manual=False)
+                g = r['grade']
+                if g in cnt: cnt[g]+=1
+                try:
+                    gv=float(g); ssum+=gv; tot+=1
+                    if gv>=3: ge3+=1
+                except: pass
+            avg = round(ssum/tot,2) if tot else 0
+            pct = round(ge3/len(links)*100,2) if links else 0
+            ws.append([p.subject.name, p.classroom.name, len(links)]+[cnt[g] for g in glevels]+[avg, ge3, pct])
+        except Exception:
+            pass
+
+    # ---- ชีต 4: รายชื่อนักเรียน ----
+    ws = new_sheet('รายชื่อนักเรียน', ['ห้องเรียน','เลขที่','รหัสนักเรียน','คำนำหน้า','ชื่อ-สกุล','เพศ','เบอร์ผู้ปกครอง'])
+    seen_rooms = []
+    for p in pairs:
+        if p.classroom_id in seen_rooms: continue
+        seen_rooms.append(p.classroom_id)
+        links = ClassroomStudent.query.filter_by(classroom_id=p.classroom_id).join(
+            User, ClassroomStudent.student_id==User.id).order_by(User.student_no.asc(), User.username.asc()).all()
+        for link in links:
+            s = link.student
+            ws.append([p.classroom.name, getattr(s,'student_no','') or '', s.username,
+                getattr(s,'prefix','') or '', s.full_name, getattr(s,'gender','') or '', getattr(s,'guardian_phone','') or ''])
+
+    # ---- ชีต 5: งานที่สั่ง ----
+    ws = new_sheet('งานที่สั่ง', ['รายวิชา','ห้องเรียน','ชื่องาน','กำหนดส่ง','ส่งแล้ว(คน)','เรียนจบ(คน)','ทั้งหมด(คน)'])
+    for p in pairs:
+        try:
+            asgs = Assignment.query.filter_by(subject_id=p.subject_id, classroom_id=p.classroom_id).all()
+            for a in asgs:
+                sts = AssignmentStatus.query.filter_by(assignment_id=a.id).all()
+                submitted = sum(1 for x in sts if x.worksheet_submitted or x.quiz_submitted)
+                done = sum(1 for x in sts if x.status=='เรียนจบ')
+                ws.append([p.subject.name, p.classroom.name, a.title,
+                    a.due_date.isoformat() if a.due_date else '', submitted, done, len(sts)])
+        except Exception:
+            pass
+
+    # ---- ชีต 6: คะแนนในคาบ ----
+    ws = new_sheet('คะแนนในคาบ', ['รายวิชา','ห้องเรียน','วันที่','หัวข้อ','คะแนนเต็ม','จำนวนที่ให้คะแนน','คะแนนเฉลี่ย'])
+    for p in pairs:
+        try:
+            items = ClassworkScoreItem.query.filter_by(subject_id=p.subject_id, classroom_id=p.classroom_id).all()
+            for it in items:
+                scs = ClassworkScore.query.filter_by(item_id=it.id).all()
+                vals = [float(x.score or 0) for x in scs]
+                avg = round(sum(vals)/len(vals),2) if vals else 0
+                ws.append([p.subject.name, p.classroom.name,
+                    it.date.isoformat() if it.date else '', it.title, it.max_score, len(vals), avg])
+        except Exception:
+            pass
+
+    if 'Sheet' in wb.sheetnames:
+        del wb['Sheet']
+    bio = BytesIO(); wb.save(bio); bio.seek(0)
+    sem = '1-2569'
+    return send_file(bio, as_attachment=True,
+        download_name=f'ข้อมูลทั้งเทอม_{sem}.xlsx',
+        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
+
 # -----------------------------
 # Phase 1: Academic core dashboard + ปพ.5
 # -----------------------------

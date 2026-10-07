@@ -5,7 +5,10 @@
     <h1>เช็กชื่อและสมุดคะแนน</h1>
     <p class="muted">เลือกคู่รายวิชา/ห้องเรียน เพื่อเช็กเวลาเรียน สรุปขาด-ลา-มาสาย และทำคะแนนตัดเกรดทั้งเทอม</p>
   </div>
-  <a class="btn" href="{{ url_for('classwork_score_history') }}">ค้นหาคะแนนในคาบย้อนหลัง</a>
+  <div style="display:flex;gap:8px;flex-wrap:wrap">
+    <a class="btn" href="{{ url_for('classwork_score_history') }}">ค้นหาคะแนนในคาบย้อนหลัง</a>
+    <a class="btn" href="{{ url_for('export_all_grades_csv') }}">⬇ ดาวน์โหลดคะแนนทุกวิชา (CSV)</a>
+  </div>
 </div>
 
 

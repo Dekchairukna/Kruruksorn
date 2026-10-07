@@ -29,6 +29,7 @@
       <a href="{{ url_for('student_club_register') }}">🎯 เลือกชุมนุม</a>
     {% endif %}
     {% if current_user.role in ['admin','teacher'] %}
+      <a href="{{ url_for('export_term_all_xlsx') }}" style="background:#0F6E63;color:#fff;border-radius:8px;font-weight:700;margin:4px 0;">📦 ส่งออกข้อมูลทั้งเทอม (ทุกวิชา)</a>
       <details class="nav-group" open>
         <summary>📖 การสอน</summary>
         <a href="{{ url_for('subjects') }}">📚 รายวิชา</a>
