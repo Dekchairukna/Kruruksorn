@@ -10118,9 +10118,16 @@ def report_generate(key):
 # ==================== จบโมดูลคลังเอกสาร/รายงาน ====================
 
 
-# ฟีเจอร์ดูแลนักเรียน (คะแนนความประพฤติ/โฮมรูม/รายงานเช็กชื่อ/ออกนอกบริเวณ/บัญชีของฉัน)
-import sss_features
-sss_features.register(app, globals())
+# ฟีเจอร์ดูแลนักเรียนเป็นโมดูลเสริมระหว่างพัฒนา จึงต้องไม่ทำให้แอปหลักเปิดไม่ได้
+# หากไฟล์โมดูลยังไม่ได้ติดตั้งบน production ให้ข้ามส่วนนี้ไปก่อน
+try:
+    import sss_features
+except ModuleNotFoundError as exc:
+    if exc.name != 'sss_features':
+        raise
+    app.logger.warning('Optional sss_features module is not installed; skipping it')
+else:
+    sss_features.register(app, globals())
 
 
 def init_db():
