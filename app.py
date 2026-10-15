@@ -9017,7 +9017,10 @@ def ensure_schema_columns():
 
         def add_column(table, column, ddl_sqlite, ddl_postgres):
             if table_exists(table) and column not in cols(table):
-                conn.exec_driver_sql(f'ALTER TABLE {q(table)} ADD COLUMN {column} {ddl_postgres}')
+                # Gunicorn starts more than one worker.  Both workers may inspect
+                # the old schema before either ALTER commits, so PostgreSQL must
+                # also guard the ALTER itself against a duplicate-column race.
+                conn.exec_driver_sql(f'ALTER TABLE {q(table)} ADD COLUMN IF NOT EXISTS {column} {ddl_postgres}')
 
         add_column('subject', 'is_active', 'BOOLEAN DEFAULT 1', 'BOOLEAN DEFAULT TRUE')
         add_column('subject', 'school_id', 'INTEGER', 'INTEGER')
