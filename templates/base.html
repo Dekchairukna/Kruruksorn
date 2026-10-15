@@ -11,6 +11,19 @@
 <header class="topbar">
   <label for="nav-toggle" class="hamburger">☰</label>
   <div class="topbrand">KRURUKSORN</div>
+  {% if current_user.is_authenticated and active_semester_global %}
+    {% if current_user.role == 'admin' and semesters_global %}
+    <form method="post" action="{{ url_for('semester_switch') }}" class="top-semester-switch">
+      <input type="hidden" name="next" value="{{ request.full_path if request.query_string else request.path }}">
+      <label for="global-semester">ภาคเรียน</label>
+      <select id="global-semester" name="semester_id" onchange="this.form.submit()" aria-label="เปลี่ยนภาคเรียนปัจจุบัน">
+        {% for sem in semesters_global %}<option value="{{ sem.id }}" {% if sem.id == active_semester_global.id %}selected{% endif %}>{{ sem.name }}</option>{% endfor %}
+      </select>
+    </form>
+    {% else %}
+    <div class="top-semester-label">🗓️ {{ active_semester_global.name }}</div>
+    {% endif %}
+  {% endif %}
   {% if current_user.is_authenticated %}<div class="topuser">{{ current_user.full_name }}</div>{% endif %}
 </header>
 <aside class="sidebar">
@@ -20,63 +33,72 @@
     <div class="brand-sub">Teaching Management Dashboard</div>
   </div>
   {% if current_user.is_authenticated %}
-  <div class="user"><b>{{ current_user.full_name }}</b><br><small>{{ current_user.role }}</small></div>
+  <div class="user"><b>{{ current_user.full_name }}</b><br><small>{{ current_user.role }}{% if current_school %} · {{ current_school.name }}{% endif %}</small></div>
   <nav>
     <a href="{{ url_for('index') }}">🏠 แดชบอร์ด</a>
     {% if current_user.role == 'student' %}
       <a href="{{ url_for('schedule') }}">📅 ตารางเรียนของฉัน</a>
       <a href="{{ url_for('student_assignments') if false else url_for('assignments') }}">📝 งานของฉัน</a>
       <a href="{{ url_for('student_club_register') }}">🎯 เลือกชุมนุม</a>
+      <a href="{{ url_for('behavior_me') }}">⭐ คะแนนความประพฤติ</a>
     {% endif %}
     {% if current_user.role in ['admin','teacher'] %}
-      <a href="{{ url_for('export_term_all_xlsx') }}" style="background:#0F6E63;color:#fff;border-radius:8px;font-weight:700;margin:4px 0;">📦 ส่งออกข้อมูลทั้งเทอม (ทุกวิชา)</a>
-      <details class="nav-group" open>
-        <summary>📖 การสอน</summary>
+      <div class="nav-section">
+        <div class="nav-section-title">📖 การสอน</div>
         <a href="{{ url_for('subjects') }}">📚 รายวิชา</a>
         <a href="{{ url_for('classrooms') }}">🏫 ห้องเรียน</a>
         <a href="{{ url_for('assign') }}">📌 สั่งงาน</a>
         <a href="{{ url_for('assignments') }}">📝 งานที่สั่งแล้ว</a>
         <a href="{{ url_for('schedule') }}">📅 ตารางสอน</a>
         <a href="{{ url_for('substitute_schedule') }}">👨‍🏫 สอนแทน</a>
-      </details>
-      <details class="nav-group" open>
-        <summary>✅ เช็กชื่อ/คะแนน</summary>
+      </div>
+      <div class="nav-section">
+        <div class="nav-section-title">✅ เช็กชื่อและคะแนน</div>
         <a href="{{ url_for('attendance_dashboard') }}">📊 ภาพรวมวันนี้</a>
         <a href="{{ url_for('absence_risk_report') }}">🚨 ขาดเรียนเกินเกณฑ์</a>
         <a href="{{ url_for('records_center') }}">✅ เช็กชื่อ/คะแนน</a>
         <a href="{{ url_for('accdb_home') }}">📒 สมุดคะแนน (.accdb)</a>
         <a href="{{ url_for('endterm_dashboard') }}">📦 งานปิดภาคเรียน</a>
         <a href="{{ url_for('line_absence') }}">📨 แจ้งผู้ปกครอง (LINE)</a>
-      </details>
-      <details class="nav-group">
-        <summary>🛠️ เครื่องมือ</summary>
+      </div>
+      <div class="nav-section">
+        <div class="nav-section-title">🧭 ดูแลนักเรียน</div>
+        <a href="{{ url_for('behavior_home') }}">⭐ คะแนนความประพฤติ</a>
+        <a href="{{ url_for('homeroom_check') }}">🏠 เช็กชื่อโฮมรูม</a>
+        <a href="{{ url_for('activity_report') }}">📈 รายงานเสาธง/โฮมรูม/กิจกรรม</a>
+        <a href="{{ url_for('campus_leave') }}">🚸 ออกนอกบริเวณโรงเรียน</a>
+      </div>
+      <div class="nav-section">
+        <div class="nav-section-title">🛠️ เครื่องมือครู</div>
         <a href="{{ url_for('ai_assistant') }}">✨ AI Assistant</a>
         <a href="{{ url_for('analysis_home') }}">📊 วิเคราะห์ข้อสอบ</a>
         <a href="{{ url_for('reports_home') }}">📄 คลังเอกสาร/รายงาน</a>
         <a href="{{ url_for('calendar_events') }}">🌤️ ปฏิทิน</a>
         <a href="{{ url_for('school_settings') }}">⚙️ ตั้งค่าโรงเรียน</a>
         {% if current_user.role=='admin' %}<a href="{{ url_for('semesters') }}">🗓️ ภาคเรียน</a>{% endif %}
-      </details>
-      <details class="nav-group">
-        <summary>📥 นำเข้าข้อมูล</summary>
+      </div>
+      <div class="nav-section">
+        <div class="nav-section-title">📥 นำเข้าข้อมูล</div>
         <a href="{{ url_for('import_students') }}">⬆️ นำเข้านักเรียน</a>
         {% if current_user.role=='admin' %}
           <a href="{{ url_for('imports_center') }}">📦 นำเข้าข้อมูล Excel</a>
         {% endif %}
-      </details>
+      </div>
     {% endif %}
     {% if current_user.role=='admin' %}
-      <details class="nav-group">
-        <summary>🛡️ ผู้ดูแลระบบ</summary>
+      <div class="nav-section">
+        <div class="nav-section-title">🛡️ ผู้ดูแลระบบ</div>
+        {% if current_user.is_superadmin %}<a href="{{ url_for('schools') }}">🏢 จัดการโรงเรียน</a>{% endif %}
         <a href="{{ url_for('teacher_assignments') }}">🧩 มอบหมายครู</a>
         <a href="{{ url_for('users') }}">👥 ผู้ใช้</a>
-      </details>
+      </div>
     {% endif %}
+    <a href="{{ url_for('account') }}">🔑 บัญชีของฉัน/เปลี่ยนรหัสผ่าน</a>
     <a href="{{ url_for('logout') }}">🚪 ออกจากระบบ</a>
   </nav>
   {% endif %}
 </aside>
-<button type="button" class="sidebar-collapse-btn" id="sidebarCollapseBtn" aria-label="ย่อ/ขยายเมนูด้านข้าง">☰</button>
+<button type="button" class="sidebar-collapse-btn" id="sidebarCollapseBtn" aria-label="ย่อหรือขยายเมนูด้านข้าง">‹</button>
 <label for="nav-toggle" class="nav-backdrop" aria-label="ปิดเมนู"></label>
 <main class="main">
   {% with messages=get_flashed_messages(with_categories=true) %}
@@ -222,17 +244,13 @@
   }
 
   btn.addEventListener('click', function(){
-    const collapsed = !(localStorage.getItem(key) === '1');
-    localStorage.setItem(key, collapsed ? '1' : '0');
+    localStorage.setItem(key, document.body.classList.contains('sidebar-collapsed') ? '0' : '1');
     apply();
   });
-
-  if(document.readyState === 'loading'){
-    document.addEventListener('DOMContentLoaded', apply);
-  }else{
-    apply();
-  }
+  if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', apply);
+  else apply();
 })();
 </script>
+
 </body>
 </html>

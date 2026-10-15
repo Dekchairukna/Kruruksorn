@@ -11,7 +11,7 @@ from io import BytesIO
 from datetime import datetime, date, time, timedelta
 import calendar as py_calendar
 from functools import wraps
-from flask import Flask, render_template, request, redirect, url_for, flash, send_file, send_from_directory, session
+from flask import Flask, render_template, request, redirect, url_for, flash, send_file, send_from_directory, session, has_request_context
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -561,7 +561,7 @@ def create_or_update_student_from_form(form, default_room_id=None):
         while User.query.filter_by(username=username_try).first():
             username_try = f"{base[:90]}{n}"
             n += 1
-        user = User(username=username_try, full_name=full_name, role='student', must_change_password=True)
+        user = User(school_id=current_school_id(), username=username_try, full_name=full_name, role='student', must_change_password=True)
         user.set_password(form.get('password') or (citizen_id[-6:] if citizen_id and len(citizen_id) >= 6 else '1234'))
         db.session.add(user); db.session.flush()
     else:
@@ -574,8 +574,17 @@ def create_or_update_student_from_form(form, default_room_id=None):
             db.session.add(ClassroomStudent(classroom_id=room_id, student_id=user.id))
     return user
 
+class School(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(255), nullable=False)
+    code = db.Column(db.String(80), unique=True, nullable=False)
+    is_active = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
 class User(db.Model, UserMixin):
     id = db.Column(db.Integer, primary_key=True)
+    school_id = db.Column(db.Integer, db.ForeignKey('school.id'), nullable=True, index=True)
     username = db.Column(db.String(100), unique=True, nullable=False)
     password_hash = db.Column(db.String(255), nullable=False)
     full_name = db.Column(db.String(255), nullable=False)
@@ -585,6 +594,8 @@ class User(db.Model, UserMixin):
     must_change_password = db.Column(db.Boolean, default=False)
     position = db.Column(db.String(80), default='ครู')
     is_active = db.Column(db.Boolean, default=True)
+    is_superadmin = db.Column(db.Boolean, default=False)
+    school = db.relationship('School')
     # ข้อมูลพื้นฐานนักเรียน/บุคคล เพิ่มแบบไม่ลบข้อมูลเดิม รองรับการอ่าน/กรอกข้อมูลจากบัตรประชาชน
     student_no = db.Column(db.String(30), default='')
     prefix = db.Column(db.String(30), default='')
@@ -610,6 +621,7 @@ class User(db.Model, UserMixin):
 
 class SchoolSetting(db.Model):
     id = db.Column(db.Integer, primary_key=True)
+    school_id = db.Column(db.Integer, db.ForeignKey('school.id'), nullable=True, index=True)
     school_name = db.Column(db.String(255), default='')
     logo_path = db.Column(db.String(500), default='')
     director_name = db.Column(db.String(255), default='')
@@ -620,10 +632,24 @@ class SchoolSetting(db.Model):
 TEACHER_POSITION_CHOICES = ['ครูผู้ช่วย', 'ครู', 'ครู คศ.1', 'ครู คศ.2', 'ครู คศ.3', 'ครูช่วยสอน', 'ครูอัตราจ้าง', 'ผอ.', 'รอง ผอ.', 'ผู้อำนวยการโรงเรียน', 'รองผู้อำนวยการโรงเรียน']
 
 
+def current_school_id():
+    if has_request_context() and current_user.is_authenticated and getattr(current_user, 'school_id', None):
+        return current_user.school_id
+    school = School.query.order_by(School.id).first()
+    return school.id if school else None
+
+
+def school_query(model):
+    school_id = current_school_id()
+    return model.query.filter(model.school_id == school_id) if school_id else model.query.filter(model.id < 0)
+
+
 def get_school_setting():
-    setting = SchoolSetting.query.first()
+    school_id = current_school_id()
+    setting = SchoolSetting.query.filter_by(school_id=school_id).first() if school_id else None
     if not setting:
-        setting = SchoolSetting(school_name='')
+        school = School.query.get(school_id) if school_id else None
+        setting = SchoolSetting(school_id=school_id, school_name=school.name if school else '')
         db.session.add(setting)
         db.session.commit()
     return setting
@@ -632,13 +658,16 @@ def get_school_setting():
 @app.context_processor
 def inject_school_setting():
     try:
-        return {'school_setting': get_school_setting(), 'teacher_position_choices': TEACHER_POSITION_CHOICES, 'thai_date_label': thai_date_label, 'thai_date_short': thai_date_short}
+        active_semester = get_active_semester()
+        semesters = school_query(Semester).order_by(Semester.start_date.desc()).all() if current_user.is_authenticated else []
+        return {'school_setting': get_school_setting(), 'current_school': current_user.school if current_user.is_authenticated else None, 'teacher_position_choices': TEACHER_POSITION_CHOICES, 'thai_date_label': thai_date_label, 'thai_date_short': thai_date_short, 'active_semester_global': active_semester, 'semesters_global': semesters}
     except Exception:
-        return {'school_setting': None, 'teacher_position_choices': TEACHER_POSITION_CHOICES, 'thai_date_label': thai_date_label, 'thai_date_short': thai_date_short}
+        return {'school_setting': None, 'current_school': None, 'teacher_position_choices': TEACHER_POSITION_CHOICES, 'thai_date_label': thai_date_label, 'thai_date_short': thai_date_short, 'active_semester_global': None, 'semesters_global': []}
 
 
 class Semester(db.Model):
     id = db.Column(db.Integer, primary_key=True)
+    school_id = db.Column(db.Integer, db.ForeignKey('school.id'), nullable=True, index=True)
     name = db.Column(db.String(150), nullable=False)
     academic_year = db.Column(db.String(20), nullable=False, default='2569')
     term_no = db.Column(db.String(10), nullable=False, default='1')
@@ -656,6 +685,7 @@ class CalendarImage(db.Model):
 
 class Classroom(db.Model):
     id = db.Column(db.Integer, primary_key=True)
+    school_id = db.Column(db.Integer, db.ForeignKey('school.id'), nullable=True, index=True)
     name = db.Column(db.String(100), nullable=False)
     teacher_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
     is_active = db.Column(db.Boolean, default=True)
@@ -677,6 +707,7 @@ class ClassroomStudent(db.Model):
 
 class Subject(db.Model):
     id = db.Column(db.Integer, primary_key=True)
+    school_id = db.Column(db.Integer, db.ForeignKey('school.id'), nullable=True, index=True)
     name = db.Column(db.String(150), nullable=False)
     teacher_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
     credit = db.Column(db.Float, default=1.0)
@@ -814,6 +845,8 @@ class QuizAnswer(db.Model):
 
 class TeachingSchedule(db.Model):
     id = db.Column(db.Integer, primary_key=True)
+    school_id = db.Column(db.Integer, db.ForeignKey('school.id'), nullable=True, index=True)
+    semester_id = db.Column(db.Integer, db.ForeignKey('semester.id'), nullable=True)
     teacher_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     subject_id = db.Column(db.Integer, db.ForeignKey('subject.id'), nullable=False)
     classroom_id = db.Column(db.Integer, db.ForeignKey('classroom.id'), nullable=False)
@@ -827,6 +860,7 @@ class TeachingSchedule(db.Model):
     subject = db.relationship('Subject')
     classroom = db.relationship('Classroom')
     lesson = db.relationship('Lesson')
+    semester = db.relationship('Semester')
 
 
 
@@ -848,6 +882,7 @@ class PeriodLessonLog(db.Model):
 
 class CalendarEvent(db.Model):
     id = db.Column(db.Integer, primary_key=True)
+    school_id = db.Column(db.Integer, db.ForeignKey('school.id'), nullable=True, index=True)
     teacher_id = db.Column(db.Integer, db.ForeignKey('user.id'))
     event_date = db.Column(db.Date, nullable=False)
     title = db.Column(db.String(255), nullable=False)
@@ -1150,7 +1185,7 @@ def role_required(*roles):
 
 def teacher_subject_ids():
     if current_user.role == 'admin':
-        return [x.id for x in Subject.query.filter_by(is_active=True).all()]
+        return [x.id for x in school_query(Subject).filter_by(is_active=True).all()]
     # ใช้ทั้งตารางมอบหมายครู + เจ้าของวิชา + ตารางสอนจริง
     # เพื่อกันกรณีนำเข้าตารางสอนแล้ว teacher_subject ยังไม่ถูกสร้าง/ซิงก์ในฐานข้อมูลบนเซิร์ฟเวอร์
     ids = {x.subject_id for x in TeacherSubject.query.filter_by(teacher_id=current_user.id).all()}
@@ -1160,7 +1195,7 @@ def teacher_subject_ids():
 
 def teacher_classroom_ids():
     if current_user.role == 'admin':
-        return [x.id for x in Classroom.query.filter_by(is_active=True).all()]
+        return [x.id for x in school_query(Classroom).filter_by(is_active=True).all()]
     # ใช้ทั้งตารางมอบหมายห้อง + ครูประจำชั้น + ตารางสอนจริง
     ids = {x.classroom_id for x in TeacherClassroom.query.filter_by(teacher_id=current_user.id).all()}
     ids.update(x.id for x in Classroom.query.filter_by(teacher_id=current_user.id, is_active=True).all())
@@ -1169,7 +1204,7 @@ def teacher_classroom_ids():
 
 def teacher_filter(model):
     if current_user.role == 'admin':
-        return model.query
+        return school_query(model) if hasattr(model, 'school_id') else model.query
     if model.__name__ == 'Subject':
         return model.query.filter(db.or_(model.is_active == True, model.is_active.is_(None)), model.id.in_(teacher_subject_ids() or [-1]))
     if model.__name__ == 'Classroom':
@@ -1179,7 +1214,7 @@ def teacher_filter(model):
 
 def active_users_query():
     """คืน query ผู้ใช้ที่ยังใช้งานอยู่เท่านั้น ใช้กับ PostgreSQL/SQLite ได้"""
-    return User.query.filter(db.or_(User.is_active == True, User.is_active.is_(None)))
+    return school_query(User).filter(db.or_(User.is_active == True, User.is_active.is_(None)))
 
 
 def active_teachers_query():
@@ -1193,9 +1228,13 @@ def active_students_query():
 
 
 def owns_subject(subject):
+    if subject.school_id != current_user.school_id:
+        return False
     return current_user.role == 'admin' or subject.teacher_id == current_user.id or TeacherSubject.query.filter_by(teacher_id=current_user.id, subject_id=subject.id).first() is not None
 
 def owns_classroom(room):
+    if room.school_id != current_user.school_id:
+        return False
     return current_user.role == 'admin' or room.teacher_id == current_user.id or TeacherClassroom.query.filter_by(teacher_id=current_user.id, classroom_id=room.id).first() is not None
 
 def classroom_activity_teachers(room_id):
@@ -1244,7 +1283,7 @@ def get_current_schedule():
         return None, None
     now = local_now()
     weekday = now.weekday()
-    schedules = TeachingSchedule.query.filter_by(teacher_id=current_user.id, weekday=weekday).order_by(TeachingSchedule.start_time).all()
+    schedules = active_schedule_query().filter_by(teacher_id=current_user.id, weekday=weekday).order_by(TeachingSchedule.start_time).all()
     cur = None
     nxt = None
     now_str = now.strftime('%H:%M')
@@ -1262,7 +1301,7 @@ def current_period_info(target_date=None, teacher_id=None):
     target_date = target_date or now.date()
     now_str = now.strftime('%H:%M')
     weekday = target_date.weekday()
-    q = TeachingSchedule.query.filter_by(weekday=weekday)
+    q = active_schedule_query().filter_by(weekday=weekday)
     if teacher_id:
         q = q.filter_by(teacher_id=teacher_id)
     rows = q.order_by(TeachingSchedule.start_time.asc(), TeachingSchedule.period_no.asc()).all()
@@ -1400,7 +1439,7 @@ def update_assignment_complete(status):
 
 
 def is_school_blocked_day(target_date, teacher_id=None):
-    q = CalendarEvent.query.filter_by(event_date=target_date)
+    q = school_query(CalendarEvent).filter_by(event_date=target_date)
     q = q.filter(CalendarEvent.event_type.in_(['วันหยุดราชการ','วันหยุดโรงเรียน']))
     if teacher_id:
         q = q.filter((CalendarEvent.teacher_id==teacher_id) | (CalendarEvent.teacher_id==None))
@@ -2036,7 +2075,9 @@ def login():
         username = request.form.get('username','').strip()
         password = request.form.get('password','')
         user = User.query.filter_by(username=username).first()
-        if user and (not getattr(user, 'is_active', True)):
+        if user and user.school and not user.school.is_active:
+            flash('โรงเรียนนี้ถูกปิดใช้งาน กรุณาติดต่อผู้ดูแลระบบ', 'danger')
+        elif user and (not getattr(user, 'is_active', True)):
             flash('บัญชีนี้ถูกปิดใช้งานแล้ว กรุณาติดต่อผู้ดูแลระบบ', 'danger')
         elif user and user.check_password(password):
             session.permanent = True
@@ -2112,10 +2153,17 @@ def school_settings():
 
 
 def get_active_semester():
-    sem = Semester.query.filter_by(is_active=True).first()
+    q = school_query(Semester)
+    sem = q.filter_by(is_active=True).first()
     if not sem:
-        sem = Semester.query.order_by(Semester.start_date.desc()).first()
+        sem = q.order_by(Semester.start_date.desc()).first()
     return sem
+
+def active_schedule_query():
+    """ตารางสอนของภาคเรียนปัจจุบันเท่านั้น เพื่อไม่ให้ข้อมูลข้ามเทอมปะปนกัน"""
+    sem = get_active_semester()
+    q = school_query(TeachingSchedule)
+    return q.filter(TeachingSchedule.semester_id == sem.id) if sem else q.filter(TeachingSchedule.id < 0)
 
 def thai_month_name(m):
     return {1:'มกราคม',2:'กุมภาพันธ์',3:'มีนาคม',4:'เมษายน',5:'พฤษภาคม',6:'มิถุนายน',7:'กรกฎาคม',8:'สิงหาคม',9:'กันยายน',10:'ตุลาคม',11:'พฤศจิกายน',12:'ธันวาคม'}.get(m, str(m))
@@ -2143,7 +2191,7 @@ def build_calendar_dashboard(year=2026, months=(5,6,7,8,9,10), teacher_id=None, 
         month_pairs = [(year, m) for m in months]
         start_date, end_date = date(year, min(months), 1), date(year, max(months), 31)
 
-    q = CalendarEvent.query.filter(CalendarEvent.event_date>=start_date, CalendarEvent.event_date<=end_date)
+    q = school_query(CalendarEvent).filter(CalendarEvent.event_date>=start_date, CalendarEvent.event_date<=end_date)
     if teacher_id:
         q = q.filter((CalendarEvent.teacher_id==teacher_id) | (CalendarEvent.teacher_id==None))
     events_by_date = {}
@@ -2216,7 +2264,7 @@ def teacher_dashboard():
 def student_dashboard():
     statuses = AssignmentStatus.query.filter_by(student_id=current_user.id).join(Assignment).filter(Assignment.assignment_type=='special').order_by(Assignment.created_at.desc()).all()
     room_ids = [x.classroom_id for x in ClassroomStudent.query.filter_by(student_id=current_user.id).all()]
-    schedules = TeachingSchedule.query.filter(TeachingSchedule.classroom_id.in_(room_ids or [-1])).order_by(TeachingSchedule.weekday, TeachingSchedule.period_no).all()
+    schedules = active_schedule_query().filter(TeachingSchedule.classroom_id.in_(room_ids or [-1])).order_by(TeachingSchedule.weekday, TeachingSchedule.period_no).all()
     today = local_today()
     today_idx = today.weekday()
     today_schedules = [x for x in schedules if x.weekday == today_idx and not is_school_blocked_day(today, x.teacher_id)]
@@ -2246,7 +2294,7 @@ def users():
             flash(f'username "{username}" มีอยู่แล้วในระบบ กรุณาใช้ username อื่น หรือแก้ไขผู้ใช้เดิม', 'danger')
             return redirect(url_for('users'))
 
-        u = User(username=username, full_name=full_name, role=role)
+        u = User(school_id=current_user.school_id, username=username, full_name=full_name, role=role)
         if role == 'student':
             fill_student_personal_fields(u, request.form)
         u.set_password(password)
@@ -2254,13 +2302,49 @@ def users():
         db.session.commit()
         flash('เพิ่มผู้ใช้แล้ว', 'success')
         return redirect(url_for('users'))
-    return render_template('users.html', users=User.query.order_by(User.is_active.desc(), User.role, User.full_name).all())
+    return render_template('users.html', users=school_query(User).order_by(User.is_active.desc(), User.role, User.full_name).all())
+
+@app.route('/schools', methods=['GET','POST'])
+@login_required
+@role_required('admin')
+def schools():
+    if not current_user.is_superadmin:
+        return deny_redirect('index')
+    if request.method == 'POST':
+        name = (request.form.get('name') or '').strip()
+        code = re.sub(r'[^a-z0-9-]+', '-', (request.form.get('code') or '').strip().lower()).strip('-')
+        username = (request.form.get('admin_username') or '').strip()
+        full_name = (request.form.get('admin_name') or '').strip()
+        password = request.form.get('admin_password') or '1234'
+        if not name or not code or not username or not full_name:
+            flash('กรุณากรอกข้อมูลโรงเรียนและผู้ดูแลให้ครบ', 'danger')
+            return redirect(url_for('schools'))
+        if School.query.filter_by(code=code).first():
+            flash('รหัสโรงเรียนนี้มีอยู่แล้ว', 'danger')
+            return redirect(url_for('schools'))
+        if User.query.filter_by(username=username).first():
+            flash('username ผู้ดูแลนี้มีอยู่แล้ว', 'danger')
+            return redirect(url_for('schools'))
+        school = School(name=name, code=code)
+        db.session.add(school); db.session.flush()
+        admin = User(school_id=school.id, username=username, full_name=full_name, role='admin', must_change_password=True)
+        admin.set_password(password)
+        db.session.add(admin)
+        db.session.add(SchoolSetting(school_id=school.id, school_name=name))
+        db.session.commit()
+        flash(f'สร้าง {name} และบัญชีผู้ดูแล {username} แล้ว', 'success')
+        return redirect(url_for('schools'))
+    rows = School.query.order_by(School.name).all()
+    user_counts = dict(db.session.query(User.school_id, db.func.count(User.id)).group_by(User.school_id).all())
+    return render_template('schools.html', schools=rows, user_counts=user_counts)
 
 @app.route('/users/<int:user_id>/edit', methods=['GET','POST'])
 @login_required
 @role_required('admin')
 def user_edit(user_id):
     u = User.query.get_or_404(user_id)
+    if u.school_id != current_user.school_id and not current_user.is_superadmin:
+        return deny_redirect('users')
     if request.method == 'POST':
         username = (request.form.get('username') or '').strip()
         full_name = (request.form.get('full_name') or '').strip()
@@ -2348,6 +2432,8 @@ def user_delete(user_id):
         flash('ไม่สามารถลบบัญชีที่กำลังใช้งานได้', 'danger')
         return redirect(url_for('users'))
     u = User.query.get_or_404(user_id)
+    if u.school_id != current_user.school_id and not current_user.is_superadmin:
+        return deny_redirect('users')
 
     # ถ้าเป็นครู ให้ปลดการผูกออกก่อน แล้วลบบัญชีได้จริง
     # ประวัติการเช็กชื่อยังอยู่ เพราะอยู่กับ subject/classroom/student/date ไม่ได้ลบ attendance
@@ -2380,6 +2466,8 @@ def user_delete(user_id):
 @role_required('admin')
 def user_restore(user_id):
     u = User.query.get_or_404(user_id)
+    if u.school_id != current_user.school_id and not current_user.is_superadmin:
+        return deny_redirect('users')
     u.is_active = True
     if u.username.startswith(f'deleted_{u.id}_'):
         original = u.username.replace(f'deleted_{u.id}_', '', 1)
@@ -2397,7 +2485,7 @@ def classrooms():
     if request.method == 'POST':
         teacher_id_raw = request.form.get('teacher_id')
         teacher_id = current_user.id if current_user.role == 'teacher' else (int(teacher_id_raw) if teacher_id_raw else None)
-        room = Classroom(name=request.form.get('name',''), teacher_id=teacher_id)
+        room = Classroom(school_id=current_user.school_id, name=request.form.get('name',''), teacher_id=teacher_id)
         db.session.add(room); db.session.flush()
 
         activity_teacher_ids = request.form.getlist('activity_teacher_ids')
@@ -2588,6 +2676,9 @@ def classroom_student_delete(link_id):
 def teacher_assignments():
     if request.method == 'POST':
         teacher_id = int(request.form.get('teacher_id',''))
+        teacher = school_query(User).filter_by(id=teacher_id, role='teacher').first()
+        if not teacher:
+            return deny_redirect('teacher_assignments')
         new_subject_ids = {int(x) for x in request.form.getlist('subject_ids') if x}
         new_classroom_ids = {int(x) for x in request.form.getlist('classroom_ids') if x}
 
@@ -2620,8 +2711,8 @@ def teacher_assignments():
         return redirect(url_for('teacher_assignments', teacher_id=teacher_id))
     selected_teacher_id = request.args.get('teacher_id', type=int)
     teachers = active_teachers_query().order_by(User.full_name).all()
-    subjects = Subject.query.filter_by(is_active=True).order_by(Subject.name).all()
-    classrooms = Classroom.query.filter_by(is_active=True).order_by(Classroom.name).all()
+    subjects = school_query(Subject).filter_by(is_active=True).order_by(Subject.name).all()
+    classrooms = school_query(Classroom).filter_by(is_active=True).order_by(Classroom.name).all()
     assigned_subject_ids = set()
     assigned_classroom_ids = set()
     assigned_subject_links = []
@@ -2903,7 +2994,7 @@ def import_students():
                 password = birth_text.replace('/','').replace('-','')
             user = User.query.filter_by(username=citizen_id).first()
             if not user:
-                user = User(username=citizen_id, full_name=str(full_name), role='student', citizen_id=citizen_id, birth_date=birth_text, must_change_password=True)
+                user = User(school_id=current_user.school_id, username=citizen_id, full_name=str(full_name), role='student', citizen_id=citizen_id, birth_date=birth_text, must_change_password=True)
                 user.set_password(password)
                 db.session.add(user); db.session.flush(); created += 1
             else:
@@ -2965,7 +3056,7 @@ def get_or_create_teacher(username, full_name=None):
     username = str(username).strip()
     u = User.query.filter_by(username=username).first()
     if not u:
-        u = User(username=username, full_name=full_name or username, role='teacher')
+        u = User(school_id=current_school_id(), username=username, full_name=full_name or username, role='teacher')
         u.set_password('1234')
         db.session.add(u); db.session.flush()
     else:
@@ -2975,9 +3066,9 @@ def get_or_create_teacher(username, full_name=None):
 
 def get_or_create_classroom(name):
     name = str(name).strip()
-    room = Classroom.query.filter_by(name=name).first()
+    room = school_query(Classroom).filter_by(name=name).first()
     if not room:
-        room = Classroom(name=name)
+        room = Classroom(school_id=current_school_id(), name=name)
         db.session.add(room); db.session.flush()
     return room
 
@@ -3037,12 +3128,12 @@ def get_or_create_subject(name, credit=1.0, total_periods=40):
     name = make_subject_name(fallback=name)
     key = subject_identity_key(name)
     sub = None
-    for cand in Subject.query.all():
+    for cand in school_query(Subject).all():
         if subject_identity_key(cand.name) == key and not TeacherSubject.query.filter_by(subject_id=cand.id).first():
             sub = cand
             break
     if not sub:
-        sub = Subject(name=name, credit=float(credit or 1), total_periods=int(total_periods or 40))
+        sub = Subject(school_id=current_school_id(), name=name, credit=float(credit or 1), total_periods=int(total_periods or 40))
         db.session.add(sub); db.session.flush()
         ensure_grade_setting(sub.id)
     else:
@@ -3068,12 +3159,12 @@ def get_or_create_subject_for_teacher(name, teacher_id, code='', subject_name=''
                 sub = cand
                 break
     else:
-        for cand in Subject.query.all():
+        for cand in school_query(Subject).all():
             if subject_identity_key(cand.name) == key and not TeacherSubject.query.filter_by(subject_id=cand.id).first():
                 sub = cand
                 break
     if not sub:
-        sub = Subject(name=display_name, teacher_id=teacher_id if teacher_id else None, credit=float(credit or 1), total_periods=int(total_periods or 40))
+        sub = Subject(school_id=current_school_id(), name=display_name, teacher_id=teacher_id if teacher_id else None, credit=float(credit or 1), total_periods=int(total_periods or 40))
         db.session.add(sub); db.session.flush()
     else:
         if len(display_name) >= len(sub.name or ''):
@@ -3246,7 +3337,7 @@ def import_all():
             if not username or not full_name: continue
             u = User.query.filter_by(username=username).first()
             if not u:
-                u = User(username=username, full_name=str(full_name).strip(), role='student', citizen_id=citizen_id, birth_date=str(cell(r,h,'birth_date','วันเกิด') or ''))
+                u = User(school_id=current_user.school_id, username=username, full_name=str(full_name).strip(), role='student', citizen_id=citizen_id, birth_date=str(cell(r,h,'birth_date','วันเกิด') or ''))
                 u.set_password(birth_password(cell(r,h,'birth_date','วันเกิด')))
                 db.session.add(u); db.session.flush()
             else:
@@ -3418,7 +3509,7 @@ def import_all():
                 teacher = User.query.filter_by(full_name=full_name).first()
             created = False
             if not teacher and (username or full_name):
-                teacher = User(username=username or import_username_from_name(full_name), full_name=full_name or username, role='teacher')
+                teacher = User(school_id=current_user.school_id, username=username or import_username_from_name(full_name), full_name=full_name or username, role='teacher')
                 teacher.set_password(str(password or '1234'))
                 db.session.add(teacher); db.session.flush()
                 created = True
@@ -3458,7 +3549,7 @@ def import_all():
             et = str(cell(r,h,'end_time','เวลาจบ', default=et) or et)[:5]
             sched = TeachingSchedule.query.filter_by(teacher_id=t.id, weekday=wd, period_no=period_no, classroom_id=room.id).first()
             if not sched:
-                sched = TeachingSchedule(teacher_id=t.id, subject_id=sub.id, classroom_id=room.id, weekday=wd, period_no=period_no, start_time=st, end_time=et)
+                sched = TeachingSchedule(school_id=current_user.school_id, teacher_id=t.id, subject_id=sub.id, classroom_id=room.id, weekday=wd, period_no=period_no, start_time=st, end_time=et)
                 db.session.add(sched)
             sched.subject_id=sub.id; sched.classroom_id=room.id; sched.start_time=st; sched.end_time=et; sched.room_name=str(cell(r,h,'room_name','สถานที่') or classroom_name or ''); sched.topic=str(cell(r,h,'topic','หัวข้อ') or '')
             n += 1
@@ -3479,8 +3570,8 @@ def import_all():
             if d and title:
                 typ = str(cell(r,h,'event_type','ประเภท', default='กิจกรรมโรงเรียน') or 'กิจกรรมโรงเรียน')
                 note = str(cell(r,h,'note','หมายเหตุ') or '')
-                if not CalendarEvent.query.filter_by(teacher_id=None, event_date=d, title=str(title).strip()).first():
-                    db.session.add(CalendarEvent(teacher_id=None, event_date=d, title=str(title).strip(), event_type=typ, note=note))
+                if not school_query(CalendarEvent).filter_by(teacher_id=None, event_date=d, title=str(title).strip()).first():
+                    db.session.add(CalendarEvent(school_id=current_user.school_id, teacher_id=None, event_date=d, title=str(title).strip(), event_type=typ, note=note))
                 n += 1
         report.append(f'ปฏิทิน {n} รายการ')
         db.session.commit()
@@ -3519,7 +3610,7 @@ def subjects():
     if request.method == 'POST':
         teacher_id_raw = request.form.get('teacher_id')
         teacher_id = current_user.id if current_user.role == 'teacher' else (int(teacher_id_raw) if teacher_id_raw else None)
-        sub = Subject(name=request.form.get('name',''), teacher_id=teacher_id, credit=float(request.form.get('credit',1)), total_periods=int(request.form.get('total_periods',40)))
+        sub = Subject(school_id=current_user.school_id, name=request.form.get('name',''), teacher_id=teacher_id, credit=float(request.form.get('credit',1)), total_periods=int(request.form.get('total_periods',40)))
         db.session.add(sub); db.session.flush()
         if teacher_id and not TeacherSubject.query.filter_by(teacher_id=teacher_id, subject_id=sub.id).first():
             db.session.add(TeacherSubject(teacher_id=teacher_id, subject_id=sub.id))
@@ -4653,9 +4744,9 @@ def get_or_create_classroom_for_teacher(name, teacher_id):
     name = str(name or '').strip()
     if not name:
         return None
-    room = Classroom.query.filter_by(name=name).first()
+    room = school_query(Classroom).filter_by(name=name).first()
     if not room:
-        room = Classroom(name=name, teacher_id=None)
+        room = Classroom(school_id=current_school_id(), name=name, teacher_id=None)
         db.session.add(room); db.session.flush()
     if teacher_id and not TeacherClassroom.query.filter_by(teacher_id=teacher_id, classroom_id=room.id).first():
         db.session.add(TeacherClassroom(teacher_id=teacher_id, classroom_id=room.id))
@@ -4743,6 +4834,7 @@ def schedule_room_group_rows(anchor):
         return []
     target_key = subject_identity_key(anchor.subject.name if anchor.subject else '')
     q = TeachingSchedule.query.filter_by(
+        semester_id=anchor.semester_id,
         teacher_id=anchor.teacher_id,
         weekday=anchor.weekday,
         period_no=anchor.period_no,
@@ -4754,6 +4846,8 @@ def schedule_room_group_rows(anchor):
 
 
 def user_can_open_schedule(row):
+    if row.school_id != current_user.school_id:
+        return False
     if current_user.role == 'admin':
         return True
     if current_user.role == 'teacher':
@@ -4975,6 +5069,7 @@ def schedule_period_unpublish(schedule_id):
 @role_required('teacher','admin','student')
 def schedule():
     teachers = active_teachers_query().order_by(User.full_name).all()
+    active_semester = get_active_semester()
     day_names = ['จันทร์','อังคาร','พุธ','พฤหัสบดี','ศุกร์','เสาร์','อาทิตย์']
     selected_teacher_id = request.args.get('teacher_id', type=int)
 
@@ -4982,7 +5077,7 @@ def schedule():
         active_teacher_id = selected_teacher_id or (teachers[0].id if teachers else None)
         subjects = Subject.query.filter(Subject.id.in_({x.subject_id for x in TeacherSubject.query.filter_by(teacher_id=active_teacher_id).all()} or {-1})).order_by(Subject.name).all() if active_teacher_id else []
         rooms = Classroom.query.filter(Classroom.id.in_({x.classroom_id for x in TeacherClassroom.query.filter_by(teacher_id=active_teacher_id).all()} or {-1})).order_by(Classroom.name).all() if active_teacher_id else []
-        schedules_query = TeachingSchedule.query
+        schedules_query = active_schedule_query()
         if active_teacher_id:
             schedules_query = schedules_query.filter_by(teacher_id=active_teacher_id)
         schedules = schedules_query.order_by(TeachingSchedule.weekday, TeachingSchedule.period_no).all()
@@ -4991,12 +5086,12 @@ def schedule():
         active_teacher_id = current_user.id
         subjects = teacher_filter(Subject).order_by(Subject.name).all()
         rooms = teacher_filter(Classroom).order_by(Classroom.name).all()
-        schedules = TeachingSchedule.query.filter_by(teacher_id=current_user.id).order_by(TeachingSchedule.weekday, TeachingSchedule.period_no).all()
+        schedules = active_schedule_query().filter_by(teacher_id=current_user.id).order_by(TeachingSchedule.weekday, TeachingSchedule.period_no).all()
         teacher_title = current_user.full_name
     else:
         # นักเรียนเห็นเฉพาะตารางสอนของห้องที่ตนเองอยู่
         student_room_ids = [x.classroom_id for x in ClassroomStudent.query.filter_by(student_id=current_user.id).all()]
-        schedules = TeachingSchedule.query.filter(TeachingSchedule.classroom_id.in_(student_room_ids or [-1])).order_by(TeachingSchedule.weekday, TeachingSchedule.period_no).all()
+        schedules = active_schedule_query().filter(TeachingSchedule.classroom_id.in_(student_room_ids or [-1])).order_by(TeachingSchedule.weekday, TeachingSchedule.period_no).all()
         subjects = []
         rooms = []
         active_teacher_id = None
@@ -5007,6 +5102,9 @@ def schedule():
     if request.method == 'POST':
         if current_user.role == 'student':
             return deny_redirect('schedule')
+        if not active_semester:
+            flash('กรุณาสร้างและเลือกภาคเรียนปัจจุบันก่อนเพิ่มตารางสอน', 'danger')
+            return redirect(url_for('semesters') if current_user.role == 'admin' else url_for('schedule'))
         post_teacher_id = int(request.form.get('teacher_id') or current_user.id)
         if current_user.role != 'admin':
             post_teacher_id = current_user.id
@@ -5020,13 +5118,23 @@ def schedule():
             flash('ยังไม่ได้มอบหมายห้องนี้ให้ครูคนนี้ กรุณาไปหน้ามอบหมายครูก่อน', 'danger')
             return redirect(url_for('schedule', teacher_id=post_teacher_id))
         period_no = int(request.form.get('period_no',''))
+        weekday = int(request.form.get('weekday',''))
+        duplicate = TeachingSchedule.query.filter_by(
+            semester_id=active_semester.id, teacher_id=post_teacher_id,
+            classroom_id=classroom_id, weekday=weekday, period_no=period_no
+        ).first()
+        if duplicate:
+            flash('มีคาบของครู ห้อง วัน และคาบนี้อยู่แล้ว กรุณาแก้ไขคาบเดิมแทน', 'danger')
+            return redirect(url_for('schedule', teacher_id=post_teacher_id))
         defaults = default_period_times()
         st, en = defaults.get(period_no, ('08:00','09:00'))
         db.session.add(TeachingSchedule(
+            school_id=current_user.school_id,
+            semester_id=active_semester.id if active_semester else None,
             teacher_id=post_teacher_id,
             subject_id=subject_id,
             classroom_id=classroom_id,
-            weekday=int(request.form.get('weekday','')),
+            weekday=weekday,
             period_no=period_no,
             start_time=request.form.get('start_time') or st,
             end_time=request.form.get('end_time') or en,
@@ -5056,10 +5164,11 @@ def schedule():
     day_pairs = list(enumerate(day_names[:5]))
     schedules_by_teacher = {}
     if current_user.role == 'admin' and not selected_teacher_id:
-        all_rows = TeachingSchedule.query.order_by(TeachingSchedule.teacher_id, TeachingSchedule.weekday, TeachingSchedule.period_no).all()
+        all_rows = active_schedule_query().order_by(TeachingSchedule.teacher_id, TeachingSchedule.weekday, TeachingSchedule.period_no).all()
         for row in all_rows:
             schedules_by_teacher.setdefault(row.teacher_id, []).append(row)
-    return render_template('schedule.html', schedules=schedules, subjects=subjects, rooms=rooms, lessons=lessons, edit_row=edit_row, day_names=day_names, periods=periods, schedule_grid=schedule_grid, day_pairs=day_pairs, teachers=teachers, selected_teacher_id=selected_teacher_id, active_teacher_id=active_teacher_id, teacher_title=teacher_title, schedules_by_teacher=schedules_by_teacher, today_date=today.isoformat(), schedule_slots=schedule_slots, current_lesson_logs=current_lesson_logs)
+    previous_semesters = school_query(Semester).filter(Semester.id != active_semester.id).order_by(Semester.start_date.desc()).all() if active_semester else []
+    return render_template('schedule.html', schedules=schedules, subjects=subjects, rooms=rooms, lessons=lessons, edit_row=edit_row, day_names=day_names, periods=periods, schedule_grid=schedule_grid, day_pairs=day_pairs, teachers=teachers, selected_teacher_id=selected_teacher_id, active_teacher_id=active_teacher_id, teacher_title=teacher_title, schedules_by_teacher=schedules_by_teacher, today_date=today.isoformat(), schedule_slots=schedule_slots, current_lesson_logs=current_lesson_logs, active_semester=active_semester, previous_semesters=previous_semesters)
 
 @app.route('/schedule/import', methods=['POST'])
 @login_required
@@ -5128,23 +5237,31 @@ def schedule_import():
         if not t:
             t = User.query.filter_by(full_name=name).first()
         if not t:
-            t = User(username=username_from_name(name), full_name=name, role='teacher', must_change_password=True)
+            t = User(school_id=current_user.school_id, username=username_from_name(name), full_name=name, role='teacher', must_change_password=True)
             t.set_password('1234')
             db.session.add(t)
             db.session.flush()
         return t
 
     defaults = default_period_times()
+    active_semester = get_active_semester()
+    if not active_semester:
+        flash('กรุณาสร้างและเลือกภาคเรียนปัจจุบันก่อนนำเข้าตารางสอน', 'danger')
+        return redirect(url_for('semesters'))
     default_teacher_id = int(request.form.get('teacher_id') or current_user.id)
     if current_user.role != 'admin':
         default_teacher_id = current_user.id
 
     replace_mode = bool(request.form.get('replace_all'))
     if replace_mode:
-        if current_user.role == 'admin':
-            TeachingSchedule.query.delete()
-        else:
-            TeachingSchedule.query.filter_by(teacher_id=current_user.id).delete()
+        doomed = active_schedule_query()
+        if current_user.role != 'admin':
+            doomed = doomed.filter_by(teacher_id=current_user.id)
+        doomed_ids = [x[0] for x in doomed.with_entities(TeachingSchedule.id).all()]
+        if doomed_ids:
+            PeriodLessonLog.query.filter(PeriodLessonLog.schedule_id.in_(doomed_ids)).delete(synchronize_session=False)
+            ClassworkScoreItem.query.filter(ClassworkScoreItem.schedule_id.in_(doomed_ids)).update({ClassworkScoreItem.schedule_id: None}, synchronize_session=False)
+            TeachingSchedule.query.filter(TeachingSchedule.id.in_(doomed_ids)).delete(synchronize_session=False)
         db.session.flush()
 
     created = updated = skipped = made_teachers = 0
@@ -5184,7 +5301,7 @@ def schedule_import():
         st, en = defaults.get(period_no, ('08:00','09:00'))
         room_name = cell(row, i_room)
         topic = cell(row, i_topic)
-        old = TeachingSchedule.query.filter_by(teacher_id=teacher_id, weekday=weekday, period_no=period_no, classroom_id=room.id).first()
+        old = active_schedule_query().filter_by(teacher_id=teacher_id, weekday=weekday, period_no=period_no, classroom_id=room.id).first()
         if old:
             old.subject_id = sub.id
             old.start_time = st
@@ -5193,7 +5310,7 @@ def schedule_import():
             old.topic = topic
             updated += 1
         else:
-            db.session.add(TeachingSchedule(teacher_id=teacher_id, subject_id=sub.id, classroom_id=room.id, weekday=weekday, period_no=period_no, start_time=st, end_time=en, room_name=room_name, topic=topic))
+            db.session.add(TeachingSchedule(school_id=current_user.school_id, semester_id=active_semester.id, teacher_id=teacher_id, subject_id=sub.id, classroom_id=room.id, weekday=weekday, period_no=period_no, start_time=st, end_time=en, room_name=room_name, topic=topic))
             created += 1
     merged_subjects = merge_duplicate_subjects_for_teacher()
     db.session.commit()
@@ -5201,11 +5318,57 @@ def schedule_import():
     flash(f'นำเข้าตารางสอนแล้ว: เพิ่ม {created} คาบ, อัปเดต {updated} คาบ, สร้างครูใหม่ {made_teachers} คน, ข้าม {skipped} แถว{extra}', 'success')
     return redirect(url_for('schedule'))
 
+@app.route('/schedule/copy-semester', methods=['POST'])
+@login_required
+@role_required('teacher','admin')
+def schedule_copy_semester():
+    """คัดลอกตารางของครูจากเทอมเดิมเข้าเทอมปัจจุบัน โดยไม่ทับคาบที่มีอยู่"""
+    target = get_active_semester()
+    source_id = request.form.get('source_semester_id', type=int)
+    source = school_query(Semester).filter_by(id=source_id).first() if source_id else None
+    if not target or not source or source.id == target.id:
+        flash('กรุณาเลือกภาคเรียนต้นทางที่ไม่ใช่เทอมปัจจุบัน', 'danger')
+        return redirect(url_for('schedule'))
+
+    teacher_id = current_user.id
+    if current_user.role == 'admin':
+        teacher_id = request.form.get('teacher_id', type=int)
+        if not teacher_id:
+            flash('กรุณาเลือกครูที่ต้องการคัดลอกตาราง', 'danger')
+            return redirect(url_for('schedule'))
+
+    source_rows = TeachingSchedule.query.filter_by(semester_id=source.id, teacher_id=teacher_id).order_by(TeachingSchedule.weekday, TeachingSchedule.period_no).all()
+    copied = skipped = 0
+    for row in source_rows:
+        exists = TeachingSchedule.query.filter_by(
+            semester_id=target.id, teacher_id=teacher_id, weekday=row.weekday,
+            period_no=row.period_no, classroom_id=row.classroom_id
+        ).first()
+        if exists:
+            skipped += 1
+            continue
+        db.session.add(TeachingSchedule(
+            school_id=current_user.school_id,
+            semester_id=target.id, teacher_id=row.teacher_id, subject_id=row.subject_id,
+            classroom_id=row.classroom_id, weekday=row.weekday, period_no=row.period_no,
+            start_time=row.start_time, end_time=row.end_time, room_name=row.room_name,
+            topic=row.topic, lesson_id=row.lesson_id
+        ))
+        copied += 1
+    db.session.commit()
+    flash(f'คัดลอกจาก {source.name} มา {target.name} แล้ว {copied} คาบ' + (f' (ข้ามคาบที่มีอยู่ {skipped} คาบ)' if skipped else ''), 'success')
+    return redirect(url_for('schedule', teacher_id=teacher_id if current_user.role == 'admin' else None))
+
 @app.route('/schedule/<int:schedule_id>/edit', methods=['GET','POST'])
 @login_required
 @role_required('teacher','admin')
 def schedule_edit(schedule_id):
     row = TeachingSchedule.query.get_or_404(schedule_id)
+    if row.school_id != current_user.school_id: return deny_redirect('schedule')
+    active_semester = get_active_semester()
+    if active_semester and row.semester_id != active_semester.id:
+        flash('คาบนี้เป็นข้อมูลคนละภาคเรียน กรุณาเปลี่ยนภาคเรียนก่อนแก้ไข', 'danger')
+        return redirect(url_for('schedule'))
     if current_user.role != 'admin' and row.teacher_id != current_user.id: return deny_redirect('schedule')
     subjects = teacher_filter(Subject).all(); rooms = teacher_filter(Classroom).all()
     lessons = Lesson.query.join(Unit).join(Subject).filter(Subject.id.in_(teacher_subject_ids() or [-1])).all() if current_user.role=='teacher' else Lesson.query.all()
@@ -5217,7 +5380,7 @@ def schedule_edit(schedule_id):
         row.room_name=request.form.get('room_name',''); row.topic=request.form.get('topic','')
         db.session.commit(); flash('แก้ไขตารางสอนแล้ว', 'success')
         return redirect(url_for('schedule'))
-    schedules = TeachingSchedule.query.filter_by(teacher_id=current_user.id).order_by(TeachingSchedule.weekday, TeachingSchedule.period_no).all() if current_user.role=='teacher' else TeachingSchedule.query.order_by(TeachingSchedule.weekday, TeachingSchedule.period_no).all()
+    schedules = active_schedule_query().filter_by(teacher_id=current_user.id).order_by(TeachingSchedule.weekday, TeachingSchedule.period_no).all() if current_user.role=='teacher' else active_schedule_query().order_by(TeachingSchedule.weekday, TeachingSchedule.period_no).all()
     day_names = ['จันทร์','อังคาร','พุธ','พฤหัสบดี','ศุกร์','เสาร์','อาทิตย์']
     periods = sorted({x.period_no for x in schedules}) or list(range(1, 9))
     period_times = {x.period_no: f"{x.start_time}-{x.end_time}" for x in schedules}
@@ -5229,13 +5392,15 @@ def schedule_edit(schedule_id):
         {'type':'period','no':5,'time':'13:00-13:50'}, {'type':'period','no':6,'time':'13:51-14:40'},
         {'type':'break','label':'พัก 10 นาที','time':'14:41-14:50'}, {'type':'period','no':7,'time':'14:41-15:30'}, {'type':'period','no':8,'time':'15:41-16:00'}]
     day_pairs = list(enumerate(day_names[:5]))
-    return render_template('schedule.html', schedules=schedules, subjects=subjects, rooms=rooms, lessons=lessons, edit_row=row, day_names=day_names, periods=periods, period_times=period_times, schedule_grid=schedule_grid, day_pairs=day_pairs, today_date=local_today().isoformat(), teachers=[], selected_teacher_id=None, active_teacher_id=None, teacher_title=current_user.full_name, schedules_by_teacher={}, schedule_slots=schedule_slots)
+    previous_semesters = school_query(Semester).filter(Semester.id != active_semester.id).order_by(Semester.start_date.desc()).all() if active_semester else []
+    return render_template('schedule.html', schedules=schedules, subjects=subjects, rooms=rooms, lessons=lessons, edit_row=row, day_names=day_names, periods=periods, period_times=period_times, schedule_grid=schedule_grid, day_pairs=day_pairs, today_date=local_today().isoformat(), teachers=[], selected_teacher_id=None, active_teacher_id=current_user.id, teacher_title=current_user.full_name, schedules_by_teacher={}, schedule_slots=schedule_slots, current_lesson_logs={}, active_semester=active_semester, previous_semesters=previous_semesters)
 
 @app.route('/schedule/<int:schedule_id>/delete', methods=['POST'])
 @login_required
 @role_required('teacher','admin')
 def schedule_delete(schedule_id):
     row = TeachingSchedule.query.get_or_404(schedule_id)
+    if row.school_id != current_user.school_id: return deny_redirect('schedule')
     if current_user.role != 'admin' and row.teacher_id != current_user.id: return deny_redirect('schedule')
     try:
         PeriodLessonLog.query.filter_by(schedule_id=row.id).delete(synchronize_session=False)
@@ -5332,9 +5497,9 @@ def academic_calendar_1_2569_events():
 def seed_academic_calendar_1_2569(teacher_id=None):
     created = 0
     for event_date, title, event_type, note in academic_calendar_1_2569_events():
-        exists = CalendarEvent.query.filter_by(teacher_id=teacher_id, event_date=event_date, title=title, event_type=event_type).first()
+        exists = school_query(CalendarEvent).filter_by(teacher_id=teacher_id, event_date=event_date, title=title, event_type=event_type).first()
         if not exists:
-            db.session.add(CalendarEvent(teacher_id=teacher_id, event_date=event_date, title=title, event_type=event_type, note=note))
+            db.session.add(CalendarEvent(school_id=current_school_id(), teacher_id=teacher_id, event_date=event_date, title=title, event_type=event_type, note=note))
             created += 1
     db.session.commit()
     return created
@@ -5346,7 +5511,7 @@ def working_day_summary(start=None, end=None, teacher_id=None, semester=None):
     start = start or date(2026,5,11)
     end = end or date(2026,10,1)
     holidays = set()
-    q = CalendarEvent.query.filter(CalendarEvent.event_date>=start, CalendarEvent.event_date<=end, CalendarEvent.event_type.in_(['วันหยุดราชการ','วันหยุดโรงเรียน']))
+    q = school_query(CalendarEvent).filter(CalendarEvent.event_date>=start, CalendarEvent.event_date<=end, CalendarEvent.event_type.in_(['วันหยุดราชการ','วันหยุดโรงเรียน']))
     if teacher_id:
         q = q.filter((CalendarEvent.teacher_id==teacher_id) | (CalendarEvent.teacher_id==None))
     for e in q.all():
@@ -5372,51 +5537,93 @@ def working_day_summary(start=None, end=None, teacher_id=None, semester=None):
 @role_required('admin')
 def semesters():
     if request.method == 'POST':
+        start_date = datetime.strptime(request.form.get('start_date',''),'%Y-%m-%d').date()
+        end_date = datetime.strptime(request.form.get('end_date',''),'%Y-%m-%d').date()
+        if end_date < start_date:
+            flash('วันสิ้นสุดภาคเรียนต้องไม่ก่อนวันเปิดภาคเรียน', 'danger')
+            return redirect(url_for('semesters'))
         sem = Semester(
+            school_id=current_user.school_id,
             name=request.form.get('name',''),
             academic_year=request.form.get('academic_year','2569'),
             term_no=request.form.get('term_no','1'),
-            start_date=datetime.strptime(request.form.get('start_date',''),'%Y-%m-%d').date(),
-            end_date=datetime.strptime(request.form.get('end_date',''),'%Y-%m-%d').date(),
+            start_date=start_date,
+            end_date=end_date,
             is_active=bool(request.form.get('is_active'))
         )
         if sem.is_active:
-            Semester.query.update({Semester.is_active: False})
+            school_query(Semester).update({Semester.is_active: False}, synchronize_session=False)
         db.session.add(sem); db.session.commit(); flash('เพิ่มภาคเรียนแล้ว', 'success')
         return redirect(url_for('semesters'))
-    return render_template('semesters.html', semesters=Semester.query.order_by(Semester.start_date.desc()).all(), edit_row=None)
+    semester_rows = school_query(Semester).order_by(Semester.start_date.desc()).all()
+    counts = dict(db.session.query(TeachingSchedule.semester_id, db.func.count(TeachingSchedule.id)).group_by(TeachingSchedule.semester_id).all())
+    return render_template('semesters.html', semesters=semester_rows, edit_row=None, schedule_counts=counts)
 
 @app.route('/semesters/<int:semester_id>/edit', methods=['GET','POST'])
 @login_required
 @role_required('admin')
 def semester_edit(semester_id):
     sem = Semester.query.get_or_404(semester_id)
+    if sem.school_id != current_user.school_id: return deny_redirect('semesters')
     if request.method == 'POST':
         sem.name=request.form.get('name',''); sem.academic_year=request.form.get('academic_year','')
         sem.term_no=request.form.get('term_no','')
         sem.start_date=datetime.strptime(request.form.get('start_date',''),'%Y-%m-%d').date()
         sem.end_date=datetime.strptime(request.form.get('end_date',''),'%Y-%m-%d').date()
+        if sem.end_date < sem.start_date:
+            flash('วันสิ้นสุดภาคเรียนต้องไม่ก่อนวันเปิดภาคเรียน', 'danger')
+            return redirect(url_for('semester_edit', semester_id=sem.id))
         sem.is_active=bool(request.form.get('is_active'))
         if sem.is_active:
-            Semester.query.filter(Semester.id!=sem.id).update({Semester.is_active: False})
+            school_query(Semester).filter(Semester.id!=sem.id).update({Semester.is_active: False}, synchronize_session=False)
         db.session.commit(); flash('แก้ไขภาคเรียนแล้ว', 'success')
         return redirect(url_for('semesters'))
-    return render_template('semesters.html', semesters=Semester.query.order_by(Semester.start_date.desc()).all(), edit_row=sem)
+    semester_rows = school_query(Semester).order_by(Semester.start_date.desc()).all()
+    counts = dict(db.session.query(TeachingSchedule.semester_id, db.func.count(TeachingSchedule.id)).group_by(TeachingSchedule.semester_id).all())
+    return render_template('semesters.html', semesters=semester_rows, edit_row=sem, schedule_counts=counts)
 
 @app.route('/semesters/<int:semester_id>/active', methods=['POST'])
 @login_required
 @role_required('admin')
 def semester_active(semester_id):
-    Semester.query.update({Semester.is_active: False})
     sem = Semester.query.get_or_404(semester_id); sem.is_active=True
+    if sem.school_id != current_user.school_id: return deny_redirect('semesters')
+    school_query(Semester).filter(Semester.id != sem.id).update({Semester.is_active: False}, synchronize_session=False)
     db.session.commit(); flash(f'เปลี่ยนเป็น {sem.name} แล้ว', 'success')
+    next_url = (request.form.get('next') or '').strip()
+    if next_url.startswith('/') and not next_url.startswith('//'):
+        return redirect(next_url)
     return redirect(url_for('semesters'))
+
+@app.route('/semesters/switch', methods=['POST'])
+@login_required
+@role_required('admin')
+def semester_switch():
+    semester_id = request.form.get('semester_id', type=int)
+    sem = Semester.query.get_or_404(semester_id)
+    if sem.school_id != current_user.school_id: return deny_redirect('semesters')
+    school_query(Semester).update({Semester.is_active: False}, synchronize_session=False)
+    sem.is_active = True
+    db.session.commit()
+    flash(f'เปลี่ยนเป็น {sem.name} แล้ว', 'success')
+    next_url = (request.form.get('next') or '').strip()
+    if next_url.startswith('/') and not next_url.startswith('//'):
+        return redirect(next_url)
+    return redirect(url_for('index'))
 
 @app.route('/semesters/<int:semester_id>/delete', methods=['POST'])
 @login_required
 @role_required('admin')
 def semester_delete(semester_id):
     sem = Semester.query.get_or_404(semester_id)
+    if sem.school_id != current_user.school_id: return deny_redirect('semesters')
+    if sem.is_active:
+        flash('ลบภาคเรียนปัจจุบันไม่ได้ กรุณาเปลี่ยนไปใช้เทอมอื่นก่อน', 'danger')
+        return redirect(url_for('semesters'))
+    used = TeachingSchedule.query.filter_by(semester_id=sem.id).count()
+    if used:
+        flash(f'ลบภาคเรียนนี้ไม่ได้ เพราะมีตารางสอนอยู่ {used} คาบ', 'danger')
+        return redirect(url_for('semesters'))
     db.session.delete(sem); db.session.commit(); flash('ลบภาคเรียนแล้ว', 'success')
     return redirect(url_for('semesters'))
 
@@ -5424,16 +5631,17 @@ def semester_delete(semester_id):
 @login_required
 @role_required('teacher','admin')
 def calendar_events():
-    semesters = Semester.query.order_by(Semester.start_date.desc()).all()
-    selected_semester = Semester.query.get(request.args.get('semester_id', type=int)) if request.args.get('semester_id') else get_active_semester()
+    semesters = school_query(Semester).order_by(Semester.start_date.desc()).all()
+    selected_semester = school_query(Semester).filter_by(id=request.args.get('semester_id', type=int)).first() if request.args.get('semester_id') else get_active_semester()
     if request.method == 'POST':
         db.session.add(CalendarEvent(
+            school_id=current_user.school_id,
             teacher_id=None if current_user.role=='admin' and request.form.get('global_event') else current_user.id,
             event_date=datetime.strptime(request.form.get('event_date',''),'%Y-%m-%d').date(),
             title=request.form.get('title',''), event_type=request.form.get('event_type','กิจกรรมโรงเรียน'), note=request.form.get('note','')
         ))
         db.session.commit(); flash('เพิ่มรายการปฏิทินแล้ว', 'success'); return redirect(url_for('calendar_events', semester_id=selected_semester.id if selected_semester else None) + '#calendar-preview')
-    q = CalendarEvent.query if current_user.role=='admin' else CalendarEvent.query.filter((CalendarEvent.teacher_id==current_user.id) | (CalendarEvent.teacher_id==None))
+    q = school_query(CalendarEvent) if current_user.role=='admin' else school_query(CalendarEvent).filter((CalendarEvent.teacher_id==current_user.id) | (CalendarEvent.teacher_id==None))
     if selected_semester:
         q = q.filter(CalendarEvent.event_date>=selected_semester.start_date, CalendarEvent.event_date<=selected_semester.end_date)
     events = q.order_by(CalendarEvent.event_date.desc()).all()
@@ -5448,7 +5656,7 @@ def calendar_events():
 def calendar_import_excel():
     file = request.files.get('file')
     semester_id = request.form.get('semester_id', type=int)
-    sem = Semester.query.get(semester_id) if semester_id else get_active_semester()
+    sem = school_query(Semester).filter_by(id=semester_id).first() if semester_id else get_active_semester()
     if not file or not file.filename:
         flash('กรุณาเลือกไฟล์ Excel', 'danger'); return redirect(url_for('calendar_events', semester_id=semester_id))
     wb = load_workbook(file)
@@ -5485,11 +5693,11 @@ def calendar_import_excel():
         typ = str(row[type_i]).strip() if len(row) > type_i and row[type_i] else 'กิจกรรมโรงเรียน'
         note = str(row[note_i]).strip() if len(row) > note_i and row[note_i] else ''
         teacher_id = None if current_user.role == 'admin' else current_user.id
-        e = CalendarEvent.query.filter_by(teacher_id=teacher_id, event_date=d, title=title).first()
+        e = school_query(CalendarEvent).filter_by(teacher_id=teacher_id, event_date=d, title=title).first()
         if e:
             e.event_type = typ; e.note = note; updated += 1
         else:
-            db.session.add(CalendarEvent(teacher_id=teacher_id, event_date=d, title=title, event_type=typ, note=note)); created += 1
+            db.session.add(CalendarEvent(school_id=current_user.school_id, teacher_id=teacher_id, event_date=d, title=title, event_type=typ, note=note)); created += 1
     db.session.commit(); flash(f'นำเข้าปฏิทินแล้ว เพิ่ม {created} รายการ / อัปเดต {updated} รายการ', 'success')
     return redirect(url_for('calendar_events', semester_id=sem.id if sem else None))
 
@@ -5526,13 +5734,14 @@ def calendar_seed_1_2569():
 @role_required('teacher','admin')
 def calendar_edit(event_id):
     event = CalendarEvent.query.get_or_404(event_id)
+    if event.school_id != current_user.school_id: return deny_redirect('calendar_events')
     if current_user.role!='admin' and event.teacher_id not in (current_user.id, None): return deny_redirect('calendar_events')
     if request.method == 'POST':
         event.event_date=datetime.strptime(request.form.get('event_date',''),'%Y-%m-%d').date(); event.title=request.form.get('title',''); event.event_type=request.form.get('event_type','กิจกรรมโรงเรียน'); event.note=request.form.get('note','')
         db.session.commit(); flash('แก้ไขปฏิทินแล้ว', 'success'); return redirect(url_for('calendar_events'))
-    semesters = Semester.query.order_by(Semester.start_date.desc()).all()
+    semesters = school_query(Semester).order_by(Semester.start_date.desc()).all()
     selected_semester = get_active_semester()
-    q = CalendarEvent.query if current_user.role=='admin' else CalendarEvent.query.filter((CalendarEvent.teacher_id==current_user.id) | (CalendarEvent.teacher_id==None))
+    q = school_query(CalendarEvent) if current_user.role=='admin' else school_query(CalendarEvent).filter((CalendarEvent.teacher_id==current_user.id) | (CalendarEvent.teacher_id==None))
     if selected_semester:
         q = q.filter(CalendarEvent.event_date>=selected_semester.start_date, CalendarEvent.event_date<=selected_semester.end_date)
     events = q.order_by(CalendarEvent.event_date.desc()).all()
@@ -5546,6 +5755,7 @@ def calendar_edit(event_id):
 @role_required('teacher','admin')
 def calendar_delete(event_id):
     event=CalendarEvent.query.get_or_404(event_id)
+    if event.school_id != current_user.school_id: return deny_redirect('calendar_events')
     if current_user.role!='admin' and event.teacher_id != current_user.id: return deny_redirect('calendar_events')
     db.session.delete(event); db.session.commit(); flash('ลบรายการปฏิทินแล้ว', 'success')
     return redirect(url_for('calendar_events'))
@@ -5898,6 +6108,7 @@ def schedule_period_block(schedule_id=None, subject_id=None, classroom_id=None, 
     if not schedule_row:
         return [int(period_no)] if period_no else []
     rows = TeachingSchedule.query.filter_by(
+        semester_id=schedule_row.semester_id,
         teacher_id=schedule_row.teacher_id,
         weekday=schedule_row.weekday,
         subject_id=schedule_row.subject_id,
@@ -6079,7 +6290,7 @@ def build_subject_attendance_summaries(start_date=None, end_date=None):
 
 def attendance_range_from_request():
     today = local_today()
-    active_sem = Semester.query.filter_by(is_active=True).first()
+    active_sem = get_active_semester()
     range_type = request.args.get('range', 'term')
     if range_type == 'month':
         year = request.args.get('year', type=int) or today.year
@@ -6096,7 +6307,7 @@ def attendance_range_from_request():
 def classroom_day_schedule_rows(classroom_id, report_date):
     """คาบ 1-8 ของห้องในวันที่เลือก ดึงวิชาจากตารางสอนตามวันในสัปดาห์"""
     weekday = report_date.weekday()
-    rows = TeachingSchedule.query.filter_by(classroom_id=classroom_id, weekday=weekday).order_by(TeachingSchedule.period_no.asc()).all()
+    rows = active_schedule_query().filter_by(classroom_id=classroom_id, weekday=weekday).order_by(TeachingSchedule.period_no.asc()).all()
     by_period = {}
     for r in rows:
         by_period.setdefault(r.period_no, []).append(r)
@@ -6707,7 +6918,7 @@ def substitute_schedule():
     day_names = ['จันทร์','อังคาร','พุธ','พฤหัสบดี','ศุกร์','เสาร์','อาทิตย์']
     schedules = []
     if selected_teacher:
-        schedules = TeachingSchedule.query.filter_by(teacher_id=selected_teacher.id).order_by(TeachingSchedule.weekday, TeachingSchedule.period_no).all()
+        schedules = active_schedule_query().filter_by(teacher_id=selected_teacher.id).order_by(TeachingSchedule.weekday, TeachingSchedule.period_no).all()
     return render_template('substitute.html', teachers=teachers, selected_teacher=selected_teacher, schedules=schedules, day_names=day_names, today_date=local_today().isoformat())
 
 @app.route('/grades/<int:subject_id>/<int:classroom_id>', methods=['GET','POST'])
@@ -6999,7 +7210,7 @@ def phase1_dashboard():
         'risk_count': sum(r['risk_count'] for r in pair_rows),
         'low_attendance': sum(r['low_attendance'] for r in pair_rows),
     }
-    active_semester = Semester.query.filter_by(is_active=True).first()
+    active_semester = get_active_semester()
     return render_template('phase1_dashboard.html', stats=stats, pair_rows=pair_rows, active_semester=active_semester)
 
 
@@ -7042,7 +7253,7 @@ def pp5_print(subject_id, classroom_id):
         return deny_redirect('records_center')
     setting = get_grade_setting(subject.id)
     rows = build_pp5_rows(subject, room)
-    active_semester = Semester.query.filter_by(is_active=True).first()
+    active_semester = get_active_semester()
     return render_template(
         'pp5_print.html', subject=subject, room=room, rows=rows,
         grade_setting=setting, active_semester=active_semester,
@@ -7064,7 +7275,7 @@ def pp5_export(subject_id, classroom_id):
     ws = wb.active
     ws.title = 'ปพ5'
     school = get_school_setting()
-    active_semester = Semester.query.filter_by(is_active=True).first()
+    active_semester = get_active_semester()
     ws.append([school.school_name or 'KRURUKSORN'])
     ws.append(['แบบบันทึกผลการพัฒนาคุณภาพผู้เรียนรายวิชา (ปพ.5)'])
     ws.append(['รายวิชา', subject.name, 'ห้อง', room.name, 'ภาคเรียน', active_semester.name if active_semester else '-'])
@@ -7186,7 +7397,7 @@ def _endterm_docx(title, intro, analyses=None):
     heading.alignment = WD_ALIGN_PARAGRAPH.CENTER
     run = heading.add_run(title); run.bold = True; run.font.size = Pt(22)
     school = get_school_setting()
-    semester = Semester.query.filter_by(is_active=True).first()
+    semester = get_active_semester()
     meta = document.add_paragraph()
     meta.alignment = WD_ALIGN_PARAGRAPH.CENTER
     meta.add_run('%s\n%s\n%s' % (
@@ -7300,7 +7511,7 @@ def _endterm_exam_workbook(pair):
 @role_required('teacher', 'admin')
 def endterm_dashboard():
     rows = endterm_pair_rows()
-    semester = Semester.query.filter_by(is_active=True).first()
+    semester = get_active_semester()
     totals = {
         'pairs': len(rows),
         'grade_ready': sum(1 for r in rows if r['grade_ready']),
@@ -7325,7 +7536,7 @@ def endterm_supplement():
     if not pair:
         flash('ยังไม่มีรายวิชาและห้องเรียนสำหรับจัดทำรายงาน', 'danger')
         return redirect(url_for('endterm_dashboard'))
-    semester = Semester.query.filter_by(is_active=True).first()
+    semester = get_active_semester()
     record = EndTermReportData.query.filter_by(
         owner_id=current_user.id, semester_id=semester.id if semester else None,
         subject_id=pair.subject_id, classroom_id=pair.classroom_id,
@@ -7402,7 +7613,7 @@ def endterm_exam_analysis(subject_id, classroom_id):
 def endterm_package():
     pairs = phase1_subject_room_pairs()
     analyses = [endterm_grade_analysis(p) for p in pairs]
-    semester = Semester.query.filter_by(is_active=True).first()
+    semester = get_active_semester()
     supplements = EndTermReportData.query.filter_by(
         owner_id=current_user.id,
         semester_id=semester.id if semester else None).order_by(EndTermReportData.report_type).all()
@@ -7596,7 +7807,7 @@ def pp6_print(student_id):
     rows = build_student_report_rows(student)
     return render_template(
         'pp6_print.html', student=student, room=room, rows=rows,
-        active_semester=Semester.query.filter_by(is_active=True).first(),
+        active_semester=get_active_semester(),
         school=get_school_setting(), signer=current_user, generated_at=local_now()
     )
 
@@ -7614,7 +7825,7 @@ def pp6_export(student_id):
     ws = wb.active
     ws.title = 'ปพ6'
     school = get_school_setting()
-    active_semester = Semester.query.filter_by(is_active=True).first()
+    active_semester = get_active_semester()
     ws.append([school.school_name or 'KRURUKSORN'])
     ws.append(['รายงานผลการเรียนรายบุคคล (ปพ.6)'])
     ws.append(['นักเรียน', student.full_name, 'ห้อง', room.name if room else '-', 'ภาคเรียน', active_semester.name if active_semester else '-'])
@@ -7640,7 +7851,7 @@ def pp7_print(student_id):
         return deny_redirect('phase2_dashboard')
     return render_template(
         'pp7_print.html', student=student, room=room,
-        active_semester=Semester.query.filter_by(is_active=True).first(),
+        active_semester=get_active_semester(),
         school=get_school_setting(), signer=current_user, generated_at=local_now()
     )
 
@@ -8749,8 +8960,15 @@ def ensure_schema_columns():
                     conn.exec_driver_sql(f"ALTER TABLE {table} ADD COLUMN {column} {ddl_sqlite}")
 
             add_column('subject', 'is_active', 'BOOLEAN DEFAULT 1')
+            add_column('subject', 'school_id', 'INTEGER')
             add_column('user', 'position', "VARCHAR(80) DEFAULT 'ครู'")
             add_column('user', 'is_active', 'BOOLEAN DEFAULT 1')
+            add_column('user', 'school_id', 'INTEGER')
+            add_column('user', 'is_superadmin', 'BOOLEAN DEFAULT 0')
+            add_column('school_setting', 'school_id', 'INTEGER')
+            add_column('semester', 'school_id', 'INTEGER')
+            add_column('classroom', 'school_id', 'INTEGER')
+            add_column('calendar_event', 'school_id', 'INTEGER')
             for col, ddl in [
                 ('student_no', "VARCHAR(30) DEFAULT ''"), ('prefix', "VARCHAR(30) DEFAULT ''"),
                 ('first_name', "VARCHAR(120) DEFAULT ''"), ('last_name', "VARCHAR(120) DEFAULT ''"),
@@ -8772,6 +8990,8 @@ def ensure_schema_columns():
             add_column('attendance', 'schedule_id', 'INTEGER')
             add_column('attendance', 'checked_by_id', 'INTEGER')
             add_column('attendance', 'substitute_for_teacher_id', 'INTEGER')
+            add_column('teaching_schedule', 'semester_id', 'INTEGER')
+            add_column('teaching_schedule', 'school_id', 'INTEGER')
             add_column('grade_setting', 'classwork_weight', 'FLOAT DEFAULT 10')
             add_column('classroom_activity', 'target_scope', "VARCHAR(30) DEFAULT 'classroom'")
             add_column('accdb_subjects', 'password', "VARCHAR(255) DEFAULT ''")
@@ -8800,8 +9020,15 @@ def ensure_schema_columns():
                 conn.exec_driver_sql(f'ALTER TABLE {q(table)} ADD COLUMN {column} {ddl_postgres}')
 
         add_column('subject', 'is_active', 'BOOLEAN DEFAULT 1', 'BOOLEAN DEFAULT TRUE')
+        add_column('subject', 'school_id', 'INTEGER', 'INTEGER')
         add_column('user', 'position', "VARCHAR(80) DEFAULT 'ครู'", "VARCHAR(80) DEFAULT 'ครู'")
         add_column('user', 'is_active', 'BOOLEAN DEFAULT 1', 'BOOLEAN DEFAULT TRUE')
+        add_column('user', 'school_id', 'INTEGER', 'INTEGER')
+        add_column('user', 'is_superadmin', 'BOOLEAN DEFAULT 0', 'BOOLEAN DEFAULT FALSE')
+        add_column('school_setting', 'school_id', 'INTEGER', 'INTEGER')
+        add_column('semester', 'school_id', 'INTEGER', 'INTEGER')
+        add_column('classroom', 'school_id', 'INTEGER', 'INTEGER')
+        add_column('calendar_event', 'school_id', 'INTEGER', 'INTEGER')
         for col, ddl in [
             ('student_no', "VARCHAR(30) DEFAULT ''"), ('prefix', "VARCHAR(30) DEFAULT ''"),
             ('first_name', "VARCHAR(120) DEFAULT ''"), ('last_name', "VARCHAR(120) DEFAULT ''"),
@@ -8823,6 +9050,8 @@ def ensure_schema_columns():
         add_column('attendance', 'schedule_id', 'INTEGER', 'INTEGER')
         add_column('attendance', 'checked_by_id', 'INTEGER', 'INTEGER')
         add_column('attendance', 'substitute_for_teacher_id', 'INTEGER', 'INTEGER')
+        add_column('teaching_schedule', 'semester_id', 'INTEGER', 'INTEGER')
+        add_column('teaching_schedule', 'school_id', 'INTEGER', 'INTEGER')
         add_column('grade_setting', 'classwork_weight', 'FLOAT DEFAULT 10', 'DOUBLE PRECISION DEFAULT 10')
         add_column('classroom_activity', 'target_scope', "VARCHAR(30) DEFAULT 'classroom'", "VARCHAR(30) DEFAULT 'classroom'")
         add_column('accdb_subjects', 'password', "VARCHAR(255) DEFAULT ''", "VARCHAR(255) DEFAULT ''")
@@ -8853,6 +9082,34 @@ def sync_schedule_teacher_links():
             changed = True
     if changed:
         db.session.commit()
+
+def backfill_schedule_semesters():
+    """ผูกตารางเดิมที่สร้างก่อนมีระบบแยกเทอมเข้ากับเทอมปัจจุบันเพียงครั้งเดียว"""
+    sem = get_active_semester()
+    if sem:
+        changed = TeachingSchedule.query.filter(TeachingSchedule.semester_id.is_(None)).update(
+            {TeachingSchedule.semester_id: sem.id}, synchronize_session=False
+        )
+        if changed:
+            db.session.commit()
+
+def ensure_school_tenancy():
+    """สร้างโรงเรียนหลักและผูกข้อมูลเก่าทั้งหมดโดยไม่ลบหรือย้ายข้ามฐานข้อมูล"""
+    school = School.query.order_by(School.id).first()
+    if not school:
+        setting = SchoolSetting.query.order_by(SchoolSetting.id).first()
+        school = School(name=(setting.school_name if setting and setting.school_name else 'โรงเรียนหลัก'), code='main-school')
+        db.session.add(school)
+        db.session.flush()
+    for model in (User, SchoolSetting, Semester, Classroom, Subject, TeachingSchedule, CalendarEvent):
+        model.query.filter(model.school_id.is_(None)).update({model.school_id: school.id}, synchronize_session=False)
+    if not User.query.filter_by(is_superadmin=True).first():
+        admin = User.query.filter_by(role='admin').order_by(User.id).first()
+        if admin:
+            admin.is_superadmin = True
+    if not SchoolSetting.query.filter_by(school_id=school.id).first():
+        db.session.add(SchoolSetting(school_id=school.id, school_name=school.name))
+    db.session.commit()
 
 
 # ==================== โมดูลสมุดคะแนน .accdb (BookMark bridge) ====================
@@ -9861,8 +10118,13 @@ def report_generate(key):
 # ==================== จบโมดูลคลังเอกสาร/รายงาน ====================
 
 
+# ฟีเจอร์ดูแลนักเรียน (คะแนนความประพฤติ/โฮมรูม/รายงานเช็กชื่อ/ออกนอกบริเวณ/บัญชีของฉัน)
+import sss_features
+sss_features.register(app, globals())
+
+
 def init_db():
-    db.create_all(); ensure_schema_columns(); seed(); sync_schedule_teacher_links()
+    db.create_all(); ensure_schema_columns(); ensure_school_tenancy(); seed(); ensure_school_tenancy(); backfill_schedule_semesters(); sync_schedule_teacher_links()
 
 # ให้ Railway/Gunicorn อัปเกรด schema และซ่อมลิงก์ตารางสอนอัตโนมัติเมื่อแอปเริ่มทำงาน
 # ปิดได้ด้วย RUN_STARTUP_INIT=0 ถ้าต้องการจัดการฐานข้อมูลเอง

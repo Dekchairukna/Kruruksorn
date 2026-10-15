@@ -1,0 +1,5 @@
+*.dump
+*.sql
+*.sqlite
+*.db
+!.gitignore

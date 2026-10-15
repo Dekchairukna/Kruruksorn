@@ -13,6 +13,19 @@
   </div>
 </div>
 
+{% if active_semester %}
+<section class="card semester-banner">
+  <div>
+    <div class="eyebrow">ตารางของภาคเรียนปัจจุบัน</div>
+    <h2>{{ active_semester.name }}</h2>
+    <p>{{ active_semester.start_date.strftime('%d/%m/%Y') }} – {{ active_semester.end_date.strftime('%d/%m/%Y') }}</p>
+  </div>
+  {% if current_user.role == 'admin' %}<a class="btn secondary" href="{{ url_for('semesters') }}">จัดการ/เปลี่ยนภาคเรียน</a>{% endif %}
+</section>
+{% else %}
+<section class="card"><div class="alert danger">ยังไม่มีภาคเรียนปัจจุบัน กรุณาให้ผู้ดูแลระบบสร้างภาคเรียนก่อนจัดตารางสอน</div></section>
+{% endif %}
+
 {% if current_user.role == 'admin' %}
 <section class="card">
   <form method="get" class="form-row">
@@ -36,11 +49,29 @@
     </select>
     {% endif %}
     <input type="file" name="excel" accept=".xlsx,.xls" required>
-    <label class="inline-check"><input type="checkbox" name="replace_all" value="1"> ลบตารางเรียนเดิมก่อนนำเข้า</label>
+    <label class="inline-check"><input type="checkbox" name="replace_all" value="1"> ลบตารางของเทอมปัจจุบันก่อนนำเข้า</label>
     <button>นำเข้า Excel</button>
   </form>
   <p class="hint">รูปแบบคอลัมน์ที่รองรับ: <b>ครู, วัน, คาบ, รหัสวิชา, ชื่อวิชา, ชั้น/ห้อง, ห้องเรียน, หัวข้อ</b><br>ถ้ามีชื่อครูที่ยังไม่มีในระบบ ระบบจะสร้างบัญชีครูให้อัตโนมัติ โดยตั้งรหัสผ่านเริ่มต้นเป็น <b>1234</b></p>
 </section>
+
+{% if current_user.role != 'student' and active_semester and previous_semesters %}
+<section class="card">
+  <h2>เริ่มเทอมใหม่จากตารางเดิม</h2>
+  <p class="hint">คัดลอกเฉพาะโครงตารางสอนมายัง {{ active_semester.name }} โดยไม่คัดลอกการเช็กชื่อ คะแนน หรือบันทึกการสอน และไม่ทับคาบที่สร้างไว้แล้ว</p>
+  <form method="post" action="{{ url_for('schedule_copy_semester') }}" class="form-row js-confirm-form" data-confirm="คัดลอกตารางจากภาคเรียนที่เลือกมาเทอมปัจจุบันหรือไม่?">
+    <select name="source_semester_id" required>
+      <option value="">เลือกภาคเรียนต้นทาง</option>
+      {% for sem in previous_semesters %}<option value="{{ sem.id }}">{{ sem.name }}</option>{% endfor %}
+    </select>
+    {% if current_user.role == 'admin' %}
+      <input type="hidden" name="teacher_id" value="{{ active_teacher_id or '' }}">
+      {% if not active_teacher_id %}<span class="hint">กรุณาเลือกครูด้านบนก่อน</span>{% endif %}
+    {% endif %}
+    <button {% if current_user.role == 'admin' and not active_teacher_id %}disabled{% endif %}>คัดลอกตารางมาเทอมนี้</button>
+  </form>
+</section>
+{% endif %}
 
 <section class="schedule-summary-card compact-schedule" id="schedule-capture">
   <div class="schedule-title">ตารางจัดการเรียนการสอน</div>
@@ -151,6 +182,7 @@
 {% endif %}
 
 <h2>รายการคาบสอน</h2>
+{% if not schedules %}<div class="alert">ยังไม่มีคาบสอนใน {{ active_semester.name if active_semester else 'ภาคเรียนนี้' }} — เพิ่มคาบ นำเข้า Excel หรือคัดลอกจากเทอมเดิมได้</div>{% endif %}
 <table>
 <tr>{% if current_user.role=='admin' %}<th>ครู</th>{% endif %}<th>วัน</th><th>คาบ</th><th>เวลา</th><th>วิชา</th><th>ห้อง</th><th>เนื้อหาที่เปิดอยู่วันนี้</th><th>บทเรียน/หัวข้อเดิม</th><th>เปิดคาบ</th>{% if current_user.role!='student' %}<th>เช็กชื่อ/คะแนน</th><th>จัดการ</th>{% endif %}</tr>
 {% for s in schedules %}

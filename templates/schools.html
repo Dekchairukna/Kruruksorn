@@ -1,0 +1,33 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-head">
+  <div><h1>จัดการโรงเรียน</h1><p>แต่ละโรงเรียนมีผู้ใช้ ห้องเรียน รายวิชา ภาคเรียน และตารางสอนแยกจากกัน</p></div>
+</div>
+
+<section class="card">
+  <h2>เปิดโรงเรียนใหม่</h2>
+  <form method="post" class="grid-form">
+    <input name="name" placeholder="ชื่อโรงเรียน" required>
+    <input name="code" placeholder="รหัสโรงเรียน เช่น banmai" pattern="[A-Za-z0-9-]+" required>
+    <input name="admin_name" placeholder="ชื่อผู้ดูแลโรงเรียน" required>
+    <input name="admin_username" placeholder="Username ผู้ดูแล" required>
+    <input name="admin_password" type="password" placeholder="รหัสผ่านเริ่มต้น" required>
+    <button>สร้างโรงเรียนและผู้ดูแล</button>
+  </form>
+</section>
+
+<section class="card">
+  <h2>โรงเรียนในระบบ</h2>
+  <div class="table-wrap"><table>
+    <tr><th>โรงเรียน</th><th>รหัส</th><th>จำนวนผู้ใช้</th><th>สถานะ</th></tr>
+    {% for school in schools %}
+    <tr>
+      <td data-label="โรงเรียน"><b>{{ school.name }}</b></td>
+      <td data-label="รหัส">{{ school.code }}</td>
+      <td data-label="จำนวนผู้ใช้">{{ user_counts.get(school.id, 0) }} คน</td>
+      <td data-label="สถานะ"><span class="pill {{ 'green' if school.is_active else 'red' }}">{{ 'เปิดใช้งาน' if school.is_active else 'ปิดใช้งาน' }}</span></td>
+    </tr>
+    {% endfor %}
+  </table></div>
+</section>
+{% endblock %}
