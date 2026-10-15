@@ -40,7 +40,7 @@
       <a href="{{ url_for('schedule') }}">📅 ตารางเรียนของฉัน</a>
       <a href="{{ url_for('student_assignments') if false else url_for('assignments') }}">📝 งานของฉัน</a>
       <a href="{{ url_for('student_club_register') }}">🎯 เลือกชุมนุม</a>
-      <a href="{{ url_for('behavior_me') }}">⭐ คะแนนความประพฤติ</a>
+      {% if sss_features_enabled %}<a href="{{ url_for('behavior_me') }}">⭐ คะแนนความประพฤติ</a>{% endif %}
     {% endif %}
     {% if current_user.role in ['admin','teacher'] %}
       <div class="nav-section">
@@ -61,13 +61,13 @@
         <a href="{{ url_for('endterm_dashboard') }}">📦 งานปิดภาคเรียน</a>
         <a href="{{ url_for('line_absence') }}">📨 แจ้งผู้ปกครอง (LINE)</a>
       </div>
-      <div class="nav-section">
+      {% if sss_features_enabled %}<div class="nav-section">
         <div class="nav-section-title">🧭 ดูแลนักเรียน</div>
         <a href="{{ url_for('behavior_home') }}">⭐ คะแนนความประพฤติ</a>
         <a href="{{ url_for('homeroom_check') }}">🏠 เช็กชื่อโฮมรูม</a>
         <a href="{{ url_for('activity_report') }}">📈 รายงานเสาธง/โฮมรูม/กิจกรรม</a>
         <a href="{{ url_for('campus_leave') }}">🚸 ออกนอกบริเวณโรงเรียน</a>
-      </div>
+      </div>{% endif %}
       <div class="nav-section">
         <div class="nav-section-title">🛠️ เครื่องมือครู</div>
         <a href="{{ url_for('ai_assistant') }}">✨ AI Assistant</a>
@@ -93,7 +93,7 @@
         <a href="{{ url_for('users') }}">👥 ผู้ใช้</a>
       </div>
     {% endif %}
-    <a href="{{ url_for('account') }}">🔑 บัญชีของฉัน/เปลี่ยนรหัสผ่าน</a>
+    {% if sss_features_enabled %}<a href="{{ url_for('account') }}">🔑 บัญชีของฉัน/เปลี่ยนรหัสผ่าน</a>{% endif %}
     <a href="{{ url_for('logout') }}">🚪 ออกจากระบบ</a>
   </nav>
   {% endif %}

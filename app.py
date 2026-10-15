@@ -660,9 +660,9 @@ def inject_school_setting():
     try:
         active_semester = get_active_semester()
         semesters = school_query(Semester).order_by(Semester.start_date.desc()).all() if current_user.is_authenticated else []
-        return {'school_setting': get_school_setting(), 'current_school': current_user.school if current_user.is_authenticated else None, 'teacher_position_choices': TEACHER_POSITION_CHOICES, 'thai_date_label': thai_date_label, 'thai_date_short': thai_date_short, 'active_semester_global': active_semester, 'semesters_global': semesters}
+        return {'school_setting': get_school_setting(), 'current_school': current_user.school if current_user.is_authenticated else None, 'teacher_position_choices': TEACHER_POSITION_CHOICES, 'thai_date_label': thai_date_label, 'thai_date_short': thai_date_short, 'active_semester_global': active_semester, 'semesters_global': semesters, 'sss_features_enabled': 'behavior_home' in app.view_functions}
     except Exception:
-        return {'school_setting': None, 'current_school': None, 'teacher_position_choices': TEACHER_POSITION_CHOICES, 'thai_date_label': thai_date_label, 'thai_date_short': thai_date_short, 'active_semester_global': None, 'semesters_global': []}
+        return {'school_setting': None, 'current_school': None, 'teacher_position_choices': TEACHER_POSITION_CHOICES, 'thai_date_label': thai_date_label, 'thai_date_short': thai_date_short, 'active_semester_global': None, 'semesters_global': [], 'sss_features_enabled': 'behavior_home' in app.view_functions}
 
 
 class Semester(db.Model):
