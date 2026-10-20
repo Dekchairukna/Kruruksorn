@@ -34,6 +34,9 @@
     <td>{% if u.is_active is sameas false %}<span class="badge danger">ปิดใช้งาน</span>{% else %}<span class="badge success">ใช้งาน</span>{% endif %}</td>
     <td>
       <a class="btn small" href="{{url_for('user_edit', user_id=u.id)}}">แก้ไข</a>
+      {% if u.role=='teacher' and u.is_active is not sameas false %}
+      <form method="post" action="{{url_for('user_reset_password', user_id=u.id)}}" class="inline" onsubmit="return confirm('รีเซ็ตรหัสของ {{ u.full_name }} เป็น 1234?')"><button class="small secondary" type="submit">รีเซ็ตรหัส</button></form>
+      {% endif %}
       {% if u.is_active is sameas false %}
       <form method="post" action="{{url_for('user_restore', user_id=u.id)}}" class="inline" onsubmit="return confirm('เปิดใช้งานบัญชีนี้อีกครั้ง?')"><button class="small">เปิดใช้งาน</button></form>
       {% else %}

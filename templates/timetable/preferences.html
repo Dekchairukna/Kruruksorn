@@ -5,9 +5,8 @@
 .pref-subject{display:grid;grid-template-columns:minmax(0,1fr) 150px;gap:12px;align-items:center;padding:14px 0;border-bottom:1px solid #e5e7eb}
 .pref-subject:last-child{border-bottom:0}.pref-code{color:#0f766e;font-weight:800}.pref-class{color:#475569;font-size:14px}
 .pref-table{border-collapse:separate;border-spacing:5px;width:100%;min-width:700px}.pref-table th{font-size:13px;color:#475569}
-.pref-table td:first-child{font-weight:700;white-space:nowrap}.pref-cell{display:block;cursor:pointer}.pref-cell input{position:absolute;opacity:0;pointer-events:none}
-.pref-cell span{display:flex;min-height:43px;align-items:center;justify-content:center;border:1px solid #cbd5e1;border-radius:10px;background:#fff;color:#94a3b8;font-size:12px}
-.pref-cell input:checked+span{background:#fee2e2;border-color:#ef4444;color:#991b1b;font-weight:800}.pref-note{background:#eff6ff;border:1px solid #bfdbfe;border-radius:14px;padding:12px 14px;color:#1e3a8a}
+.pref-table td:first-child{font-weight:700;white-space:nowrap}.pref-cell{display:flex;min-height:43px;align-items:center;justify-content:center;border:1px solid #cbd5e1;border-radius:10px;background:#fff;color:#94a3b8;font-size:12px;cursor:pointer;user-select:none}
+.pref-cell.hard{background:#fee2e2;border-color:#ef4444;color:#991b1b;font-weight:800}.pref-cell.soft{background:#fef3c7;border-color:#f59e0b;color:#92400e;font-weight:800}.pref-note{background:#eff6ff;border:1px solid #bfdbfe;border-radius:14px;padding:12px 14px;color:#1e3a8a}
 @media(max-width:700px){.pref-subject{grid-template-columns:1fr}.pref-table{min-width:620px}}
 </style>
 <div class="page-head"><div><h1>🗓️ แจ้งความต้องการตารางสอน</h1><p class="muted">เลือกคาบติดกันของแต่ละวิชา และช่วงเวลาที่ไม่สามารถเข้าสอนได้</p></div></div>
@@ -35,15 +34,36 @@
 
   <section class="card">
     <h2>2. วันและคาบที่ติดประชุม/ภารกิจ</h2>
-    <p class="muted">กดเลือกทุกช่องที่ห้ามลงคาบสอน เช่น ประชุมหัวหน้าแผนก ระบบจะไม่นำวิชาไปวางในช่วงดังกล่าว</p>
+    <p class="muted">กด 1 ครั้ง = <b style="color:#b91c1c">ห้าม</b> สำหรับภารกิจที่จำเป็นจริง ๆ · กดอีกครั้ง = <b style="color:#b45309">เลี่ยง</b> สำหรับช่วงที่ไม่สะดวกแต่สอนได้หากจำเป็น · กดครั้งที่ 3 = ว่าง</p>
     <div class="table-wrap"><table class="pref-table">
       <tr><th>วัน/คาบ</th>{% for p in range(1,plan.periods+1) %}<th>คาบ {{ p }}{% if times[p-1] %}<br><small>{{ times[p-1] }}</small>{% endif %}</th>{% endfor %}</tr>
-      {% for d in range(1,plan.days+1) %}<tr><td>{{ tt_day_names[d-1] }}</td>{% for p in range(1,plan.periods+1) %}<td><label class="pref-cell"><input type="checkbox" name="cell" value="{{ d }}-{{ p }}" {% if (d,p) in current_blocks %}checked{% endif %}><span>ว่าง</span></label></td>{% endfor %}</tr>{% endfor %}
+      {% for d in range(1,plan.days+1) %}<tr><td>{{ tt_day_names[d-1] }}</td>{% for p in range(1,plan.periods+1) %}{% set b=current_blocks.get((d,p)) %}<td><div class="pref-cell {{ ('hard' if b.hard else 'soft') if b else '' }}" data-day="{{ d }}" data-period="{{ p }}">{{ ('ห้าม' if b.hard else 'เลี่ยง') if b else 'ว่าง' }}</div></td>{% endfor %}</tr>{% endfor %}
     </table></div>
+    <div id="prefCells"></div>
     <label style="display:block;margin-top:12px">เหตุผล/ชื่อการประชุม<input name="reason" value="{{ (current_blocks.values()|list|first).reason if current_blocks else '' }}" placeholder="เช่น ประชุมหัวหน้าแผนกทุกวันพุธ คาบ 7-8"></label>
   </section>
   <div class="actions-row"><button class="btn" type="submit" {% if not lessons %}disabled{% endif %}>บันทึกแบบสอบถาม</button><a class="btn secondary" href="{{ url_for('schedule') }}">กลับตารางสอน</a></div>
 </form>
-<script>document.querySelectorAll('.pref-cell input').forEach(function(x){function label(){x.nextElementSibling.textContent=x.checked?'ห้ามลงสอน':'ว่าง'}x.addEventListener('change',label);label()})</script>
+<script>
+(function(){
+  var holder=document.getElementById('prefCells');
+  function sync(){
+    holder.innerHTML='';
+    document.querySelectorAll('.pref-cell').forEach(function(cell){
+      var level=cell.classList.contains('hard')?'hard':(cell.classList.contains('soft')?'soft':'');
+      if(!level)return;
+      var d=cell.dataset.day,p=cell.dataset.period;
+      holder.insertAdjacentHTML('beforeend','<input type="hidden" name="cell" value="'+d+'-'+p+'"><input type="hidden" name="lv_'+d+'_'+p+'" value="'+level+'">');
+    });
+  }
+  document.querySelectorAll('.pref-cell').forEach(function(cell){cell.addEventListener('click',function(){
+    if(cell.classList.contains('hard')){cell.classList.remove('hard');cell.classList.add('soft');cell.textContent='เลี่ยง';}
+    else if(cell.classList.contains('soft')){cell.classList.remove('soft');cell.textContent='ว่าง';}
+    else{cell.classList.add('hard');cell.textContent='ห้าม';}
+    sync();
+  });});
+  sync();
+})();
+</script>
 {% endif %}
 {% endblock %}

@@ -2467,6 +2467,23 @@ def user_edit(user_id):
         return redirect(url_for('users'))
     return render_template('user_form.html', u=u)
 
+
+@app.route('/users/<int:user_id>/reset-password', methods=['POST'])
+@login_required
+@role_required('admin')
+def user_reset_password(user_id):
+    u = User.query.get_or_404(user_id)
+    if u.school_id != current_user.school_id and not current_user.is_superadmin:
+        return deny_redirect('users')
+    if u.role != 'teacher':
+        flash('ปุ่มรีเซ็ตรหัสนี้ใช้สำหรับบัญชีครูเท่านั้น', 'danger')
+        return redirect(url_for('users'))
+    u.set_password('1234')
+    u.must_change_password = True
+    db.session.commit()
+    flash(f'รีเซ็ตรหัสของ {u.full_name} เป็น 1234 แล้ว กรุณาแจ้งครูให้เปลี่ยนรหัสหลังเข้าสู่ระบบ', 'success')
+    return redirect(url_for('users'))
+
 def user_has_related_data(user_id):
     checks = [
         ('ห้องประจำชั้น', Classroom.query.filter_by(teacher_id=user_id).first()),

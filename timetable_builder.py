@@ -386,10 +386,9 @@ def register(app, g):
                 if lesson.id in allowed_lesson_ids and requested is not None:
                     lesson.block = max(1, min(4, int(lesson.periods or 1), requested))
 
-            # ครูแก้เฉพาะข้อห้ามเด็ดขาดของตัวเอง ข้อเสนอแบบ "หลีกเลี่ยง"
-            # ที่ผู้จัดตารางตั้งไว้ยังคงอยู่และไม่ถูกแบบสอบถามนี้ลบ
-            TtBlock.query.filter_by(plan_id=plan.id, scope='teacher', teacher_id=tt_teacher.id,
-                                    hard=True).delete(synchronize_session=False)
+            # บันทึกความสะดวกของครูทั้งระดับ "ห้าม" และ "หลีกเลี่ยง" ใหม่
+            TtBlock.query.filter_by(plan_id=plan.id, scope='teacher', teacher_id=tt_teacher.id).delete(
+                synchronize_session=False)
             reason = (request.form.get('reason') or 'ประชุม/ติดภารกิจ').strip()[:200]
             for cell in request.form.getlist('cell'):
                 try:
@@ -397,8 +396,10 @@ def register(app, g):
                 except (TypeError, ValueError):
                     continue
                 if 1 <= day <= plan.days and 1 <= period <= plan.periods:
+                    level = request.form.get(f'lv_{day}_{period}', 'hard')
                     db.session.add(TtBlock(plan_id=plan.id, scope='teacher', teacher_id=tt_teacher.id,
-                                           day=day, period=period, hard=True, weight=30, reason=reason))
+                                           day=day, period=period, hard=(level != 'soft'), weight=30,
+                                           reason=reason))
             if not tt_teacher.user_id:
                 tt_teacher.user_id = current_user.id
             db.session.commit()
@@ -406,7 +407,7 @@ def register(app, g):
             return redirect(url_for('tt_preferences', plan_id=plan.id))
 
         current_blocks = {(b.day, b.period): b for b in TtBlock.query.filter_by(
-            plan_id=plan.id, scope='teacher', teacher_id=tt_teacher.id, hard=True).all()}
+            plan_id=plan.id, scope='teacher', teacher_id=tt_teacher.id).all()}
         return render_template('timetable/preferences.html', plans=available, plan=plan, tt_teacher=tt_teacher,
                                lessons=lessons, current_blocks=current_blocks, times=times_of(plan))
 
