@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="th"><head><meta charset="utf-8"><title>พิมพ์ตารางสอน - {{ plan.name }}</title>
+<style>
+@page{size:A4 landscape;margin:10mm}
+body{font-family:"Sarabun","TH Sarabun New",Tahoma,sans-serif;margin:0;color:#111}
+.page{page-break-after:always;padding:6mm 2mm}
+.page:last-child{page-break-after:auto}
+h2{text-align:center;margin:0 0 2px;font-size:18px}
+.sub{text-align:center;margin:0 0 8px;font-size:13px}
+table{width:100%;border-collapse:collapse;table-layout:fixed}
+th,td{border:1px solid #666;font-size:11px;text-align:center;vertical-align:middle;padding:3px}
+th small{font-weight:400}
+td.day{font-weight:700;width:60px}
+td.lunch,th.lunch{width:22px;color:#c2410c;writing-mode:vertical-rl}
+td.c{height:64px}
+.a{color:#1e3a8a;font-weight:700}
+.b,.c2{color:#333}
+.toolbar{padding:10px;background:#f1f5f9;text-align:center}
+@media print{.toolbar{display:none}}
+</style></head><body>
+<div class="toolbar"><button onclick="window.print()">🖨 พิมพ์</button> · {{ pages|length }} หน้า</div>
+{% for pg in pages %}
+<div class="page">
+  <h2>{{ school_setting.school_name if school_setting and school_setting.school_name else '' }}</h2>
+  <p class="sub">{{ plan.name }} · {{ pg.title }}</p>
+  <table>
+    <tr><th>วัน/คาบ</th>{% for i in range(plan.periods) %}<th>คาบที่ {{ i+1 }}<br><small>{{ times[i] }}</small></th>{% if i+1 == plan.lunch_after %}<th class="lunch">พัก</th>{% endif %}{% endfor %}</tr>
+    {% for d in range(1, plan.days+1) %}
+    <tr><td class="day">{{ tt_day_names[d-1] }}</td>
+      {% for p in range(1, plan.periods+1) %}
+      <td class="c">{% for x in pg.cells.get((d,p), []) %}<div class="a">{{ x.a }}</div><div class="b">{{ x.b }}</div>{% if x.c %}<div class="c2">{{ x.c }}</div>{% endif %}{% endfor %}</td>
+      {% if p == plan.lunch_after %}<td class="lunch">พัก</td>{% endif %}
+      {% endfor %}
+    </tr>{% endfor %}
+  </table>
+</div>
+{% endfor %}
+</body></html>

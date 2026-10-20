@@ -1,0 +1,24 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-head"><div><h1>ตั้งค่าสิทธิ์การจัดสอนแทน</h1><p class="muted">แอดมินจัดสอนแทนได้เสมอ</p></div></div>
+{% include 'subplan/_style.html' %}
+<form method="post" class="card">
+  <p class="sp-muted"><b>จัดสอนแทนได้</b> = เข้าหน้า "จัดสอนแทน" เพื่อเลือกครูที่ไม่มาและมอบหมายครูแทนได้ (เช่น ฝ่ายวิชาการ) ·
+    <b>ถูกจัดให้สอนแทนได้</b> = ปรากฏในรายชื่อครูว่างให้เลือกสอนแทน (เอาติ๊กออกสำหรับผู้บริหาร/ผู้ที่ไม่รับสอนแทน)</p>
+  <div class="actions-row" style="margin-bottom:8px">
+    <button type="button" class="btn small secondary" onclick="document.querySelectorAll('.cb-sub').forEach(c=>c.checked=true)">ติ๊กสอนแทนได้ทุกคน</button>
+  </div>
+  <div class="table-wrap"><table>
+    <tr><th>ครู</th><th>ชื่อผู้ใช้</th><th>จัดสอนแทนได้</th><th>ถูกจัดให้สอนแทนได้</th></tr>
+    {% for t in teachers %}{% set s = smap.get(t.id) %}
+    <tr>
+      <td data-label="ครู">{{ t.full_name }}</td>
+      <td data-label="ชื่อผู้ใช้">{{ t.username }}</td>
+      <td data-label="จัดสอนแทนได้"><input type="checkbox" name="manage" value="{{ t.id }}" {% if s and s.can_manage %}checked{% endif %}></td>
+      <td data-label="สอนแทนได้"><input type="checkbox" class="cb-sub" name="substitute" value="{{ t.id }}" {% if not s or s.can_substitute %}checked{% endif %}></td>
+    </tr>
+    {% endfor %}
+  </table></div>
+  <div class="sticky-save-bar"><button class="btn" type="submit">บันทึก</button></div>
+</form>
+{% endblock %}

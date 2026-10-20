@@ -2135,6 +2135,11 @@ def school_settings():
     if request.method == 'POST':
         if current_user.role == 'admin':
             setting.school_name = request.form.get('school_name', '').strip()
+            # Keep the tenant name and the printable school setting in sync.
+            # Otherwise the superadmin page would continue to show the old name.
+            school = School.query.get(current_user.school_id)
+            if school and setting.school_name:
+                school.name = setting.school_name
             setting.director_name = request.form.get('director_name', '').strip()
             setting.deputy_director_name = request.form.get('deputy_director_name', '').strip()
             logo = request.files.get('logo')
@@ -2338,6 +2343,97 @@ def schools():
     user_counts = dict(db.session.query(User.school_id, db.func.count(User.id)).group_by(User.school_id).all())
     return render_template('schools.html', schools=rows, user_counts=user_counts)
 
+
+def _school_has_business_data(school_id):
+    """Return True when deleting a school could remove operational data.
+
+    Models with a school_id column are discovered from the current model
+    registry so newly added school-scoped modules are protected too.
+    """
+    for mapper in db.Model.registry.mappers:
+        model = mapper.class_
+        if model in (School, SchoolSetting, User) or not hasattr(model, 'school_id'):
+            continue
+        if model.query.filter(model.school_id == school_id).first() is not None:
+            return True
+    return False
+
+
+@app.route('/schools/<int:school_id>/edit', methods=['POST'])
+@login_required
+@role_required('admin')
+def school_edit(school_id):
+    if not current_user.is_superadmin:
+        return deny_redirect('index')
+    school = School.query.get_or_404(school_id)
+    name = (request.form.get('name') or '').strip()
+    code = re.sub(r'[^a-z0-9-]+', '-', (request.form.get('code') or '').strip().lower()).strip('-')
+    if not name or not code:
+        flash('กรุณากรอกชื่อและรหัสโรงเรียนให้ครบ', 'danger')
+        return redirect(url_for('schools'))
+    duplicate = School.query.filter(School.code == code, School.id != school.id).first()
+    if duplicate:
+        flash(f'รหัสโรงเรียน "{code}" ถูกใช้งานแล้ว', 'danger')
+        return redirect(url_for('schools'))
+    school.name = name
+    school.code = code
+    setting = SchoolSetting.query.filter_by(school_id=school.id).first()
+    if setting:
+        setting.school_name = name
+    else:
+        db.session.add(SchoolSetting(school_id=school.id, school_name=name))
+    db.session.commit()
+    flash(f'บันทึกข้อมูล {name} แล้ว', 'success')
+    return redirect(url_for('schools'))
+
+
+@app.route('/schools/<int:school_id>/toggle', methods=['POST'])
+@login_required
+@role_required('admin')
+def school_toggle(school_id):
+    if not current_user.is_superadmin:
+        return deny_redirect('index')
+    school = School.query.get_or_404(school_id)
+    if school.id == current_user.school_id and school.is_active:
+        flash('ไม่สามารถปิดโรงเรียนที่บัญชีของคุณกำลังใช้งานอยู่', 'danger')
+        return redirect(url_for('schools'))
+    school.is_active = not school.is_active
+    db.session.commit()
+    flash(f'{"เปิด" if school.is_active else "ปิด"}การใช้งาน {school.name} แล้ว', 'success')
+    return redirect(url_for('schools'))
+
+
+@app.route('/schools/<int:school_id>/delete', methods=['POST'])
+@login_required
+@role_required('admin')
+def school_delete(school_id):
+    if not current_user.is_superadmin:
+        return deny_redirect('index')
+    school = School.query.get_or_404(school_id)
+    if school.id == current_user.school_id:
+        flash('ไม่สามารถลบโรงเรียนที่บัญชีของคุณกำลังใช้งานอยู่', 'danger')
+        return redirect(url_for('schools'))
+    confirmation = (request.form.get('confirm_name') or '').strip()
+    if confirmation != school.name:
+        flash('ชื่อโรงเรียนที่ใช้ยืนยันไม่ตรงกัน จึงยังไม่ได้ลบ', 'danger')
+        return redirect(url_for('schools'))
+    user_count = User.query.filter_by(school_id=school.id).count()
+    if user_count > 1 or _school_has_business_data(school.id):
+        flash('โรงเรียนนี้มีครู นักเรียน หรือข้อมูลการเรียนแล้ว จึงลบไม่ได้ กรุณาใช้ “ปิดใช้งาน” เพื่อเก็บข้อมูลไว้อย่างปลอดภัย', 'danger')
+        return redirect(url_for('schools'))
+    deleted_name = school.name
+    try:
+        SchoolSetting.query.filter_by(school_id=school.id).delete(synchronize_session=False)
+        User.query.filter_by(school_id=school.id).delete(synchronize_session=False)
+        db.session.delete(school)
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        flash('ยังลบโรงเรียนไม่ได้ เพราะมีข้อมูลที่เชื่อมโยงอยู่ กรุณาปิดใช้งานแทน', 'danger')
+        return redirect(url_for('schools'))
+    flash(f'ลบ {deleted_name} แล้ว', 'success')
+    return redirect(url_for('schools'))
+
 @app.route('/users/<int:user_id>/edit', methods=['GET','POST'])
 @login_required
 @role_required('admin')
@@ -2485,7 +2581,12 @@ def classrooms():
     if request.method == 'POST':
         teacher_id_raw = request.form.get('teacher_id')
         teacher_id = current_user.id if current_user.role == 'teacher' else (int(teacher_id_raw) if teacher_id_raw else None)
-        room = Classroom(school_id=current_user.school_id, name=request.form.get('name',''), teacher_id=teacher_id)
+        room_name = (request.form.get('name') or '').strip()
+        existing_room = school_query(Classroom).filter(db.func.lower(Classroom.name) == room_name.lower()).order_by(Classroom.id).first()
+        if existing_room:
+            flash(f'มีห้อง {existing_room.name} อยู่แล้ว ระบบจะใช้ห้องเดิมเพื่อป้องกันรายชื่อซ้ำ', 'warning')
+            return redirect(url_for('classrooms'))
+        room = Classroom(school_id=current_user.school_id, name=room_name, teacher_id=teacher_id)
         db.session.add(room); db.session.flush()
 
         activity_teacher_ids = request.form.getlist('activity_teacher_ids')
@@ -2507,7 +2608,12 @@ def classroom_edit(classroom_id):
     room = Classroom.query.get_or_404(classroom_id)
     if not owns_classroom(room): return deny_redirect('classrooms')
     if request.method == 'POST':
-        room.name = request.form.get('name','')
+        new_name = (request.form.get('name') or '').strip()
+        duplicate = school_query(Classroom).filter(db.func.lower(Classroom.name) == new_name.lower(), Classroom.id != room.id).first()
+        if duplicate:
+            flash(f'มีห้อง {duplicate.name} อยู่แล้ว จึงเปลี่ยนเป็นชื่อซ้ำไม่ได้', 'danger')
+            return redirect(url_for('classroom_edit', classroom_id=room.id))
+        room.name = new_name
         if current_user.role == 'admin':
             teacher_id_raw = request.form.get('teacher_id')
             room.teacher_id = int(teacher_id_raw) if teacher_id_raw else None
@@ -2817,6 +2923,48 @@ def attendance_quick_add_student(subject_id, classroom_id):
     return redirect(request.form.get('redirect_to') or url_for('attendance', subject_id=subject.id, classroom_id=room.id, date=request.form.get('date') or local_today().isoformat(), period_no=request.form.get('period_no') or None, schedule_id=request.form.get('schedule_id') or None))
 
 
+@app.route('/classroom-activities', methods=['GET', 'POST'])
+@login_required
+@role_required('teacher', 'admin')
+def classroom_activity_hub():
+    """ทางเข้ากลางสำหรับเช็กชื่อเข้าแถวและสร้างกิจกรรมประจำห้อง"""
+    rooms = [room for room in teacher_filter(Classroom).filter(Classroom.is_active == True).all()
+             if is_regular_homeroom_name(room.name)]
+    rooms.sort(key=lambda room: classroom_natural_sort_key(room.name))
+    if request.method == 'POST':
+        title = (request.form.get('title') or '').strip()
+        event_date_text = (request.form.get('event_date') or '').strip()
+        note = (request.form.get('note') or '').strip()
+        if not title:
+            flash('กรุณากรอกชื่อกิจกรรม', 'danger')
+            return redirect(url_for('classroom_activity_hub'))
+        if not rooms:
+            flash('ยังไม่มีห้องเรียนในสิทธิ์สำหรับสร้างกิจกรรม', 'danger')
+            return redirect(url_for('classroom_activity_hub'))
+        event_date = datetime.strptime(event_date_text, '%Y-%m-%d').date() if event_date_text else None
+        db.session.add(ClassroomActivity(
+            classroom_id=rooms[0].id, title=title, activity_type='special',
+            target_scope='all', event_date=event_date, note=note, is_active=True,
+        ))
+        db.session.commit()
+        flash(f'สร้างกิจกรรม “{title}” สำหรับทุกห้องแล้ว', 'success')
+        return redirect(url_for('classroom_activity_hub'))
+    student_counts = dict(
+        db.session.query(ClassroomStudent.classroom_id, db.func.count(ClassroomStudent.id))
+        .filter(ClassroomStudent.classroom_id.in_([room.id for room in rooms] or [-1]))
+        .group_by(ClassroomStudent.classroom_id).all()
+    )
+    activity_counts = dict(
+        db.session.query(ClassroomActivity.classroom_id, db.func.count(ClassroomActivity.id))
+        .filter(ClassroomActivity.classroom_id.in_([room.id for room in rooms] or [-1]),
+                ClassroomActivity.is_active == True,
+                ClassroomActivity.activity_type != 'assembly')
+        .group_by(ClassroomActivity.classroom_id).all()
+    )
+    return render_template('classroom_activity_hub.html', rooms=rooms,
+                           student_counts=student_counts, activity_counts=activity_counts)
+
+
 @app.route('/classroom/<int:classroom_id>/activities', methods=['GET', 'POST'])
 @login_required
 @role_required('teacher', 'admin')
@@ -2830,14 +2978,7 @@ def classroom_activities(classroom_id):
         title = (request.form.get('title') or '').strip()
         event_date_text = (request.form.get('event_date') or '').strip()
         note = (request.form.get('note') or '').strip()
-        target_scope = (request.form.get('target_scope') or '').strip() or 'classroom'
-        if target_scope not in ('classroom', 'all', 'scout_m1_m3'):
-            target_scope = 'classroom'
-        # ถ้าชื่อกิจกรรมมีคำว่า รวม ให้ถือว่าเป็นรวมทั้งโรงเรียนทันที
-        if 'รวม' in title or 'ทั้งหมด' in title:
-            target_scope = 'all'
-        if 'ลูกเสือ' in title or 'เนตรนารี' in title:
-            target_scope = 'scout_m1_m3'
+        target_scope = 'all'
         if not title:
             flash('กรุณากรอกชื่อกิจกรรม', 'danger')
             return redirect(url_for('classroom_activities', classroom_id=room.id))
@@ -2855,7 +2996,11 @@ def classroom_activities(classroom_id):
         flash('เพิ่มกิจกรรมพิเศษแล้ว', 'success')
         return redirect(url_for('classroom_activities', classroom_id=room.id))
 
-    activities = ClassroomActivity.query.filter_by(classroom_id=room.id, is_active=True).all()
+    activities = (ClassroomActivity.query.join(Classroom, ClassroomActivity.classroom_id == Classroom.id)
+                  .filter(Classroom.school_id == current_user.school_id,
+                          ClassroomActivity.is_active == True,
+                          db.or_(ClassroomActivity.classroom_id == room.id,
+                                 ClassroomActivity.target_scope == 'all')).all())
     activities = sorted(activities, key=lambda a: (0 if a.activity_type == 'assembly' else 1, a.event_date or date.min, a.title or ''))
     today = date.today()
     return render_template(
@@ -2895,7 +3040,10 @@ def classroom_activity_attendance(classroom_id, activity_id):
     room = Classroom.query.get_or_404(classroom_id)
     if not owns_classroom(room):
         return deny_redirect('classrooms')
-    activity = ClassroomActivity.query.filter_by(id=activity_id, classroom_id=room.id).first_or_404()
+    activity = ClassroomActivity.query.get_or_404(activity_id)
+    activity_school_id = Classroom.query.with_entities(Classroom.school_id).filter_by(id=activity.classroom_id).scalar()
+    if activity_school_id != current_user.school_id or (activity.classroom_id != room.id and activity.target_scope != 'all'):
+        return deny_redirect('classroom_activity_hub')
     links = activity_student_links(activity, room)
     activity_scope = get_activity_scope(activity)
     show_classroom_column = activity_scope in ('all', 'scout_m1_m3')
@@ -2959,7 +3107,10 @@ def classroom_activity_attendance_delete_day(classroom_id, activity_id):
     room = Classroom.query.get_or_404(classroom_id)
     if not owns_classroom(room):
         return deny_redirect('classrooms')
-    activity = ClassroomActivity.query.filter_by(id=activity_id, classroom_id=room.id).first_or_404()
+    activity = ClassroomActivity.query.get_or_404(activity_id)
+    activity_school_id = Classroom.query.with_entities(Classroom.school_id).filter_by(id=activity.classroom_id).scalar()
+    if activity_school_id != current_user.school_id or (activity.classroom_id != room.id and activity.target_scope != 'all'):
+        return deny_redirect('classroom_activity_hub')
     att_date = datetime.strptime(request.form.get('date',''), '%Y-%m-%d').date()
     ActivityAttendance.query.filter_by(activity_id=activity.id, date=att_date).delete()
     db.session.commit()
@@ -4764,6 +4915,11 @@ def classroom_natural_sort_key(value):
     return [int(p) if p.isdigit() else p.lower() for p in parts]
 
 
+def is_regular_homeroom_name(value):
+    """ห้องประจำจริง ม.1/1-ม.6/3; ชื่อช่วงเช่น ม.6/2-3 เป็นกลุ่มรวม ไม่ใช่อีกห้องหนึ่ง"""
+    return re.fullmatch(r'ม\.([1-6])/([1-3])', str(value or '').strip()) is not None
+
+
 def compact_classroom_names(room_names):
     """ย่อชื่อห้องที่มีระดับเดียวกัน เช่น ม.1/2, ม.1/3 -> ม.1/2,1/3"""
     names = [str(x or '').strip() for x in (room_names or []) if str(x or '').strip()]
@@ -4934,6 +5090,19 @@ def schedule_period_group(schedule_id):
     files_count = LessonFile.query.filter_by(lesson_id=lesson.id).count() if lesson else 0
     room_names = [gr.classroom.name for gr in group_rows if gr.classroom]
     available_group_lessons = ordered_lessons_for_schedule_group(group_rows)
+    period_grade_groups = []
+    seen_room_ids = set()
+    for gr in group_rows:
+        if not gr.classroom or gr.classroom_id in seen_room_ids:
+            continue
+        seen_room_ids.add(gr.classroom_id)
+        student_links = (ClassroomStudent.query.filter_by(classroom_id=gr.classroom_id)
+                         .join(User, ClassroomStudent.student_id == User.id)
+                         .order_by(User.username, User.full_name).all())
+        period_grade_groups.append(SimpleNamespace(
+            room=gr.classroom,
+            rows=[calculate_grade_row(row.subject, gr.classroom, link.student) for link in student_links],
+        ))
     return render_template(
         'schedule_period.html',
         row=row,
@@ -4956,8 +5125,33 @@ def schedule_period_group(schedule_id):
         ],
         is_group_period=True,
         group_rows=group_rows,
+        period_grade_groups=period_grade_groups,
         group_room_text=compact_classroom_names(room_names) or (row.classroom.name if row.classroom else '-')
     )
+
+
+@app.route('/schedule/group/<int:schedule_id>/period/grades', methods=['POST'])
+@login_required
+@role_required('teacher', 'admin')
+def schedule_period_group_grades(schedule_id):
+    """บันทึกคะแนนตัดเกรดของทุกห้องในคาบรวมจากหน้าเปิดคาบ"""
+    anchor = TeachingSchedule.query.get_or_404(schedule_id)
+    group_rows = schedule_room_group_rows(anchor) or [anchor]
+    for row in group_rows:
+        if not user_can_open_schedule(row):
+            return deny_redirect('schedule')
+    room_ids = {row.classroom_id for row in group_rows if row.classroom_id}
+    links = ClassroomStudent.query.filter(ClassroomStudent.classroom_id.in_(room_ids or [-1])).all()
+    allowed_student_ids = {link.student_id for link in links}
+    for student_id in allowed_student_ids:
+        manual = get_manual_score(anchor.subject_id, student_id)
+        manual.midterm = max(0, min(100, float(request.form.get(f'midterm_{student_id}', manual.midterm or 0) or 0)))
+        manual.final = max(0, min(100, float(request.form.get(f'final_{student_id}', manual.final or 0) or 0)))
+        manual.behavior = max(0, min(100, float(request.form.get(f'behavior_{student_id}', manual.behavior or 0) or 0)))
+    db.session.commit()
+    flash(f'บันทึกคะแนนตัดเกรด {len(allowed_student_ids)} คนแล้ว', 'success')
+    selected_date = request.form.get('date') or local_today().isoformat()
+    return redirect(url_for('schedule_period_group', schedule_id=anchor.id, date=selected_date) + '#grade-entry')
 
 
 @app.route('/schedule/group/<int:schedule_id>/period/publish', methods=['POST'])
@@ -5901,7 +6095,10 @@ def build_daily_attendance_overview(report_date=None):
     report_date = report_date or local_today()
     allowed_room_ids = teacher_classroom_ids()
     q = Classroom.query.filter(Classroom.is_active == True, Classroom.id.in_(allowed_room_ids or [-1]))
-    classrooms = q.order_by(Classroom.name.asc()).all()
+    # Dashboard สรุปตามห้องประจำจริงเท่านั้น ห้องช่วง /2-3 หรือ /1-3
+    # เป็นกลุ่มรวมของหลายห้องสำหรับตารางสอน จึงไม่ควรถูกนับเป็นห้องเพิ่ม
+    classrooms = [room for room in q.all() if is_regular_homeroom_name(room.name)]
+    classrooms.sort(key=lambda room: classroom_natural_sort_key(room.name))
     rows = []
     totals = {'students': 0, 'present': 0, 'absent': 0, 'checked_rooms': 0}
     for room in classrooms:
@@ -5929,14 +6126,57 @@ def build_daily_attendance_overview(report_date=None):
     totals['unchecked_rooms'] = max(0, len(classrooms) - totals['checked_rooms'])
     return rows, totals
 
+
+def build_daily_assembly_overview(report_date=None):
+    """สรุปเช็กชื่อเข้าแถวรายห้องสำหรับ Dashboard วันเดียวกัน"""
+    report_date = report_date or local_today()
+    allowed_room_ids = teacher_classroom_ids()
+    rooms = [room for room in Classroom.query.filter(
+        Classroom.is_active == True,
+        Classroom.id.in_(allowed_room_ids or [-1]),
+        Classroom.school_id == current_school_id(),
+    ).all() if is_regular_homeroom_name(room.name)]
+    rooms.sort(key=lambda room: classroom_natural_sort_key(room.name))
+    rows = []
+    totals = {'students': 0, 'present': 0, 'absent': 0, 'checked_rooms': 0}
+    for room in rooms:
+        student_ids = [row.student_id for row in ClassroomStudent.query.filter_by(classroom_id=room.id).all()]
+        attendance_rows = (ActivityAttendance.query.join(
+            ClassroomActivity, ActivityAttendance.activity_id == ClassroomActivity.id
+        ).filter(
+            ActivityAttendance.classroom_id == room.id,
+            ActivityAttendance.date == report_date,
+            ClassroomActivity.activity_type == 'assembly',
+            ActivityAttendance.student_id.in_(student_ids or [-1]),
+        ).order_by(ActivityAttendance.id).all())
+        latest = {row.student_id: normalize_attendance_status(row.status) for row in attendance_rows}
+        present = sum(1 for status in latest.values() if status in ('มา', 'สาย', 'ไปกิจกรรม'))
+        absent = sum(1 for status in latest.values() if status in ('ขาด', 'โดดเรียน', 'ลาป่วย'))
+        checked = bool(latest)
+        rows.append({'room': room, 'student_count': len(student_ids), 'present': present,
+                     'absent': absent, 'unchecked': max(0, len(student_ids) - len(latest)),
+                     'checked': checked})
+        totals['students'] += len(student_ids)
+        totals['present'] += present
+        totals['absent'] += absent
+        if checked:
+            totals['checked_rooms'] += 1
+    totals['unchecked_rooms'] = max(0, len(rooms) - totals['checked_rooms'])
+    totals['percent'] = round(totals['present'] / totals['students'] * 100, 1) if totals['students'] else 100
+    return rows, totals
+
 @app.route('/attendance-dashboard')
 @login_required
 @role_required('teacher','admin')
 def attendance_dashboard():
     report_date = datetime.strptime(request.args.get('date', local_today().isoformat()), '%Y-%m-%d').date()
     rows, totals = build_daily_attendance_overview(report_date)
+    assembly_rows, assembly_totals = build_daily_assembly_overview(report_date)
     period_info = current_period_info(report_date, current_user.id if current_user.role == 'teacher' else None)
-    return render_template('attendance_dashboard.html', rows=rows, totals=totals, report_date=report_date, report_day_label=thai_date_label(report_date), today_date=local_today().isoformat(), period_info=period_info)
+    return render_template('attendance_dashboard.html', rows=rows, totals=totals,
+                           assembly_rows=assembly_rows, assembly_totals=assembly_totals,
+                           report_date=report_date, report_day_label=thai_date_label(report_date),
+                           today_date=local_today().isoformat(), period_info=period_info)
 
 @app.route('/records')
 @login_required
@@ -8909,12 +9149,14 @@ def seed_prem_schedule_for_teacher(t):
     add_schedule(4, 8, 'บำเพ็ญประโยชน์ PLC', 'PLC', 'PLC', 'บำเพ็ญประโยชน์ / PLC')
 
 def seed():
+    # บัญชี/ข้อมูลตัวอย่าง dekchairukna สร้างเฉพาะฐานข้อมูลใหม่ (ยังไม่มีผู้ใช้เลย) — ลบแล้วจะไม่ถูกสร้างกลับ
+    fresh_db = User.query.count() == 0
     if Semester.query.count() == 0:
         db.session.add(Semester(name='ภาคเรียนที่ 1/2569', academic_year='2569', term_no='1', start_date=date(2026,5,11), end_date=date(2026,10,1), is_active=True))
         db.session.commit()
     if not User.query.filter_by(username='admin').first():
         admin=User(username='admin', full_name='ผู้ดูแลระบบ', role='admin'); admin.set_password('1234'); db.session.add(admin)
-    if not User.query.filter_by(username='dekchairukna').first():
+    if fresh_db and not User.query.filter_by(username='dekchairukna').first():
         t=User(username='dekchairukna', full_name='นายพศิน พิมพ์คำไหล', role='teacher'); t.set_password('1225'); db.session.add(t); db.session.flush()
         room=Classroom(name='ม.1/1', teacher_id=None); db.session.add(room); db.session.flush(); db.session.add(TeacherClassroom(teacher_id=t.id, classroom_id=room.id))
         sub=Subject(name='วิทยาการคำนวณ', teacher_id=None, credit=1.0, total_periods=40); db.session.add(sub); db.session.flush(); db.session.add(TeacherSubject(teacher_id=t.id, subject_id=sub.id)); db.session.add(GradeSetting(subject_id=sub.id))
@@ -9162,6 +9404,7 @@ class AccdbToken(db.Model):
     token = db.Column(db.String(64), nullable=False)
 
 _ACCDB_SEED = None
+_ACCDB_DECODE = None
 def _accdb_seed_data():
     global _ACCDB_SEED
     if _ACCDB_SEED is None:
@@ -9169,6 +9412,46 @@ def _accdb_seed_data():
         with open(p, encoding='utf-8') as f:
             _ACCDB_SEED = _accdb_json.load(f)
     return _ACCDB_SEED
+
+def _accdb_decode_field(value, mode):
+    """ถอดการสลับอักษรชื่อ BookMark โดยไม่ส่งตารางถอดรหัสไปยังเบราว์เซอร์"""
+    global _ACCDB_DECODE
+    value = str(value or '')
+    if not value:
+        return value
+    if _ACCDB_DECODE is None:
+        try:
+            with open(os.path.join(BASE_DIR, 'accdb_decode.json'), encoding='utf-8') as f:
+                _ACCDB_DECODE = _accdb_json.load(f)
+        except Exception:
+            _ACCDB_DECODE = {}
+    table = (_ACCDB_DECODE.get('perm', {}).get(str(mode), {}).get(str(len(value)), {}))
+    checksum = sum((ord(ch) - 0x0E00 + 0xA0) if 0x0E01 <= ord(ch) <= 0x0E5B else ord(ch) for ch in value)
+    perm = table.get(str(checksum % mode))
+    if not perm or len(perm) != len(value):
+        return value
+    decoded = [''] * len(value)
+    for index, target in enumerate(perm):
+        decoded[target] = value[index]
+    return ''.join(decoded)
+
+def _accdb_student_name(student):
+    """ใช้ชื่อที่ยืนยันแล้วก่อน และค่อยถอดชื่อจากไฟล์เมื่อไม่มีในรายการ"""
+    global _ACCDB_DECODE
+    if _ACCDB_DECODE is None:
+        _accdb_decode_field('x', 3)
+    full = str((_ACCDB_DECODE.get('names', {}) if _ACCDB_DECODE else {}).get(str(student.get('id') or ''), '')).strip()
+    if full:
+        prefix = ''
+        for candidate in ('เด็กชาย', 'เด็กหญิง', 'นางสาว', 'นาย', 'นาง', 'ด.ช.', 'ด.ญ.'):
+            if full.startswith(candidate):
+                prefix, full = candidate, full[len(candidate):].strip()
+                break
+        parts = full.rsplit(None, 1)
+        return prefix, parts[0], parts[1] if len(parts) > 1 else ''
+    return (str(student.get('prefix') or ''),
+            _accdb_decode_field(student.get('fn', ''), 3),
+            _accdb_decode_field(student.get('ln', ''), 5))
 
 def _accdb_get_token():
     t = AccdbToken.query.filter_by(owner_id=current_user.id).first()
@@ -9232,60 +9515,99 @@ def accdb_seed():
 @app.route('/accdb/upload-import', methods=['POST'])
 @login_required
 def accdb_upload_import():
-    f = request.files.get('accdb_file')
-    if not f or not (f.filename or '').lower().endswith('.accdb'):
-        flash('กรุณาเลือกไฟล์ .accdb', 'danger'); return redirect(url_for('accdb_home'))
-    pw = (request.form.get('password') or '').strip()
-    if not pw:
-        flash('กรุณากรอกรหัสไฟล์ .accdb', 'danger'); return redirect(url_for('accdb_home'))
-    code = (request.form.get('code') or '').strip()
-    title = (request.form.get('title') or '').strip()
-    level = (request.form.get('level') or '').strip()
-    name = os.path.basename(f.filename)
-    tmpdir = _accdb_tmp.mkdtemp(prefix='accdb_imp_')
-    in_path = os.path.join(tmpdir, secure_filename(name) or 'data.accdb')
-    f.save(in_path)
-    try:
-        res = _accdb_sp.run(['java','-jar',_ACCDB_JAR,'read',in_path,pw],
-                            capture_output=True, text=True, timeout=120)
-    except Exception:
-        app.logger.exception('ACCDB read failed')
-        flash('เรียกเอนจินอ่านไฟล์ไม่สำเร็จ กรุณาตรวจสถานะเอนจินแล้วลองใหม่', 'danger')
-        return redirect(url_for('accdb_home'))
-    combined = (res.stderr or '') + (res.stdout or '')
-    if res.returncode != 0 or '"ok":true' not in (res.stdout or ''):
-        if 'InvalidCredentialsException' in combined:
-            flash('รหัสไฟล์ไม่ถูกต้อง กรุณากรอกรหัสไฟล์ .accdb ให้ถูก', 'danger')
-        else:
-            detail = _accdb_engine_error(res)
-            flash('อ่านไฟล์ไม่สำเร็จ%s' % ((': ' + detail) if detail else ''), 'danger')
-        return redirect(url_for('accdb_home'))
-    students = []
-    for line in reversed((res.stdout or '').splitlines()):
-        try:
-            payload = _accdb_json.loads(line)
-        except Exception:
+    files = [f for f in request.files.getlist('accdb_files') if f and f.filename]
+    if not files:
+        single = request.files.get('accdb_file')
+        files = [single] if single and single.filename else []
+    if not files or any(not (f.filename or '').lower().endswith('.accdb') for f in files):
+        flash('กรุณาเลือกเฉพาะไฟล์ .accdb', 'danger'); return redirect(url_for('accdb_home'))
+    if len(files) > 20:
+        flash('นำเข้าได้ครั้งละไม่เกิน 20 ไฟล์', 'danger'); return redirect(url_for('accdb_home'))
+
+    typed_pw = (request.form.get('password') or '').strip()
+    custom_code = (request.form.get('code') or '').strip() if len(files) == 1 else ''
+    custom_title = (request.form.get('title') or '').strip() if len(files) == 1 else ''
+    custom_level = (request.form.get('level') or '').strip() if len(files) == 1 else ''
+    imported, failures, last_subject = 0, [], None
+
+    for index, f in enumerate(files):
+        name = os.path.basename(f.filename)
+        tmpdir = _accdb_tmp.mkdtemp(prefix='accdb_imp_')
+        in_path = os.path.join(tmpdir, '%02d.accdb' % index)
+        f.save(in_path)
+        seeded = _accdb_subject_from_filename(name)
+        known_code = custom_code or (seeded or {}).get('code', '')
+        existing = None
+        if known_code:
+            existing = AccdbSubject.query.filter_by(owner_id=current_user.id, code=known_code).first()
+        if not existing:
+            existing = AccdbSubject.query.filter_by(owner_id=current_user.id, filename=name).first()
+        candidates = _accdb_password_candidates(existing, name, typed_pw)
+        if not candidates:
+            failures.append('%s: หารหัสผ่านไม่พบ กรุณากรอกรหัสเอง' % name)
             continue
-        if isinstance(payload, dict) and payload.get('students') is not None:
-            students = payload['students']; break
-    if not students:
-        flash('เปิดไฟล์ได้แต่ไม่พบรายชื่อนักเรียน (ตาราง STUDENTS ว่างหรือรูปแบบไฟล์ต่างจาก BookMark)', 'danger')
+        try:
+            res, password_failure, working_pw, payload = _accdb_run_read(in_path, candidates)
+        except Exception:
+            app.logger.exception('ACCDB read failed for %s', name)
+            failures.append('%s: เรียกเอนจินอ่านไฟล์ไม่สำเร็จ' % name)
+            continue
+        if not payload:
+            detail = 'รหัสผ่านไม่ถูกต้อง' if password_failure else (_accdb_engine_error(res) or 'อ่านข้อมูลไม่สำเร็จ')
+            failures.append('%s: %s' % (name, detail))
+            continue
+        students = payload.get('students') or []
+        if not students:
+            failures.append('%s: ไม่พบรายชื่อนักเรียนในตาราง STUDENTS' % name)
+            continue
+        meta = payload.get('subject') or {}
+        code = (custom_code or meta.get('code') or known_code or os.path.splitext(name)[0])[:40]
+        title = (custom_title or meta.get('title') or os.path.splitext(name)[0])[:200]
+        level = custom_level or (seeded or {}).get('level', '')
+        sig = ''.join(ch for ch in name if '0' <= ch <= '9')
+        gs = existing or AccdbSubject(owner_id=current_user.id, code=code)
+        if not existing:
+            db.session.add(gs); db.session.flush()
+        gs.code, gs.title, gs.level = code, title, level
+        gs.credit = str(meta.get('credit') or gs.credit or '')
+        gs.filename, gs.sig, gs.password = name, sig, working_pw or ''
+
+        current_rows = {r.sid: r for r in AccdbRow.query.filter_by(subject_id=gs.id).all()}
+        for st in students:
+            student_id = str(st.get('id') or '').strip()
+            if not student_id:
+                continue
+            row = current_rows.get(student_id)
+            if not row:
+                row = AccdbRow(subject_id=gs.id, sid=student_id)
+                db.session.add(row); current_rows[student_id] = row
+            row.prefix, row.first, row.last = _accdb_student_name(st)
+            row.room, row.no = str(st.get('room','')), str(st.get('no',''))
+            for key in ('um01','um02','mid','final'):
+                try: setattr(row, key, float(st.get(key) or 0))
+                except (TypeError, ValueError): setattr(row, key, 0)
+            for key in ('q1','q2','q3','q4','q5','q6','q7','q8','l1','l2','l3','l4','l5'):
+                try: setattr(row, key, int(float(st.get(key) or 0)))
+                except (TypeError, ValueError): setattr(row, key, 0)
+            row.grade = str(st.get('grade') or '')
+            row.qgrade = str(st.get('qgrade') or '')
+            row.lgrade = str(st.get('lgrade') or '')
+            if isinstance(st.get('sub'), dict):
+                row.subjson = _accdb_json.dumps(st['sub'], ensure_ascii=False)
+        imported += 1
+        last_subject = gs
+
+    if imported:
+        db.session.commit()
+        message = 'นำเข้า %d ไฟล์สำเร็จ พร้อมคะแนนเดิมและรายชื่อนักเรียน' % imported
+        if failures: message += ' · ไม่สำเร็จ %d ไฟล์: %s' % (len(failures), ' | '.join(failures[:3]))
+        flash(message, 'warning' if failures else 'success')
+        if imported == 1 and last_subject:
+            return redirect(url_for('accdb_subject', sid=last_subject.id))
         return redirect(url_for('accdb_home'))
-    sig = ''.join(ch for ch in name if '0' <= ch <= '9')
-    if not code:
-        code = (os.path.splitext(name)[0] or name)[:40]
-    if not title:
-        title = os.path.splitext(name)[0][:200]
-    gs = AccdbSubject(owner_id=current_user.id, code=code[:40], title=title, level=level,
-                      credit='', filename=name, sig=sig, term='', year='', password=pw)
-    db.session.add(gs); db.session.flush()
-    for st in students:
-        db.session.add(AccdbRow(subject_id=gs.id, sid=str(st.get('id','')), prefix=st.get('prefix',''),
-                                first=st.get('fn',''), last=st.get('ln',''),
-                                room=str(st.get('room','')), no=str(st.get('no',''))))
-    db.session.commit()
-    flash('นำเข้าไฟล์ %s สำเร็จ (นักเรียน %d คน) — รหัสไฟล์ถูกจำไว้แล้ว' % (name, len(students)), 'success')
-    return redirect(url_for('accdb_subject', sid=gs.id))
+    db.session.rollback()
+    flash('นำเข้าไม่สำเร็จ: %s' % ' | '.join(failures[:3]), 'danger')
+    return redirect(url_for('accdb_home'))
 
 @app.route('/accdb/reset-token', methods=['POST'])
 @login_required
@@ -9303,7 +9625,56 @@ def accdb_subject(sid):
     rows = [_accdb_row_dict(r) for r in AccdbRow.query.filter_by(subject_id=sub.id).order_by(AccdbRow.id).all()]
     data = dict(code=sub.code, title=sub.title, level=sub.level, credit=sub.credit,
                 rows=rows, quality=seed['quality'], literature=seed['literature'], gradeScale=seed['gradeScale'])
-    return render_template('accdb_subject.html', sub=sub, data_json=_accdb_json.dumps(data, ensure_ascii=False))
+    return render_template('accdb_subject.html', sub=sub, data_json=_accdb_json.dumps(data, ensure_ascii=False),
+                           has_pw=bool((getattr(sub, 'password', '') or '').strip()))
+
+
+@app.route('/accdb/<int:sid>/forget-password', methods=['POST'])
+@login_required
+def accdb_forget_password(sid):
+    sub = AccdbSubject.query.get(sid)
+    if not sub or sub.owner_id != current_user.id:
+        _accdb_abort(404)
+    sub.password = ''
+    db.session.commit()
+    flash('ล้างรหัสที่จำไว้ของวิชานี้แล้ว ครั้งต่อไปกรอกรหัสใหม่', 'success')
+    return redirect(url_for('accdb_subject', sid=sub.id))
+
+@app.route('/accdb/<int:sid>/delete', methods=['POST'])
+@login_required
+def accdb_delete_subject(sid):
+    sub = AccdbSubject.query.get(sid)
+    if not sub or sub.owner_id != current_user.id:
+        _accdb_abort(404)
+    label = sub.code or sub.filename or ('รายการ %s' % sub.id)
+    AccdbRow.query.filter_by(subject_id=sub.id).delete(synchronize_session=False)
+    db.session.delete(sub)
+    db.session.commit()
+    flash('ลบไฟล์นำเข้า %s และข้อมูลคะแนน ACCDB แล้ว' % label, 'success')
+    return redirect(url_for('accdb_home'))
+
+@app.route('/accdb/delete-selected', methods=['POST'])
+@login_required
+def accdb_delete_selected():
+    selected = []
+    for value in request.form.getlist('subject_ids'):
+        try:
+            selected.append(int(value))
+        except (TypeError, ValueError):
+            continue
+    subjects = (AccdbSubject.query
+                .filter(AccdbSubject.owner_id == current_user.id,
+                        AccdbSubject.id.in_(selected or [-1])).all())
+    if not subjects:
+        flash('ยังไม่ได้เลือกไฟล์ที่จะลบ', 'warning')
+        return redirect(url_for('accdb_home'))
+    subject_ids = [sub.id for sub in subjects]
+    AccdbRow.query.filter(AccdbRow.subject_id.in_(subject_ids)).delete(synchronize_session=False)
+    for sub in subjects:
+        db.session.delete(sub)
+    db.session.commit()
+    flash('ลบไฟล์นำเข้าและข้อมูลคะแนน ACCDB แล้ว %d รายการ' % len(subjects), 'success')
+    return redirect(url_for('accdb_home'))
 
 @app.route('/accdb/<int:sid>/save', methods=['POST'])
 @login_required
@@ -9312,17 +9683,25 @@ def accdb_save(sid):
     if not sub or sub.owner_id != current_user.id:
         _accdb_abort(404)
     payload = request.get_json(force=True)
+    sections = set(payload.get('sections') or ('score', 'unit', 'qual', 'read'))
     rows = {r.sid: r for r in AccdbRow.query.filter_by(subject_id=sub.id).all()}
     n = 0
     for rd in payload.get('rows', []):
         r = rows.get(str(rd.get('sid')))
         if not r: continue
-        for k in ('um01','um02','mid','final'):
-            setattr(r, k, float(rd.get(k) or 0))
-        for k in ('q1','q2','q3','q4','q5','q6','q7','q8','l1','l2','l3','l4','l5'):
-            setattr(r, k, int(float(rd.get(k) or 0)))
-        r.grade = str(rd.get('grade') or ''); r.qgrade = str(rd.get('qgrade') or ''); r.lgrade = str(rd.get('lgrade') or '')
-        if isinstance(rd.get('sub'), dict):
+        if 'score' in sections:
+            for k in ('um01','um02','mid','final'):
+                setattr(r, k, float(rd.get(k) or 0))
+            r.grade = str(rd.get('grade') or '')
+        if 'qual' in sections:
+            for k in ('q1','q2','q3','q4','q5','q6','q7','q8'):
+                setattr(r, k, int(float(rd.get(k) or 0)))
+            r.qgrade = str(rd.get('qgrade') or '')
+        if 'read' in sections:
+            for k in ('l1','l2','l3','l4','l5'):
+                setattr(r, k, int(float(rd.get(k) or 0)))
+            r.lgrade = str(rd.get('lgrade') or '')
+        if 'unit' in sections and isinstance(rd.get('sub'), dict):
             r.subjson = _accdb_json.dumps(rd['sub'], ensure_ascii=False)
         n += 1
     db.session.commit()
@@ -9450,7 +9829,20 @@ import subprocess as _accdb_sp, tempfile as _accdb_tmp
 from flask import send_file as _accdb_send_file
 _ACCDB_JAR = os.path.join(BASE_DIR, 'accdbtool.jar')
 
+def _accdb_remember_pw(sub, pw):
+    """จำรหัสจริงของไฟล์วิชานี้ไว้ หลังเปิด/เขียนไฟล์สำเร็จ จะได้ไม่ต้องกรอกซ้ำครั้งต่อไป"""
+    pw = (pw or '').strip()
+    if sub and pw and (getattr(sub, 'password', '') or '').strip() != pw:
+        try:
+            sub.password = pw
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+
+
 def _accdb_pw_for(sub):
+    if not sub:
+        return ''
     stored = (getattr(sub, 'password', '') or '').strip()
     if stored:
         return stored
@@ -9487,6 +9879,53 @@ def _accdb_pw_from_filename(filename):
         return ''
     return _accdb_seed_data().get('pwmap', {}).get(str(item.get('sig') or '').strip(), '')
 
+def _accdb_discovered_password_candidates(filename):
+    """คำนวณรหัส BookMark จากตัวเลขในชื่อไฟล์ สำหรับไฟล์ของครูคนอื่นด้วย"""
+    from itertools import product
+    digits = ''.join(ch for ch in os.path.basename(filename or '') if '0' <= ch <= '9')
+    known_pairs = (
+        ('212013125691307', '713322926511100'),
+        ('222013225691307', '713322926521200'),
+        ('232013325691307', '713322926531300'),
+        ('312014425691307', '713094524611203'),
+        ('322014525691307', '723094525611203'),
+        ('332014625691307', '733094526611203'),
+        ('211023125691307', '723312926511100'),
+        ('221023225691307', '723312926521200'),
+        ('231023325691307', '723312926531300'),
+        ('221023225691501', '123512926521200'),
+    )
+    examples = [(source, target) for source, target in known_pairs
+                if len(source) == len(digits)
+                and sum(map(ord, source)) % 2 == sum(map(ord, digits)) % 2]
+    if not digits or not examples:
+        return []
+    choices = []
+    for target_index in range(len(digits)):
+        possible = set(range(len(digits)))
+        for source, target in examples:
+            possible.intersection_update(index for index, char in enumerate(source)
+                                         if char == target[target_index])
+        if not possible:
+            return []
+        choices.append(sorted(possible))
+    ambiguous = [index for index, values in enumerate(choices) if len(values) > 1]
+    results = []
+    seen = set()
+    combinations = product(*(choices[index] for index in ambiguous)) if ambiguous else [()]
+    for combination_index, selected in enumerate(combinations):
+        if combination_index >= 100000:
+            break
+        assignment = [values[0] if len(values) == 1 else None for values in choices]
+        for index, value in zip(ambiguous, selected):
+            assignment[index] = value
+        if len(set(assignment)) != len(assignment):
+            continue
+        candidate = ''.join(digits[index] for index in assignment)
+        if candidate not in seen:
+            seen.add(candidate); results.append(candidate)
+    return results
+
 def _accdb_password_candidates(sub, filename, typed_password=''):
     """Known passwords, ordered from most to least likely, without duplicates."""
     seed = _accdb_seed_data()
@@ -9504,6 +9943,7 @@ def _accdb_password_candidates(sub, filename, typed_password=''):
             values.extend([day + '/' + month + '/' + gregorian_year,
                            day + month + gregorian_year])
     values.extend([_accdb_pw_from_filename(filename), _accdb_pw_for(sub)])
+    values.extend(_accdb_discovered_password_candidates(filename))
     values.extend(seed.get('pwmap', {}).values())
     out = []
     for value in values:
@@ -9534,12 +9974,33 @@ def _accdb_run_write(in_path, scores_path, password_candidates):
         res = _accdb_sp.run(['java','-jar',_ACCDB_JAR,'write',in_path,pw,scores_path],
                             capture_output=True, text=True, timeout=120)
         if res.returncode == 0 and '"ok":true' in (res.stdout or ''):
-            return res, False
+            return res, False, pw
         engine_output = (res.stderr or '') + (res.stdout or '')
         if 'InvalidCredentialsException' not in engine_output:
             password_failure = False
             break
-    return res, password_failure
+    return res, password_failure, None
+
+def _accdb_run_read(in_path, password_candidates):
+    """เปิด ACCDB ด้วยรหัสที่เป็นไปได้ และคืน JSON จากเอนจินโดยไม่เผยรหัสไปยังเบราว์เซอร์"""
+    res = None
+    password_failure = True
+    for pw in password_candidates:
+        res = _accdb_sp.run(['java', '-jar', _ACCDB_JAR, 'read', in_path, pw],
+                            capture_output=True, text=True, timeout=120)
+        if res.returncode == 0:
+            for line in reversed((res.stdout or '').splitlines()):
+                try:
+                    payload = _accdb_json.loads(line)
+                except Exception:
+                    continue
+                if isinstance(payload, dict) and payload.get('ok'):
+                    return res, False, pw, payload
+        engine_output = (res.stderr or '') + (res.stdout or '')
+        if 'InvalidCredentialsException' not in engine_output:
+            password_failure = False
+            break
+    return res, password_failure, None, None
 
 def _accdb_rows_for_write(sub):
     rows = []
@@ -9586,7 +10047,7 @@ def accdb_to_accdb(sid):
     with open(scores_path, 'w', encoding='utf-8') as sf:
         _accdb_json.dump({'rows': _accdb_rows_for_write(sub)}, sf, ensure_ascii=False)
     try:
-        res, password_failure = _accdb_run_write(in_path, scores_path, password_candidates)
+        res, password_failure, working_pw = _accdb_run_write(in_path, scores_path, password_candidates)
     except Exception as e:
         app.logger.exception('ACCDB engine invocation failed')
         flash('เรียกเอนจินเขียนไฟล์ไม่สำเร็จ กรุณาตรวจสถานะ Java/เอนจินแล้วลองใหม่', 'danger')
@@ -9602,6 +10063,7 @@ def accdb_to_accdb(sid):
             flash('เอนจินเปิดไฟล์ได้แต่เขียนข้อมูลไม่สำเร็จ%s' %
                   (': ' + detail if detail else ' กรุณาตรวจบันทึกของเซิร์ฟเวอร์'), 'danger')
         return redirect(url_for('accdb_subject', sid=sid))
+    _accdb_remember_pw(sub, working_pw)
     return _accdb_send_file(in_path, as_attachment=True, download_name=f.filename)
 
 @app.route('/accdb/to-accdb-batch', methods=['POST'])
@@ -9644,7 +10106,7 @@ def accdb_to_accdb_batch():
                 _accdb_json.dump({'rows': _accdb_rows_for_write(sub)}, sf, ensure_ascii=False)
             candidates = _accdb_password_candidates(sub, original_name, typed_pw)
             try:
-                res, password_failure = _accdb_run_write(in_path, scores_path, candidates)
+                res, password_failure, working_pw = _accdb_run_write(in_path, scores_path, candidates)
             except Exception:
                 app.logger.exception('ACCDB batch engine invocation failed for %s', original_name)
                 failures.append('%s: เรียกเอนจินไม่สำเร็จ' % original_name)
@@ -9655,6 +10117,7 @@ def accdb_to_accdb_batch():
                 failures.append('%s: %s' % (original_name, detail))
                 continue
             archive.write(in_path, arcname=original_name)
+            _accdb_remember_pw(sub, working_pw)
             successes += 1
 
         if failures:
@@ -10131,6 +10594,50 @@ except ModuleNotFoundError as exc:
     app.logger.warning('Optional sss_features module is not installed; skipping it')
 else:
     sss_features.register(app, globals())
+
+
+# ระบบจัดสอนแทนเป็นโมดูลเสริม ถ้ายังไม่ได้ติดตั้งไฟล์ให้ข้ามไปก่อน
+try:
+    import substitute_planner
+except ModuleNotFoundError as exc:
+    if exc.name != 'substitute_planner':
+        raise
+    app.logger.warning('Optional substitute_planner module is not installed; skipping it')
+else:
+    substitute_planner.register(app, globals())
+
+
+# ระบบจัดตารางสอนอัตโนมัติเป็นโมดูลเสริม ถ้ายังไม่ได้ติดตั้งไฟล์ให้ข้ามไปก่อน
+try:
+    import timetable_builder
+except ModuleNotFoundError as exc:
+    if exc.name not in ('timetable_builder', 'timetable_solver'):
+        raise
+    app.logger.warning('Optional timetable_builder module is not installed; skipping it')
+else:
+    timetable_builder.register(app, globals())
+
+
+# ภาษาอังกฤษ (ปุ่ม TH/EN) เป็นโมดูลเสริม แปลหน้าเว็บตอนส่งออก ไม่ต้องแก้เทมเพลต
+try:
+    import i18n_en
+except ModuleNotFoundError as exc:
+    if exc.name != 'i18n_en':
+        raise
+    app.logger.warning('Optional i18n_en module is not installed; skipping it')
+else:
+    i18n_en.register(app, globals())
+
+
+# บันทึกคะแนนแบบ ปพ.5 (โครงสร้างวิชา/ตัวชี้วัด/SGS/กลุ่มเสี่ยง) เป็นโมดูลเสริม
+try:
+    import pp5_scores
+except ModuleNotFoundError as exc:
+    if exc.name != 'pp5_scores':
+        raise
+    app.logger.warning('Optional pp5_scores module is not installed; skipping it')
+else:
+    pp5_scores.register(app, globals())
 
 
 def init_db():

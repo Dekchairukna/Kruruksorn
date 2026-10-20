@@ -1,0 +1,78 @@
+{% extends 'base.html' %}
+{% block content %}
+{% include 'sss/_style.html' %}
+<div class="page-head">
+  <div>
+    <h1>รายงานเช็กชื่อ{{ types[rtype] }}</h1>
+    <p class="muted">{% if room %}ห้อง {{ room.name }}{% endif %} · {{ period_label }}{% if advisors %} · ครูที่ปรึกษา {% for t in advisors %}{{ loop.index }}.{{ t.full_name }} {% endfor %}{% endif %}</p>
+  </div>
+  <div class="actions-row sss-noprint">
+    <a class="btn secondary" href="{{ url_for('activity_report_daily') }}">ภาพรวมรายวันทุกห้อง</a>
+    {% if room %}<a class="btn secondary" href="{{ url_for('activity_report_xlsx', **request.args) }}">ส่งออก Excel</a>{% endif %}
+    <button class="btn secondary" onclick="window.print()">พิมพ์</button>
+  </div>
+</div>
+
+<section class="card sss-noprint">
+  <div class="sss-tabs">
+    {% for k, v in types.items() %}<a class="{{ 'active' if rtype==k }}" href="{{ url_for('activity_report', type=k, room_id=room.id if room else None, period=period, month=month_val) }}">{{ v }}</a>{% endfor %}
+  </div>
+  <form method="get" class="sss-filter">
+    <input type="hidden" name="type" value="{{ rtype }}">
+    <label>ห้อง
+      <select name="room_id">{% for r in rooms %}<option value="{{ r.id }}" {% if room and r.id==room.id %}selected{% endif %}>{{ r.name }}</option>{% endfor %}</select>
+    </label>
+    <label>ช่วงเวลา
+      <select name="period"><option value="month" {% if period=='month' %}selected{% endif %}>รายเดือน</option><option value="term" {% if period=='term' %}selected{% endif %}>ทั้งภาคเรียน</option></select>
+    </label>
+    <label>เดือน
+      <select name="month">{% for m in months %}<option value="{{ m.value }}" {% if m.value==month_val %}selected{% endif %}>{{ m.label }}</option>{% endfor %}</select>
+    </label>
+    <button class="btn secondary" type="submit">แสดงรายงาน</button>
+  </form>
+  {% if rtype=='homeroom' and room %}<a class="btn small" href="{{ url_for('homeroom_check', room_id=room.id) }}">ไปหน้าเช็กชื่อโฮมรูม</a>{% endif %}
+</section>
+
+{% if not rooms %}
+<section class="card"><p>ยังไม่มีห้องเรียนที่คุณดูแล</p></section>
+{% elif not columns %}
+<section class="card"><p>ยังไม่มีข้อมูลเช็กชื่อในช่วงเวลานี้</p></section>
+{% else %}
+<section class="card">
+  <div class="sss-grid-wrap">
+    <table class="sss-grid">
+      <tr>
+        <th>ที่</th><th>รหัส</th><th class="name">ชื่อ-สกุล</th>
+        {% for c in columns %}<th class="{{ 'vh' if c.title }}" title="{{ c.title }}">{{ c.short }}{% if c.title and rtype=='special' %}<br>{{ c.title }}{% endif %}</th>{% endfor %}
+        <th>มา</th><th>สาย</th><th>ขาด</th><th>ลา</th><th>อื่นๆ</th><th>รวม</th><th>%</th>
+      </tr>
+      {% for r in summary %}
+      <tr>
+        <td>{{ loop.index }}</td><td>{{ r.student.username }}</td><td class="name">{{ r.student.full_name }}</td>
+        {% for c in columns %}{% set st = r.cells.get(c.key) %}<td class="st-{{ st }}">{{ symbols.get(st, '') if st else '' }}</td>{% endfor %}
+        <td>{{ r.c.get('มา',0) }}</td><td>{{ r.c.get('สาย',0) }}</td><td>{{ r.c.get('ขาด',0) }}</td><td>{{ r.c.get('ลาป่วย',0) }}</td>
+        <td>{{ r.c.get('โดดเรียน',0) + r.c.get('ไปกิจกรรม',0) }}</td><td>{{ r.checked }}</td>
+        <td class="{{ 'sss-low' if r.pct is not none and r.pct < 80 }}">{{ '%.2f'|format(r.pct) if r.pct is not none else '-' }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+  <p class="sss-muted">สัญลักษณ์: {% for k, v in symbols.items() %}{{ v }} = {{ sss_status_label(k) }}&nbsp;&nbsp;{% endfor %} · % เข้าร่วมนับ มา + สาย + ไปกิจกรรม · ตัวแดง = ต่ำกว่า 80%</p>
+</section>
+{% endif %}
+
+{% if rtype=='homeroom' and room %}
+<section class="card">
+  <h3>บันทึกกิจกรรมโฮมรูม</h3>
+  <div class="table-wrap"><table>
+    <tr><th>ที่</th><th>วัน/เดือน/ปี</th><th>เรื่อง/กิจกรรม</th><th>นักเรียนที่ขาด/ลา</th><th>หมายเหตุ</th></tr>
+    {% for h in hr_logs %}
+    <tr><td>{{ loop.index }}</td><td>{{ thai_date_short(h.log.log_date) }}</td><td>{{ h.log.topic or '-' }}</td><td>{{ h.absent|join(', ') if h.absent else '-' }}</td><td>{{ h.log.note or '' }}</td></tr>
+    {% else %}<tr><td colspan="5">ยังไม่มีบันทึก</td></tr>{% endfor %}
+  </table></div>
+  {% if averages %}
+  <p>นักเรียนทั้งหมด {{ summary|length }} คน · มาเฉลี่ย {{ '%.2f'|format(averages['มา']) }}% · ลาเฉลี่ย {{ '%.2f'|format(averages['ลา']) }}% · ขาดเฉลี่ย {{ '%.2f'|format(averages['ขาด']) }}%</p>
+  {% endif %}
+</section>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>แบบมอบหมายการปฏิบัติการสอนแทน {{ d.strftime('%d-%m-') }}{{ d.year + 543 }}</title>
+<link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;700&display=swap" rel="stylesheet">
+<style>
+@page{size:A4 portrait;margin:12mm}
+body{font-family:"Sarabun","TH Sarabun New",Tahoma,sans-serif;margin:0;background:#e5e7eb;color:#111}
+.toolbar{position:sticky;top:0;z-index:5;background:#1e293b;color:#fff;padding:10px;text-align:center;display:flex;gap:8px;justify-content:center;flex-wrap:wrap}
+.toolbar button{font:inherit;font-size:15px;border:0;border-radius:10px;padding:8px 14px;cursor:pointer;background:#fff;color:#111}
+.toolbar button.primary{background:#22c55e;color:#fff;font-weight:700}
+#sheet{width:180mm;max-width:100%;margin:16px auto;background:#fff;padding:12mm 12mm 16mm;box-sizing:border-box}
+.head{text-align:center}
+.head img{height:72px;width:auto;margin-bottom:4px}
+.head h1{font-size:20px;margin:4px 0 2px}
+.head h2{font-size:17px;margin:0 0 8px;font-weight:700}
+.head p{margin:2px 0;font-size:15px}
+.sec{margin-top:14px}
+.sec h3{font-size:15px;margin:0 0 6px}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th,td{border:1px solid #555;padding:6px 6px;vertical-align:middle}
+th{background:#f1f5f9}
+td.c{text-align:center;width:46px}
+td.cls{text-align:center;width:90px}
+td.none{color:#6b7280}
+.foot{margin-top:18px;font-size:14px}
+.sign{margin-top:28px;display:flex;justify-content:flex-end}
+.sign div{text-align:center;width:60%;font-size:14px}
+#lineText{display:none}
+@media print{body{background:#fff}.toolbar{display:none}#sheet{margin:0;width:auto;padding:0}}
+</style></head><body>
+<div class="toolbar">
+  <button onclick="window.print()">🖨 พิมพ์</button>
+  <button class="primary" id="btnImg">🖼 บันทึกเป็นรูปภาพ (ส่งไลน์)</button>
+  <button id="btnCopy">📋 คัดลอกข้อความไปวางในไลน์</button>
+</div>
+<div id="sheet">
+  <div class="head">
+    {% if setting and setting.logo_path %}<img src="{{ url_for('uploaded_file', filename=setting.logo_path) }}" alt="">{% endif %}
+    <h1>แบบมอบหมายการปฏิบัติการสอนแทน</h1>
+    <h2>{{ setting.school_name if setting and setting.school_name else '' }}</h2>
+    <p>ประจำ{{ date_label }}</p>
+    {% if sem %}<p>{{ sem.name }}</p>{% endif %}
+  </div>
+  {% for s in sections %}
+  <div class="sec">
+    <h3>{{ loop.index }}. ครูผู้ขออนุญาตลา/ไปราชการ: {{ s.ab.teacher.full_name }} ({{ s.ab.reason }}){% if s.ab.periods %} · คาบ {{ s.ab.periods }}{% endif %}</h3>
+    {% if s.rows %}
+    <table>
+      <tr><th>คาบ</th><th>รายวิชา / รหัสวิชา</th><th>ชั้นเรียน</th><th>ครูผู้ปฏิบัติการสอนแทน</th></tr>
+      {% for a in s.rows %}
+      <tr><td class="c">{{ a.period_no }}</td><td>{{ a.subject_label }}{% if a.note %}<br><small>{{ a.note }}</small>{% endif %}</td><td class="cls">{{ a.classroom_label }}</td>
+        <td class="{{ 'none' if not a.substitute_id }}">{{ a.substitute.full_name if a.substitute else '-(' ~ no_sub ~ ')-' }}</td></tr>
+      {% endfor %}
+    </table>
+    {% else %}<p>ไม่มีคาบสอนในวันนี้</p>{% endif %}
+  </div>
+  {% else %}<p>ยังไม่มีครูที่ไม่มาในวันนี้</p>{% endfor %}
+  {% if day.note %}<p class="foot">หมายเหตุ: {{ day.note }}</p>{% endif %}
+  <div class="sign"><div>ลงชื่อ ....................................................<br>ผู้จัดการสอนแทน</div></div>
+</div>
+<textarea id="lineText">📋 สอนแทน {{ date_label }}
+{% for s in sections %}
+{{ loop.index }}. {{ s.ab.teacher.full_name }} ({{ s.ab.reason }})
+{% for a in s.rows %}   คาบ {{ a.period_no }} {{ a.subject_label }} {{ a.classroom_label }} → {{ a.substitute.full_name if a.substitute else '-ไม่ได้จัดสอนแทน-' }}
+{% endfor %}{% endfor %}</textarea>
+<script src="{{ url_for('static', filename='js/html2canvas-1.4.1.min.js') }}"></script>
+<script>window.html2canvas || document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"><\/script>')</script>
+<script>
+document.getElementById('btnImg').addEventListener('click', function(){
+  var b=this; b.disabled=true; b.textContent='กำลังสร้างรูป…';
+  var el=document.getElementById('sheet');
+  (document.fonts && document.fonts.ready ? document.fonts.ready : Promise.resolve()).then(function(){
+    return html2canvas(el,{scale:2,backgroundColor:'#ffffff',useCORS:true});
+  }).then(function(canvas){
+    var a=document.createElement('a');
+    a.download='สอนแทน_{{ d.strftime("%d-%m-") }}{{ d.year + 543 }}.png';
+    a.href=canvas.toDataURL('image/png'); a.click();
+    b.disabled=false; b.textContent='🖼 บันทึกเป็นรูปภาพ (ส่งไลน์)';
+  }).catch(function(e){ alert('สร้างรูปไม่สำเร็จ: '+e); b.disabled=false; b.textContent='🖼 บันทึกเป็นรูปภาพ (ส่งไลน์)'; });
+});
+document.getElementById('btnCopy').addEventListener('click', function(){
+  var t=document.getElementById('lineText').value.replace(/\n{3,}/g,'\n\n').trim(), b=this;
+  (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject()).then(function(){ b.textContent='✅ คัดลอกแล้ว'; setTimeout(function(){b.textContent='📋 คัดลอกข้อความไปวางในไลน์';},2000); })
+  .catch(function(){ var ta=document.getElementById('lineText'); ta.style.display='block'; ta.select(); document.execCommand('copy'); ta.style.display='none'; b.textContent='✅ คัดลอกแล้ว'; });
+});
+</script>
+</body></html>

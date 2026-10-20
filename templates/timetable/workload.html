@@ -1,0 +1,59 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-head"><div><h1>ภาระงานสอน</h1><p class="muted">{{ plan.name }} · เฉลี่ย {{ '%.1f'|format(avg) }} คาบ/คน · ส่วนเบี่ยงเบน {{ '%.1f'|format(sd) }}</p></div></div>
+{% include 'timetable/_nav.html' %}
+
+<section class="card">
+  <h3>คาบสอนต่อสัปดาห์ของครูแต่ละคน</h3>
+  <div class="table-wrap"><table>
+    <tr><th>ครู</th><th>กลุ่มสาระ</th><th style="width:38%">คาบที่ได้รับมอบหมาย</th>{% for d in range(plan.days) %}<th>{{ tt_day_names[d][:2] }}</th>{% endfor %}</tr>
+    {% for t in teachers %}{% set n = assigned.get(t.id,0) %}
+    <tr>
+      <td data-label="ครู"><a href="{{ url_for('tt_data', pid=plan.id, teacher_id=t.id) }}">{{ t.name }}</a></td>
+      <td data-label="กลุ่มสาระ"><small>{{ groups_of.get(t.id, [])|sort|join(', ') }}</small></td>
+      <td data-label="คาบ"><span class="tt-bar {{ 'over' if n > avg + tol else ('under' if n < avg - tol else '') }}" style="width:{{ (n * 85 / maxload) if maxload else 0 }}%"></span> <b>{{ n }}</b> <small class="tt-muted">({{ '%+.1f'|format(n - avg) }})</small></td>
+      {% for x in per_day[t.id] %}<td data-label="{{ tt_day_names[loop.index0] }}">{{ x }}</td>{% endfor %}
+    </tr>
+    {% endfor %}
+  </table></div>
+  <p class="tt-legend tt-muted"><span><span class="tt-sw" style="background:#ef4444"></span>มากกว่าค่าเฉลี่ยเกิน {{ tol }} คาบ</span><span><span class="tt-sw" style="background:#f59e0b"></span>น้อยกว่าค่าเฉลี่ยเกิน {{ tol }} คาบ</span></p>
+</section>
+
+<section class="card">
+  <h3>ข้อเสนอเกลี่ยภาระงาน (โยกรายวิชาให้ครูในกลุ่มสาระเดียวกัน)</h3>
+  <form method="get" class="tt-filter">
+    <label>ยอมให้ต่างจากค่าเฉลี่ยได้ (คาบ)<input type="number" name="tol" value="{{ tol }}" min="0" max="10" style="width:90px"></label>
+    <button class="btn small secondary" type="submit">คำนวณใหม่</button>
+  </form>
+  {% if sugg %}
+  <form method="post">
+    <div class="table-wrap"><table>
+      <tr><th></th><th>รายวิชา</th><th>กลุ่มสาระ</th><th>จาก</th><th>ไปให้</th><th>คาบ</th></tr>
+      {% for s in sugg %}
+      <tr>
+        <td><input type="checkbox" name="apply" value="{{ s.lesson.id }}:{{ s.to }}"></td>
+        <td>{{ s.lesson.code }} {{ s.lesson.name }} {{ s.lesson.class_label }}</td>
+        <td>{{ s.group }}</td>
+        <td>{{ tname[s['from']] }}</td>
+        <td><b>{{ tname[s.to] }}</b></td>
+        <td>{{ s.periods }}</td>
+      </tr>
+      {% endfor %}
+    </table></div>
+    <p class="tt-muted">เป็นข้อเสนอจากตัวเลขเท่านั้น — ควรตรวจว่าครูปลายทางสอนวิชานั้นได้จริง (กำหนด "กลุ่มสาระที่สอนได้" ของครูได้ในหน้าครูและรายวิชา)</p>
+    <button class="btn" type="submit">โยกรายวิชาที่เลือก</button>
+  </form>
+  {% else %}
+  <p>ไม่มีข้อเสนอ — ภาระงานในแต่ละกลุ่มสาระใกล้เคียงกันแล้ว หรือไม่มีครูในกลุ่มสาระเดียวกันที่รับเพิ่มได้</p>
+  {% endif %}
+</section>
+
+<section class="card">
+  <h3>โยกรายวิชาเอง</h3>
+  <form method="post" class="tt-filter">
+    <label>รายวิชา<select name="lesson_id">{% for l in lessons %}<option value="{{ l.id }}">{{ l.code }} {{ l.name }} {{ l.class_label }} — {{ l.teacher.name if l.teacher else 'ไม่มีครู' }} ({{ l.periods }})</option>{% endfor %}</select></label>
+    <label>ให้ครู<select name="teacher_id">{% for t in teachers %}<option value="{{ t.id }}">{{ t.name }} ({{ assigned.get(t.id,0) }})</option>{% endfor %}</select></label>
+    <button class="btn secondary" type="submit">โยก</button>
+  </form>
+</section>
+{% endblock %}

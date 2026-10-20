@@ -1,0 +1,51 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>บัญชีของฉัน</h1>
+    <p class="muted">{{ user.full_name }} · ชื่อผู้ใช้ {{ user.username }}</p>
+  </div>
+</div>
+
+{% if must_change %}
+<div class="alert warning">บัญชีนี้ยังใช้รหัสผ่านเริ่มต้นอยู่ (เช่น วันเกิด) กรุณาตั้งรหัสผ่านใหม่ก่อนใช้งานระบบ</div>
+{% endif %}
+
+<form method="post" class="card form-grid" autocomplete="off">
+  <input type="hidden" name="action" value="password">
+  <h3 class="full">เปลี่ยนรหัสผ่าน</h3>
+  <label class="full">รหัสผ่านปัจจุบัน
+    <input type="password" name="current_password" required autocomplete="current-password">
+  </label>
+  <label>รหัสผ่านใหม่ (อย่างน้อย 6 ตัว)
+    <input type="password" name="new_password" minlength="6" required autocomplete="new-password">
+  </label>
+  <label>ยืนยันรหัสผ่านใหม่
+    <input type="password" name="confirm_password" minlength="6" required autocomplete="new-password">
+  </label>
+  <p class="full muted">ห้ามใช้ชื่อผู้ใช้ เลขบัตรประชาชน หรือวันเกิดเป็นรหัสผ่าน</p>
+  <div class="full"><button class="btn" type="submit">เปลี่ยนรหัสผ่าน</button></div>
+</form>
+
+{% if not must_change %}
+<form method="post" class="card form-grid">
+  <input type="hidden" name="action" value="profile">
+  <h3 class="full">ข้อมูลติดต่อ</h3>
+  {% if user.role != 'student' %}
+  <label>ชื่อ-สกุล<input name="full_name" value="{{ user.full_name }}" required></label>
+  <label>ตำแหน่ง
+    <select name="position">
+      {% for p in position_choices %}<option value="{{ p }}" {% if user.position==p %}selected{% endif %}>{{ p }}</option>{% endfor %}
+      {% if user.position and user.position not in position_choices %}<option selected>{{ user.position }}</option>{% endif %}
+    </select>
+  </label>
+  {% endif %}
+  <label>เบอร์โทรศัพท์<input name="phone" value="{{ user.phone or '' }}"></label>
+  {% if user.role == 'student' %}
+  <label>ชื่อผู้ปกครอง<input name="guardian_name" value="{{ user.guardian_name or '' }}"></label>
+  <label>เบอร์ผู้ปกครอง<input name="guardian_phone" value="{{ user.guardian_phone or '' }}"></label>
+  {% endif %}
+  <div class="full"><button class="btn" type="submit">บันทึกข้อมูล</button></div>
+</form>
+{% endif %}
+{% endblock %}

@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
 {% block content %}
 <div class="page-head">
-  <div><h1>จัดการโรงเรียน</h1><p>แต่ละโรงเรียนมีผู้ใช้ ห้องเรียน รายวิชา ภาคเรียน และตารางสอนแยกจากกัน</p></div>
+  <div><h1>จัดการโรงเรียน</h1><p>แต่ละโรงเรียนมีครู นักเรียน ห้องเรียน รายวิชา ภาคเรียน และตารางสอนแยกจากกัน</p></div>
 </div>
 
 <section class="card">
@@ -19,13 +19,33 @@
 <section class="card">
   <h2>โรงเรียนในระบบ</h2>
   <div class="table-wrap"><table>
-    <tr><th>โรงเรียน</th><th>รหัส</th><th>จำนวนผู้ใช้</th><th>สถานะ</th></tr>
+    <tr><th>โรงเรียน</th><th>จำนวนผู้ใช้</th><th>สถานะ</th><th>จัดการ</th></tr>
     {% for school in schools %}
     <tr>
-      <td data-label="โรงเรียน"><b>{{ school.name }}</b></td>
-      <td data-label="รหัส">{{ school.code }}</td>
+      <td data-label="โรงเรียน">
+        <form method="post" action="{{ url_for('school_edit', school_id=school.id) }}" class="grid-form">
+          <input name="name" value="{{ school.name }}" aria-label="ชื่อโรงเรียน" required>
+          <input name="code" value="{{ school.code }}" aria-label="รหัสโรงเรียน" pattern="[A-Za-z0-9-]+" required>
+          <button type="submit">บันทึกชื่อ/รหัส</button>
+        </form>
+      </td>
       <td data-label="จำนวนผู้ใช้">{{ user_counts.get(school.id, 0) }} คน</td>
       <td data-label="สถานะ"><span class="pill {{ 'green' if school.is_active else 'red' }}">{{ 'เปิดใช้งาน' if school.is_active else 'ปิดใช้งาน' }}</span></td>
+      <td data-label="จัดการ">
+        <form method="post" action="{{ url_for('school_toggle', school_id=school.id) }}" style="margin-bottom:.6rem">
+          <button type="submit" {% if school.id == current_user.school_id and school.is_active %}disabled title="กำลังใช้งานโรงเรียนนี้"{% endif %}>{{ 'ปิดใช้งาน' if school.is_active else 'เปิดใช้งาน' }}</button>
+        </form>
+        {% if school.id != current_user.school_id %}
+        <details>
+          <summary style="cursor:pointer;color:#b91c1c">ลบโรงเรียน</summary>
+          <form method="post" action="{{ url_for('school_delete', school_id=school.id) }}" onsubmit="return confirm('ยืนยันลบโรงเรียนนี้? โรงเรียนที่มีข้อมูลแล้วระบบจะไม่อนุญาตให้ลบ')">
+            <p class="muted">พิมพ์ชื่อโรงเรียนเพื่อยืนยัน</p>
+            <input name="confirm_name" placeholder="{{ school.name }}" required>
+            <button type="submit" class="danger">ยืนยันลบ</button>
+          </form>
+        </details>
+        {% endif %}
+      </td>
     </tr>
     {% endfor %}
   </table></div>

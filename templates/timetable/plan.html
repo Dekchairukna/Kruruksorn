@@ -1,0 +1,100 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>{{ plan.name }}</h1>
+    <p class="muted">{{ plan.days }} วัน × {{ plan.periods }} คาบ · พักกลางวันหลังคาบ {{ plan.lunch_after }}{% if plan.last_run_at %} · จัดล่าสุด {{ plan.last_run_at.strftime('%d/%m/%Y %H:%M') }} (UTC){% endif %}</p>
+  </div>
+  <div class="actions-row">
+    <a class="btn" href="{{ url_for('tt_publish', pid=plan.id) }}">✅ นำตารางนี้ไปใช้</a>
+    <a class="btn" href="{{ url_for('tt_export_schedule', pid=plan.id) }}" title="ไฟล์นี้นำเข้าในหน้า ตารางสอน ได้ทันที">⬇ ส่งไปหน้าตารางสอน (Excel)</a>
+    <a class="btn secondary" href="{{ url_for('tt_export', pid=plan.id) }}">⬇ Excel ทุกครู/ทุกห้อง</a>
+    <a class="btn secondary" href="{{ url_for('tt_print', pid=plan.id, view='teacher') }}" target="_blank">🖨 พิมพ์รายครู</a>
+    <a class="btn secondary" href="{{ url_for('tt_print', pid=plan.id, view='group') }}" target="_blank">🖨 พิมพ์รายห้อง</a>
+  </div>
+</div>
+{% include 'timetable/_nav.html' %}
+
+{% set clashes = counts.get('teacher_clash',0) + counts.get('group_clash',0) %}
+<div class="tt-stats">
+  <div class="tt-stat"><small>ครู / รายวิชา</small><b>{{ teachers|length }} / {{ lessons|length }}</b></div>
+  <div class="tt-stat"><small>คาบที่วางแล้ว</small><b class="{{ 'tt-ok' if slots|length >= total_periods and total_periods else '' }}">{{ slots|length }} / {{ total_periods }}</b><small>ล็อกไว้ {{ locked }}</small></div>
+  <div class="tt-stat"><small>ชนกัน (ครู/ห้อง)</small><b class="{{ 'tt-bad' if clashes else 'tt-ok' }}">{{ clashes }}</b></div>
+  <div class="tt-stat"><small>ผิดข้อห้ามเด็ดขาด</small><b class="{{ 'tt-bad' if counts.get('blocked_hard') else 'tt-ok' }}">{{ counts.get('blocked_hard',0) }}</b><small>หลีกเลี่ยงไม่ได้ {{ counts.get('blocked_soft',0) }}</small></div>
+  <div class="tt-stat"><small>ความต่างคาบสอนรายวันเฉลี่ย (มาก-น้อย)</small><b>{{ '%.1f'|format(avg_spread) }}</b><small>ยิ่งน้อยยิ่งเกลี่ยดี</small></div>
+</div>
+
+<section class="card">
+  <h3>จัดตารางอัตโนมัติ</h3>
+  <p class="tt-muted">คาบที่ <b>ล็อก</b> ไว้จะไม่ถูกย้าย · ระบบห้ามครู/ห้องชนกันและห้ามวางในช่อง "ห้ามเด็ดขาด" · พยายามเกลี่ยคาบของครูให้ใกล้เคียงกันทุกวัน ไม่ให้วิชาเดียวกันซ้ำวัน และหลีกเลี่ยงช่วงที่ครูไม่สะดวก</p>
+  <form method="post" action="{{ url_for('tt_solve', pid=plan.id) }}" class="tt-filter" onsubmit="var f=this;setTimeout(function(){f.querySelectorAll('button').forEach(function(b){b.disabled=true;});},0);document.getElementById('ttWait').style.display='block'">
+    <label>เวลาประมวลผล (วินาที)<input type="number" name="seconds" value="15" min="3" max="60"></label>
+    <button class="btn" type="submit" name="mode" value="full">⚙️ จัดใหม่ทั้งหมด</button>
+    <button class="btn secondary" type="submit" name="mode" value="repair">🩹 แก้เฉพาะจุดที่มีปัญหา (คงตารางเดิม)</button>
+  </form>
+  <div id="ttWait" class="alert warning" style="display:none">กำลังจัดตาราง กรุณารอสักครู่…</div>
+  <div class="actions-row" style="margin-top:8px">
+    <form method="post" action="{{ url_for('tt_copy', pid=plan.id) }}"><button class="btn small secondary" type="submit">คัดลอกแผนนี้ไปทดลอง</button></form>
+    <form method="post" action="{{ url_for('tt_clear', pid=plan.id) }}" class="js-confirm-form" data-confirm="ล้างตารางที่วางไว้ (คงคาบที่ล็อก)?"><input type="hidden" name="keep_locked" value="1"><button class="btn small secondary" type="submit">ล้างตาราง (คงคาบที่ล็อก)</button></form>
+  </div>
+</section>
+
+{% if issues or missing %}
+<section class="card">
+  <h3>ปัญหาที่พบ</h3>
+  <div class="table-wrap"><table>
+    <tr><th>ประเภท</th><th>วัน/คาบ</th><th>รายละเอียด</th><th></th></tr>
+    {% for (l, n) in missing %}
+    <tr><td><span class="status-pill warn">ยังไม่ได้วาง</span></td><td>-</td><td>{{ lname[l.id] }} ({{ l.teacher.name if l.teacher else 'ยังไม่มีครู' }}) ขาด {{ n }} คาบ</td>
+      <td>{% if l.teacher_id %}<a class="btn small secondary" href="{{ url_for('tt_grid', pid=plan.id, view='teacher', ref=l.teacher_id) }}">ไปวาง</a>{% endif %}</td></tr>
+    {% endfor %}
+    {% for i in issues %}{% if i.type != 'blocked_soft' %}
+    <tr>
+      <td>{% if i.type=='teacher_clash' %}<span class="status-pill danger">ครูสอนซ้อน</span>{% elif i.type=='group_clash' %}<span class="status-pill danger">ห้องเรียนซ้อน</span>{% elif i.type=='blocked_hard' %}<span class="status-pill danger">ผิดข้อห้าม</span>{% else %}<span class="status-pill warn">เกินคาบ/วัน</span>{% endif %}</td>
+      <td>{{ tt_day_names[i.day-1] }}{% if i.period %} คาบ {{ i.period }}{% endif %}</td>
+      <td>
+        {% if i.type=='teacher_clash' %}{{ tname.get(i.teacher_id,'') }}: {% for x in i.lessons %}{{ lname.get(x) }}{{ ', ' if not loop.last }}{% endfor %}
+        {% elif i.type=='group_clash' %}ห้อง {{ i.group }}: {% for x in i.lessons %}{{ lname.get(x) }}{{ ', ' if not loop.last }}{% endfor %}
+        {% elif i.type=='blocked_hard' %}{{ lname.get(i.lesson_id) }} — {{ i.reason or 'ช่องห้ามสอน' }}
+        {% else %}{{ tname.get(i.teacher_id,'') }} สอน {{ i.load }} คาบ (กำหนดไม่เกิน {{ i.max }}){% endif %}
+      </td>
+      <td>{% if i.teacher_id %}<a class="btn small secondary" href="{{ url_for('tt_grid', pid=plan.id, view='teacher', ref=i.teacher_id) }}">ดูตาราง</a>{% elif i.group %}<a class="btn small secondary" href="{{ url_for('tt_grid', pid=plan.id, view='group', ref=i.group) }}">ดูตาราง</a>{% endif %}</td>
+    </tr>
+    {% endif %}{% endfor %}
+  </table></div>
+  {% if counts.get('blocked_soft') %}<p class="tt-muted">มี {{ counts.get('blocked_soft') }} คาบที่อยู่ในช่วง "หลีกเลี่ยง" (ระบบเลี่ยงแล้วแต่จำเป็นต้องใช้)</p>{% endif %}
+</section>
+{% endif %}
+
+<section class="card">
+  <h3>คาบสอนของครูรายวัน</h3>
+  <div class="table-wrap"><table>
+    <tr><th>ครู</th>{% for d in range(plan.days) %}<th>{{ tt_day_names[d] }}</th>{% endfor %}<th>รวม</th><th>มอบหมาย</th><th></th></tr>
+    {% for t in teachers %}{% set row = per_day[t.id] %}
+    <tr>
+      <td data-label="ครู">{{ t.name }}</td>
+      {% for n in row %}<td data-label="{{ tt_day_names[loop.index0] }}" class="{{ 'tt-bad' if (t.max_per_day or plan.default_max_per_day) and n > (t.max_per_day or plan.default_max_per_day) }}">{{ n }}</td>{% endfor %}
+      <td data-label="รวม"><b>{{ row|sum }}</b></td>
+      <td data-label="มอบหมาย" class="{{ 'tt-bad' if row|sum < assigned.get(t.id,0) }}">{{ assigned.get(t.id,0) }}</td>
+      <td><a class="btn small secondary" href="{{ url_for('tt_grid', pid=plan.id, view='teacher', ref=t.id) }}">ตาราง</a></td>
+    </tr>
+    {% endfor %}
+  </table></div>
+</section>
+
+<form method="post" action="{{ url_for('tt_settings', pid=plan.id) }}" class="card form-grid">
+  <h3 class="full">ตั้งค่าแผน</h3>
+  <label>ชื่อแผน<input name="name" value="{{ plan.name }}"></label>
+  <label>พักกลางวันหลังคาบที่<input type="number" name="lunch_after" value="{{ plan.lunch_after }}"></label>
+  <label>คาบสูงสุดต่อวันของครู (ค่าเริ่มต้น)<input type="number" name="max_per_day" value="{{ plan.default_max_per_day }}"></label>
+  <label>สอนติดกันได้ไม่เกิน (คาบ)<input type="number" name="max_consecutive" value="{{ plan.max_consecutive or 4 }}"></label>
+  <label class="full">เวลาแต่ละคาบ (คั่นด้วย ,)<input name="period_times" value="{{ plan.period_times }}"></label>
+  <label class="full">หมายเหตุ<input name="note" value="{{ plan.note or '' }}"></label>
+  <div class="full actions-row">
+    <button class="btn" type="submit">บันทึก</button>
+  </div>
+</form>
+<form method="post" action="{{ url_for('tt_delete', pid=plan.id) }}" class="danger-zone">
+  <button class="danger-btn" type="submit" data-confirm="ลบแผน {{ plan.name }} ทั้งหมด (ครู รายวิชา ข้อห้าม ตาราง)?">ลบแผนนี้</button>
+</form>
+{% endblock %}

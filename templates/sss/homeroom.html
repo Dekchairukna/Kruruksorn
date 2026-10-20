@@ -1,0 +1,98 @@
+{% extends 'base.html' %}
+{% block content %}
+{% include 'sss/_style.html' %}
+<div class="page-head">
+  <div>
+    <h1>เช็กชื่อกิจกรรมโฮมรูม</h1>
+    {% if room %}<div class="selected-date-badge">ห้อง <b>{{ room.name }}</b> · {{ thai_date_label(sel_date) }}{% if already_saved %} · <span class="status-pill ok">บันทึกแล้ว</span>{% endif %}</div>{% endif %}
+  </div>
+  {% if room %}
+  <div class="actions-row">
+    <a class="btn secondary" href="{{ url_for('activity_report', type='homeroom', room_id=room.id) }}">📈 รายงานโฮมรูม</a>
+  </div>
+  {% endif %}
+</div>
+
+{% if not room %}
+<section class="card"><p>ยังไม่มีห้องที่ปรึกษา</p></section>
+{% else %}
+<section class="card">
+  <form method="get" class="sss-filter">
+    <label>ห้องที่ปรึกษา
+      <select name="room_id" onchange="this.form.submit()">
+        {% for r in rooms %}<option value="{{ r.id }}" {% if r.id==room.id %}selected{% endif %}>{{ r.name }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>วันที่<input type="date" name="date" value="{{ sel_date.isoformat() }}" onchange="this.form.submit()"></label>
+  </form>
+  {% if is_blocked %}<div class="alert warning">วันที่เลือกเป็นวันหยุดตามปฏิทิน ถ้าต้องการยังบันทึกได้</div>{% endif %}
+
+  <form method="post" id="attendanceForm">
+    <input type="hidden" name="room_id" value="{{ room.id }}">
+    <input type="hidden" name="date" value="{{ sel_date.isoformat() }}">
+    <div class="form-grid">
+      <label class="full">เรื่อง/กิจกรรมโฮมรูมวันนี้
+        <textarea name="topic" rows="2" placeholder="เช่น อบรมเรื่องการแต่งกาย / แจ้งข่าวกิจกรรมกีฬาสี">{{ log.topic if log else '' }}</textarea>
+      </label>
+      <label class="full">หมายเหตุ
+        <textarea name="note" rows="2">{{ log.note if log else '' }}</textarea>
+      </label>
+    </div>
+    <div class="attendance-toolbar">
+      <div class="bulk-buttons">
+        <span class="bulk-label">ทั้งห้อง:</span>
+        {% for st in statuses %}<button type="button" class="bulk-status-btn status-{{ loop.index }}" onclick="hrSetAll('{{ st }}')">{{ sss_status_label(st) }}ทุกคน</button>{% endfor %}
+      </div>
+    </div>
+    <div class="attendance-list table-like-checklist">
+      {% for l in links %}
+      {% set cur = old.get(l.student_id, 'มา') %}
+      <div class="student-check-row">
+        <div class="student-main">
+          <div class="student-no">{{ loop.index }}</div>
+          <div><div class="student-name">{{ l.student.full_name }}</div><div class="student-code">{{ l.student.username }}</div></div>
+        </div>
+        <div class="status-choice-wrap">
+          {% for st in statuses %}
+          <label class="status-choice status-choice-{{ loop.index }}">
+            <input type="radio" name="s_{{ l.student_id }}" value="{{ st }}" {% if cur==st %}checked{% endif %}>
+            <span>{{ sss_status_label(st) }}</span>
+          </label>
+          {% endfor %}
+        </div>
+      </div>
+      {% else %}
+      <div class="empty-state">ยังไม่มีนักเรียนในห้องนี้</div>
+      {% endfor %}
+    </div>
+    <div class="sticky-save-bar"><button class="save-attendance-btn" type="submit">บันทึกโฮมรูม {{ thai_date_short(sel_date) }}</button></div>
+  </form>
+  {% if already_saved %}
+  <form method="post" class="danger-zone" onsubmit="return confirm('ลบข้อมูลโฮมรูมของ {{ thai_date_label(sel_date) }} ?')">
+    <input type="hidden" name="room_id" value="{{ room.id }}"><input type="hidden" name="date" value="{{ sel_date.isoformat() }}"><input type="hidden" name="action" value="delete">
+    <button class="danger-btn">ลบข้อมูลวันนี้</button>
+  </form>
+  {% endif %}
+</section>
+
+<section class="card">
+  <h3>บันทึกโฮมรูมภาคเรียนนี้ (ล่าสุด 30 วัน)</h3>
+  <div class="table-wrap"><table>
+    <tr><th>วันที่</th><th>เรื่อง/กิจกรรม</th><th>มา</th><th>สาย</th><th>ขาด</th><th>ลา</th><th></th></tr>
+    {% for lg in logs %}
+    {% set c = counts.get(lg.log_date, {}) %}
+    <tr>
+      <td data-label="วันที่">{{ thai_date_short(lg.log_date) }}</td>
+      <td data-label="เรื่อง">{{ lg.topic or '-' }}</td>
+      <td data-label="มา">{{ c.get('มา', 0) }}</td><td data-label="สาย">{{ c.get('สาย', 0) }}</td>
+      <td data-label="ขาด" class="{{ 'sss-low' if c.get('ขาด') }}">{{ c.get('ขาด', 0) }}</td><td data-label="ลา">{{ c.get('ลาป่วย', 0) }}</td>
+      <td><a class="btn small secondary" href="{{ url_for('homeroom_check', room_id=room.id, date=lg.log_date.isoformat()) }}">ดู/แก้ไข</a></td>
+    </tr>
+    {% else %}<tr><td colspan="7">ยังไม่มีบันทึก</td></tr>{% endfor %}
+  </table></div>
+</section>
+<script>
+function hrSetAll(st){document.querySelectorAll('#attendanceForm input[type=radio][value="'+st+'"]').forEach(function(r){r.checked=true;});}
+</script>
+{% endif %}
+{% endblock %}

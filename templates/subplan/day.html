@@ -1,0 +1,95 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>จัดสอนแทน</h1>
+    <p class="muted">{{ date_label }}{% if sem %} · {{ sem.name }}{% endif %}</p>
+  </div>
+  <div class="actions-row">
+    {% if day and by_teacher %}<a class="btn" href="{{ url_for('subplan_print', date=d.isoformat()) }}" target="_blank">🖨 พิมพ์ / บันทึกเป็นรูปภาพ</a>{% endif %}
+  </div>
+</div>
+{% include 'subplan/_style.html' %}
+
+<section class="card">
+  <form method="get" class="sp-filter">
+    <a class="btn small secondary" href="{{ url_for('subplan_day', date=prev_d) }}">‹ วันก่อน</a>
+    <label>วันที่<input type="date" name="date" value="{{ d.isoformat() }}" onchange="this.form.submit()"></label>
+    <a class="btn small secondary" href="{{ url_for('subplan_day', date=next_d) }}">วันถัดไป ›</a>
+    <a class="btn small secondary" href="{{ url_for('subplan_day') }}">วันนี้</a>
+  </form>
+  {% if blocked %}<div class="alert warning">วันนี้เป็นวันหยุดตามปฏิทินโรงเรียน</div>{% endif %}
+  {% if no_schedule %}<div class="alert warning">ไม่พบตารางสอนของวัน{{ date_label.split(' ')[0][3:] }} ในภาคเรียนปัจจุบัน — ตรวจว่านำเข้าตารางสอนแล้ว และวันที่อยู่ในภาคเรียนที่ใช้งาน</div>{% endif %}
+</section>
+
+<form method="post" class="card" id="absForm">
+  <input type="hidden" name="action" value="absent"><input type="hidden" name="date" value="{{ d.isoformat() }}">
+  <h3>ขั้นที่ 1 · ติ๊กครูที่ไม่มาวันนี้</h3>
+  <p class="sp-muted">ใส่เหตุผล และถ้าไม่มาเฉพาะบางคาบ ให้ติ๊กคาบนั้น (ไม่ติ๊กคาบเลย = ไม่มาทั้งวัน) · ตัวเลขสีฟ้าคือคาบที่มีสอนวันนี้</p>
+  <input type="search" placeholder="ค้นหาชื่อครู…" oninput="var q=this.value.trim();document.querySelectorAll('.sp-t').forEach(function(e){e.style.display=!q||e.dataset.name.indexOf(q)>=0?'':'none';})" style="margin-bottom:8px;max-width:320px">
+  <div class="sp-tgrid">
+    {% for t in teachers %}{% set ab = absences.get(t.id) %}
+    <div class="sp-t {{ 'on' if ab }}" data-name="{{ t.full_name }}">
+      <label class="top"><input type="checkbox" name="absent" value="{{ t.id }}" {% if ab %}checked{% endif %} onchange="this.closest('.sp-t').classList.toggle('on',this.checked)">
+        <span><b>{{ t.full_name }}</b><br><span class="sp-muted">สอนวันนี้ {{ loads.get(t.id,0) }} คาบ</span></span></label>
+      <div class="extra">
+        <select name="reason_{{ t.id }}">{% for r in reasons %}<option {% if ab and ab.reason==r %}selected{% endif %}>{{ r }}</option>{% endfor %}</select>
+        <div class="sp-pp">{% for p in range(1,9) %}<label class="{{ 'has' if p in my_periods.get(t.id,[]) }}"><input type="checkbox" name="p_{{ t.id }}" value="{{ p }}" {% if ab and p in ab.period_set %}checked{% endif %}>{{ p }}</label>{% endfor %}</div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  <div class="sticky-save-bar"><button class="btn" type="submit">บันทึกครูที่ไม่มา และดึงคาบที่ต้องสอนแทน</button></div>
+</form>
+
+{% if by_teacher %}
+<form method="post" class="card">
+  <input type="hidden" name="date" value="{{ d.isoformat() }}">
+  <h3>ขั้นที่ 2 · เลือกครูสอนแทน {% if n_unassigned %}<span class="sp-badge red">ยังไม่ได้จัด {{ n_unassigned }} คาบ</span>{% else %}<span class="sp-badge green">จัดครบแล้ว</span>{% endif %}</h3>
+  <p class="sp-muted">รายชื่อในช่องเลือกคือครูที่ <b>ว่าง</b> ในคาบนั้น (ไม่มีสอน ไม่ได้ลา และยังไม่ได้รับมอบหมายสอนแทนคาบเดียวกัน) เรียงจากคนที่สอนแทนน้อยที่สุดในเดือนนี้</p>
+  {% for tid, rows in by_teacher.items() %}{% set ab = absences.get(tid) %}
+  <h4 style="margin:14px 0 6px">{{ loop.index }}. {{ rows[0].absent_teacher.full_name }} <span class="sp-badge">{{ ab.reason if ab else '' }}</span></h4>
+  <div class="table-wrap"><table>
+    <tr><th style="width:60px">คาบ</th><th>รายวิชา</th><th>ชั้นเรียน</th><th>ครูผู้ปฏิบัติการสอนแทน</th><th>หมายเหตุ</th></tr>
+    {% for a in rows %}
+    <tr class="{{ 'sp-row-none' if not a.substitute_id }}">
+      <td data-label="คาบ"><b>{{ a.period_no }}</b></td>
+      <td data-label="รายวิชา">{{ a.subject_label }}</td>
+      <td data-label="ชั้นเรียน">{{ a.classroom_label }}</td>
+      <td data-label="ครูสอนแทน">
+        <select name="sub_{{ a.id }}" class="sp-sel">
+          <option value="">-(ไม่ได้จัดสอนแทน)-</option>
+          {% for c in cands[a.id] %}<option value="{{ c.t.id }}" {% if a.substitute_id==c.t.id %}selected{% endif %}>{{ c.t.full_name }} · แทนเดือนนี้ {{ c.count }} · สอนวันนี้ {{ c.load }}</option>{% endfor %}
+        </select>
+        {% if not cands[a.id] %}<div class="sp-muted">ไม่มีครูว่างในคาบนี้</div>{% endif %}
+      </td>
+      <td data-label="หมายเหตุ"><input name="note_{{ a.id }}" value="{{ a.note or '' }}" placeholder="เช่น ให้งานไว้แล้ว" style="min-width:150px"></td>
+    </tr>
+    {% endfor %}
+  </table></div>
+  {% endfor %}
+  <label style="display:block;margin-top:12px">หมายเหตุท้ายแบบฟอร์ม<input name="day_note" value="{{ day.note if day else '' }}" placeholder="เช่น ฝ่ายวิชาการ / ผู้จัดสอนแทน"></label>
+  <div class="actions-row" style="margin-top:12px">
+    <button class="btn" type="submit" name="action" value="assign">💾 บันทึกการจัดสอนแทน</button>
+    <button class="btn secondary" type="submit" name="action" value="auto">⚡ จัดให้อัตโนมัติ (คาบที่ยังว่าง)</button>
+    <a class="btn secondary" href="{{ url_for('subplan_print', date=d.isoformat()) }}" target="_blank">🖨 พิมพ์ / บันทึกเป็นรูปภาพ</a>
+  </div>
+</form>
+<form method="post" class="danger-zone js-confirm-form" data-confirm="ล้างครูสอนแทนทั้งหมดของวันนี้?">
+  <input type="hidden" name="date" value="{{ d.isoformat() }}"><input type="hidden" name="action" value="clear">
+  <button class="btn small secondary" type="submit">ล้างครูสอนแทนทั้งหมดของวันนี้</button>
+</form>
+{% elif absences %}
+<section class="card"><p>ครูที่ไม่มาไม่มีคาบสอนในวันนี้ จึงไม่ต้องจัดสอนแทน</p></section>
+{% endif %}
+
+<section class="card">
+  <h3>ครูที่ว่างในแต่ละคาบ ({{ date_label }})</h3>
+  <div class="table-wrap"><table class="sp-free">
+    <tr><th style="width:60px">คาบ</th><th style="width:70px">จำนวน</th><th>ครูที่ว่าง</th></tr>
+    {% for p in periods %}
+    <tr><td><b>{{ p }}</b></td><td>{{ free_by_period[p]|length }}</td><td>{% for t in free_by_period[p] %}{{ t.full_name }}{{ ', ' if not loop.last }}{% else %}-{% endfor %}</td></tr>
+    {% endfor %}
+  </table></div>
+</section>
+{% endblock %}

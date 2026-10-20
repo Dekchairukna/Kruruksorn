@@ -106,16 +106,17 @@
               <td class="slot-cell {% if items %}has-class{% endif %}">
                 {% if items %}
                   {% for item in items %}
-                    <div class="slot-group {% if not loop.last %}slot-group-sep{% endif %}">
-                      <div class="slot-subject">{{ item.subject.name }}</div>
+                    <div class="slot-group subject-color-{{ item.subject.id % 10 }} {% if not loop.last %}slot-group-sep{% endif %}">
+                      {% set anchor = item.rows[0] %}
+                      {% if current_user.role != 'student' %}
+                        {% set period_url = url_for('schedule_period_group', schedule_id=anchor.id, date=today_date) %}
+                      {% else %}
+                        {% set period_url = url_for('schedule_period', schedule_id=anchor.id, date=today_date) %}
+                      {% endif %}
+                      <a class="slot-subject slot-subject-link" href="{{ period_url }}" title="เปิดคาบเรียน {{ item.subject.name }}">
+                        <span>{{ item.subject.name }}</span><span class="slot-subject-arrow" aria-hidden="true">›</span>
+                      </a>
                       <div class="slot-action-row period-hub-actions">
-                        {% set anchor = item.rows[0] %}
-                        {% if current_user.role != 'student' %}
-                          <a class="btn tiny primary-period-btn open-period-btn" href="{{ url_for('schedule_period_group', schedule_id=anchor.id, date=today_date) }}">เปิดคาบ {{ item.room_text }}</a>
-                          <a class="btn tiny secondary attendance-shortcut combined-attendance-btn" href="{{ url_for('attendance_schedule_group', schedule_id=anchor.id, date=today_date, period_no=anchor.period_no) }}">เช็กชื่อ {{ item.room_text }}</a>
-                        {% else %}
-                          <a class="btn tiny primary-period-btn" href="{{ url_for('schedule_period', schedule_id=anchor.id, date=today_date) }}">เปิดคาบ {{ item.room_text }}</a>
-                        {% endif %}
                         {% set log_state = namespace(found=false) %}
                         {% for r in item.rows %}
                           {% set live_log = current_lesson_logs.get(r.id) if current_lesson_logs is defined else none %}
@@ -151,7 +152,17 @@
 .break-label{font-weight:800;writing-mode:vertical-rl;margin:auto;line-height:1.1}
 .break-cell span{font-weight:800;writing-mode:vertical-rl;display:inline-block}
 .break-cell small{display:block;font-size:10px;margin-top:4px}
-.period-hub-actions{display:flex;flex-wrap:wrap;gap:4px;margin:5px 0}.primary-period-btn{font-weight:800}.combined-attendance-btn{background:#16a34a;color:#fff;border-color:#16a34a}.open-period-btn{background:#38bdf8;color:#075985;border-color:#7dd3fc}.live-lesson-badge{display:block;margin-top:5px;padding:5px 7px;border-radius:10px;background:#dcfce7;color:#166534;font-size:11px;font-weight:800}.hidden-lesson-badge{display:block;margin-top:5px;padding:5px 7px;border-radius:10px;background:#fee2e2;color:#991b1b;font-size:11px;font-weight:800}.muted-lesson-badge{display:block;margin-top:5px;padding:5px 7px;border-radius:10px;background:#f1f5f9;color:#64748b;font-size:11px;font-weight:700}
+.compact-timetable .slot-cell.has-class{background:#fff;box-shadow:inset 0 0 0 1px #d9e3ee;padding:3px}
+.compact-timetable .slot-group{border-radius:9px;padding:5px 4px;margin:1px 0;box-shadow:inset 0 0 0 1px rgba(15,23,42,.08)}
+.compact-timetable .slot-group-sep{border-bottom:0;margin-bottom:4px;padding-bottom:5px}
+.subject-color-0{background:#dbeafe}.subject-color-1{background:#dcfce7}.subject-color-2{background:#fef3c7}.subject-color-3{background:#fce7f3}.subject-color-4{background:#ede9fe}.subject-color-5{background:#cffafe}.subject-color-6{background:#fee2e2}.subject-color-7{background:#e0e7ff}.subject-color-8{background:#fae8ff}.subject-color-9{background:#ffedd5}
+.period-hub-actions{display:flex;flex-wrap:wrap;gap:4px;margin:5px 0}.slot-subject-link{display:flex;align-items:flex-start;justify-content:center;gap:4px;color:inherit;text-decoration:none;border-radius:8px;padding:3px 4px;transition:background .15s ease,color .15s ease}.slot-subject-link:hover,.slot-subject-link:focus-visible{background:rgba(255,255,255,.72);color:#075985;outline:none}.slot-subject-arrow{font-size:20px;line-height:.8;font-weight:900}.live-lesson-badge{display:block;margin-top:5px;padding:5px 7px;border-radius:10px;background:#dcfce7;color:#166534;font-size:11px;font-weight:800}.hidden-lesson-badge{display:block;margin-top:5px;padding:5px 7px;border-radius:10px;background:#fee2e2;color:#991b1b;font-size:11px;font-weight:800}.muted-lesson-badge{display:block;margin-top:5px;padding:5px 7px;border-radius:10px;background:#f1f5f9;color:#64748b;font-size:11px;font-weight:700}
+#schedule-capture.capture-mode .muted-lesson-badge,#schedule-capture.capture-mode .slot-subject-arrow{display:none}
+#schedule-capture.capture-mode .period-hub-actions{margin:0;min-height:0}
+#schedule-capture.capture-mode .slot-subject-link{padding-bottom:5px}
+#schedule-capture.capture-mode{box-shadow:none;border:1px solid #d9e3ee}
+#schedule-capture.capture-mode .timetable-wrap,#schedule-capture.capture-mode .compact-wrap{box-shadow:none}
+#schedule-capture.capture-mode .slot-cell.has-class,#schedule-capture.capture-mode .slot-group{box-shadow:none}
 </style>
 
 {% if current_user.role != 'student' %}
@@ -231,11 +242,16 @@ if (periodSelect) {
 async function saveScheduleImage(){
   const node = document.getElementById('schedule-capture');
   if (!window.html2canvas) { alert('โหลดตัวบันทึกรูปภาพไม่สำเร็จ กรุณาต่ออินเทอร์เน็ตแล้วลองใหม่'); return; }
-  const canvas = await html2canvas(node, {backgroundColor:'#ffffff', scale:2, useCORS:true});
-  const link = document.createElement('a');
-  link.download = 'ตารางสอน-ครูรักสอน.png';
-  link.href = canvas.toDataURL('image/png');
-  link.click();
+  node.classList.add('capture-mode');
+  try {
+    const canvas = await html2canvas(node, {backgroundColor:'#ffffff', scale:2, useCORS:true});
+    const link = document.createElement('a');
+    link.download = 'ตารางสอน-ครูรักสอน.png';
+    link.href = canvas.toDataURL('image/png');
+    link.click();
+  } finally {
+    node.classList.remove('capture-mode');
+  }
 }
 </script>
 {% endblock %}

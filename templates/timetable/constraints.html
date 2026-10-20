@@ -1,0 +1,89 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-head"><div><h1>ข้อห้าม / เวลาไม่สะดวก</h1><p class="muted">{{ plan.name }}</p></div></div>
+{% include 'timetable/_nav.html' %}
+
+<section class="card">
+  <div class="tt-tabs">
+    <a href="{{ url_for('tt_constraints', pid=plan.id, scope='teacher') }}" class="{{ 'active' if scope=='teacher' }}">รายครู</a>
+    <a href="{{ url_for('tt_constraints', pid=plan.id, scope='group') }}" class="{{ 'active' if scope=='group' }}">รายห้องเรียน</a>
+    <a href="{{ url_for('tt_constraints', pid=plan.id, scope='all') }}" class="{{ 'active' if scope=='all' }}">ทั้งโรงเรียน</a>
+  </div>
+  {% if scope != 'all' %}
+  <form method="get" class="tt-filter">
+    <input type="hidden" name="scope" value="{{ scope }}">
+    <label>{{ 'ครู' if scope=='teacher' else 'ห้องเรียน' }}
+      <select name="ref" onchange="this.form.submit()">
+        {% if scope=='teacher' %}{% for t in teachers %}<option value="{{ t.id }}" {% if ref==t.id|string %}selected{% endif %}>{{ t.name }}{% set s = summary.get(('teacher', t.id)) %}{% if s %} ({{ s.hard }} ห้าม/{{ s.soft }} เลี่ยง){% endif %}</option>{% endfor %}
+        {% else %}{% for gname in groups %}<option value="{{ gname }}" {% if ref==gname %}selected{% endif %}>{{ gname }}{% set s = summary.get(('group', gname)) %}{% if s %} ({{ s.hard }} ห้าม/{{ s.soft }} เลี่ยง){% endif %}</option>{% endfor %}{% endif %}
+      </select>
+    </label>
+  </form>
+  {% endif %}
+
+  <p class="tt-muted">คลิกช่องเพื่อสลับ: ว่าง → <span class="tt-sw" style="background:#fecaca"></span><b>ห้ามเด็ดขาด</b> (เช่น ประชุม ไปราชการ) → <span class="tt-sw" style="background:#fef08a"></span><b>หลีกเลี่ยง</b> (ไม่สะดวก แต่ถ้าจำเป็นใช้ได้) → ว่าง</p>
+  <form method="post" id="cform">
+    <input type="hidden" name="scope" value="{{ scope }}"><input type="hidden" name="ref" value="{{ ref }}">
+    <div class="tt-grid-wrap"><table class="tt-grid" style="min-width:640px">
+      <tr><th>วัน/คาบ</th>{% for i in range(plan.periods) %}<th>คาบ {{ i+1 }}<br><small>{{ times[i] }}</small></th>{% if i+1 == plan.lunch_after %}<th class="lunch">พักเที่ยง</th>{% endif %}{% endfor %}</tr>
+      {% for d in range(1, plan.days+1) %}
+      <tr><td class="day">{{ tt_day_names[d-1] }}</td>
+        {% for p in range(1, plan.periods+1) %}{% set b = cur.get((d,p)) %}
+        <td style="padding:3px"><div class="tt-pick {{ ('hard' if b.hard else 'soft') if b else '' }}" data-d="{{ d }}" data-p="{{ p }}" title="{{ b.reason if b else '' }}">{{ ('ห้าม' if b.hard else 'เลี่ยง') if b else '' }}</div></td>
+        {% if p == plan.lunch_after %}<td class="lunch"></td>{% endif %}{% endfor %}
+      </tr>{% endfor %}
+    </table></div>
+    <div id="cells"></div>
+    <div class="tt-filter" style="margin-top:10px">
+      <label>เหตุผล (ไม่บังคับ)<input name="reason" placeholder="เช่น ประชุมกลุ่มสาระ / ไปราชการ"></label>
+      <button class="btn" type="submit">บันทึกข้อห้าม</button>
+    </div>
+  </form>
+</section>
+
+<section class="card">
+  <h3>ทางลัด</h3>
+  <div class="actions-row">
+    {% for key, label, lv in [('mon_morning','ประชุมจันทร์เช้า (ห้ามทั้งช่วงเช้า)','hard'),('no_first','ไม่สะดวกคาบ 1 ทุกวัน (หลีกเลี่ยง)','soft'),('no_last','หลีกเลี่ยงคาบสุดท้ายทุกวัน','soft')] %}
+    <form method="post"><input type="hidden" name="scope" value="{{ scope }}"><input type="hidden" name="ref" value="{{ ref }}"><input type="hidden" name="action" value="preset"><input type="hidden" name="preset" value="{{ key }}"><input type="hidden" name="level" value="{{ lv }}"><button class="btn small secondary" type="submit">+ {{ label }}</button></form>
+    {% endfor %}
+    <form method="post" class="js-confirm-form" data-confirm="ล้างข้อห้ามทั้งหมดของรายการนี้?"><input type="hidden" name="scope" value="{{ scope }}"><input type="hidden" name="ref" value="{{ ref }}"><input type="hidden" name="action" value="preset"><input type="hidden" name="preset" value="clear"><button class="btn small secondary" type="submit">ล้างทั้งหมด</button></form>
+  </div>
+</section>
+
+{% if summary %}
+<section class="card">
+  <h3>สรุปข้อห้ามทั้งแผน</h3>
+  <div class="table-wrap"><table>
+    <tr><th>รายการ</th><th>ห้ามเด็ดขาด (ช่อง)</th><th>หลีกเลี่ยง (ช่อง)</th><th></th></tr>
+    {% for k, v in summary.items() %}
+    <tr><td>{% if k[0]=='teacher' %}ครู {{ tname.get(k[1],'?') }}{% elif k[0]=='group' %}ห้อง {{ k[1] }}{% else %}ทั้งโรงเรียน{% endif %}</td><td>{{ v.hard }}</td><td>{{ v.soft }}</td>
+      <td><a class="btn small secondary" href="{{ url_for('tt_constraints', pid=plan.id, scope=k[0], ref=k[1]) }}">แก้ไข</a></td></tr>
+    {% endfor %}
+  </table></div>
+</section>
+{% endif %}
+<script>
+(function(){
+  var form=document.getElementById('cform'), box=document.getElementById('cells');
+  function sync(){
+    box.innerHTML='';
+    form.querySelectorAll('.tt-pick').forEach(function(el){
+      var st=el.classList.contains('hard')?'hard':(el.classList.contains('soft')?'soft':'');
+      if(!st) return;
+      var k=el.dataset.d+'-'+el.dataset.p;
+      box.insertAdjacentHTML('beforeend','<input type="hidden" name="cell" value="'+k+'"><input type="hidden" name="lv_'+el.dataset.d+'_'+el.dataset.p+'" value="'+st+'">');
+    });
+  }
+  form.querySelectorAll('.tt-pick').forEach(function(el){
+    el.addEventListener('click',function(){
+      if(el.classList.contains('hard')){el.classList.remove('hard');el.classList.add('soft');el.textContent='เลี่ยง';}
+      else if(el.classList.contains('soft')){el.classList.remove('soft');el.textContent='';}
+      else{el.classList.add('hard');el.textContent='ห้าม';}
+      sync();
+    });
+  });
+  sync();
+})();
+</script>
+{% endblock %}

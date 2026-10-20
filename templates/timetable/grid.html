@@ -1,0 +1,167 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-head">
+  <div><h1>ตาราง: {{ title }}</h1><p class="muted">{{ plan.name }}{% if load_row %} · คาบรายวัน {% for n in load_row %}{{ tt_day_names[loop.index0][:2] }} {{ n }}{{ ' · ' if not loop.last }}{% endfor %} (รวม {{ load_row|sum }}){% endif %}</p></div>
+  <div class="actions-row tt-noprint">
+    <a class="btn secondary" href="{{ url_for('tt_print', pid=plan.id, view=view, ref=ref) }}" target="_blank">🖨 พิมพ์หน้านี้</a>
+  </div>
+</div>
+{% include 'timetable/_nav.html' %}
+
+<section class="card tt-noprint">
+  <form method="get" class="tt-filter">
+    <label>ดูตาม
+      <select name="view" onchange="this.form.ref.value='';this.form.submit()"><option value="teacher" {% if view=='teacher' %}selected{% endif %}>ครู</option><option value="group" {% if view=='group' %}selected{% endif %}>ห้องเรียน</option></select>
+    </label>
+    <label>{{ 'ครู' if view=='teacher' else 'ห้อง' }}
+      <select name="ref" onchange="this.form.submit()">
+        {% if view=='teacher' %}{% for t in teachers %}<option value="{{ t.id }}" {% if ref==t.id|string %}selected{% endif %}>{{ t.name }}</option>{% endfor %}
+        {% else %}{% for gname in groups %}<option value="{{ gname }}" {% if ref==gname %}selected{% endif %}>{{ gname }}</option>{% endfor %}{% endif %}
+      </select>
+    </label>
+    {% if n_issues %}<span class="status-pill danger">ทั้งแผนยังมีปัญหา {{ n_issues }} จุด</span>{% else %}<span class="status-pill ok">ไม่มีการชนกัน</span>{% endif %}
+  </form>
+  <p class="tt-muted"><b>วิธีปรับแก้:</b> คลิกวิชาในตารางเพื่อเลือก → ช่องที่ <span style="outline:3px solid #22c55e;padding:0 4px">ขอบเขียว</span> วางได้ไม่ชน, <span style="outline:3px solid #f87171;padding:0 4px">ขอบแดง</span> จะชนหรือติดข้อห้าม → คลิกช่องปลายทางเพื่อย้าย · กด Esc เพื่อยกเลิก</p>
+  <div class="tt-filter">
+    <label class="checkline" style="flex-direction:row;align-items:center;gap:6px"><input type="checkbox" id="moveBlock" checked> ย้ายคาบติดกันไปทั้งก้อน</label>
+    <button type="button" class="btn small secondary" id="btnLock" disabled>🔒 ล็อก/ปลดล็อกคาบที่เลือก</button>
+    <button type="button" class="btn small secondary" id="btnUnplace" disabled>เอาออกจากตาราง</button>
+    <form method="post" action="{{ url_for('tt_edit', pid=plan.id) }}" style="display:inline">
+      <input type="hidden" name="action" value="lock_view"><input type="hidden" name="value" value="1">
+      {% for k, items in grid.items() %}{% for s in items %}<input type="hidden" name="slot_ids" value="{{ s.id }}">{% endfor %}{% endfor %}
+      <button class="btn small secondary" type="submit">ล็อกทั้งตารางนี้</button>
+    </form>
+    <form method="post" action="{{ url_for('tt_edit', pid=plan.id) }}" style="display:inline">
+      <input type="hidden" name="action" value="lock_view"><input type="hidden" name="value" value="0">
+      {% for k, items in grid.items() %}{% for s in items %}<input type="hidden" name="slot_ids" value="{{ s.id }}">{% endfor %}{% endfor %}
+      <button class="btn small secondary" type="submit">ปลดล็อกทั้งตารางนี้</button>
+    </form>
+  </div>
+  <div id="ttMsg" class="alert" style="display:none"></div>
+</section>
+
+<section class="card">
+  <div class="tt-grid-wrap">
+  <table class="tt-grid" id="ttGrid">
+    <tr><th>วัน/คาบ</th>{% for i in range(plan.periods) %}<th>คาบ {{ i+1 }}<br><small>{{ times[i] }}</small></th>{% if i+1 == plan.lunch_after %}<th class="lunch">พัก</th>{% endif %}{% endfor %}</tr>
+    {% for d in range(1, plan.days+1) %}
+    <tr><td class="day">{{ tt_day_names[d-1] }}</td>
+      {% for p in range(1, plan.periods+1) %}
+      {% set bh = blocked_here.get((d,p)) %}
+      <td class="cell {{ 'blk-'+bh if bh else '' }}" data-d="{{ d }}" data-p="{{ p }}">
+        {% for s in grid.get((d,p), []) %}{% set l = lmap[s.lesson_id] %}
+        <div class="tt-chip {{ 'bad' if (s.lesson_id,d,p) in bad else ('soft' if (s.lesson_id,d,p) in soft else '') }}" style="background:{{ colors[l.id] }}" data-slot="{{ s.id }}" data-lesson="{{ l.id }}">
+          {% if s.locked %}<span class="lk">🔒</span>{% endif %}
+          <b>{{ l.code }}</b> {{ l.name }}<br>
+          {% if view=='teacher' %}{{ l.class_label }}{% else %}{{ l.teacher.name if l.teacher else '-' }}{% endif %}
+          {% if l.room %}<br><small>{{ l.room }}</small>{% endif %}
+        </div>
+        {% endfor %}
+      </td>
+      {% if p == plan.lunch_after %}<td class="lunch">พัก</td>{% endif %}
+      {% endfor %}
+    </tr>
+    {% endfor %}
+  </table>
+  </div>
+  <p class="tt-legend tt-muted"><span><span class="tt-sw" style="background:#fecaca"></span>ช่องห้ามสอน</span><span><span class="tt-sw" style="background:#fef9c3"></span>ช่องหลีกเลี่ยง</span><span><span class="tt-sw" style="border:2px solid #dc2626"></span>ชน/ผิดข้อห้าม</span><span><span class="tt-sw" style="border:2px dashed #ca8a04"></span>อยู่ในช่วงหลีกเลี่ยง</span><span>🔒 ล็อก (จัดอัตโนมัติจะไม่ย้าย)</span></p>
+</section>
+
+{% if my_missing %}
+<section class="card tt-noprint">
+  <h3>คาบที่ยังไม่ได้วาง</h3>
+  <p class="tt-muted">คลิกรายการ แล้วคลิกช่องในตารางเพื่อวาง</p>
+  <div class="actions-row">
+    {% for (l, n) in my_missing %}
+    <div class="tt-chip pending" data-lesson="{{ l.id }}" style="background:{{ colors[l.id] }};cursor:pointer;display:inline-block"><b>{{ l.code }}</b> {{ l.name }} {{ l.class_label }} · ขาด {{ n }} คาบ</div>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+<script>
+(function(){
+  var DATA = {{ js|safe }};
+  var EDIT_URL = "{{ url_for('tt_edit', pid=plan.id) }}";
+  var lessons = DATA.lessons, slots = DATA.slots, blocks = DATA.blocks;
+  var sel = null; // {slot, lesson}
+  var msg = document.getElementById('ttMsg');
+  function show(t, cls){ msg.textContent=t; msg.className='alert '+(cls||'warning'); msg.style.display='block'; }
+  function busy(lessonId, d, p, ignoreSlots){
+    var L = lessons[lessonId], why = [];
+    slots.forEach(function(s){
+      if(s.d!==d || s.p!==p || ignoreSlots.indexOf(s.id)>=0) return;
+      var o = lessons[s.l]; if(!o) return;
+      if(o.t===L.t) why.push('ครูสอน '+o.label);
+      else if(o.g.some(function(g){return L.g.indexOf(g)>=0;})) why.push('ห้องเรียน '+o.label);
+    });
+    blocks.forEach(function(b){
+      if(b.d!==d || b.p!==p || !b.h) return;
+      if(b.s==='all' || (b.s==='teacher' && b.t===L.t) || (b.s==='group' && L.g.indexOf(b.g)>=0)) why.push('ช่องห้ามสอน');
+    });
+    return why;
+  }
+  function blockSlots(slot){
+    if(!document.getElementById('moveBlock').checked) return [slot.id];
+    var same = slots.filter(function(s){return s.l===slot.l && s.d===slot.d;});
+    var ids=[slot.id], lo=slot.p, hi=slot.p, lunch={{ plan.lunch_after }};
+    function at(p){return same.find(function(s){return s.p===p;});}
+    while(at(lo-1) && lo-1!==lunch){lo--; ids.push(at(lo).id);}
+    while(at(hi+1) && hi!==lunch){hi++; ids.push(at(hi).id);}
+    return ids;
+  }
+  function clearMarks(){
+    document.querySelectorAll('.tt-chip.sel').forEach(function(e){e.classList.remove('sel');});
+    document.querySelectorAll('td.cell').forEach(function(td){td.classList.remove('ok-target','no-target');td.title='';});
+  }
+  function mark(){
+    clearMarks(); if(!sel) return;
+    var ign = sel.slot ? blockSlots(sel.slot) : [];
+    var size = ign.length || 1, base = sel.slot ? sel.slot.p : null;
+    document.querySelectorAll('[data-lesson="'+sel.lesson+'"]').forEach(function(e){ if(!sel.slot || +e.dataset.slot===sel.slot.id) e.classList.add('sel'); });
+    document.querySelectorAll('td.cell').forEach(function(td){
+      var d=+td.dataset.d, p=+td.dataset.p, why=[];
+      if(sel.slot && ign.length>1){
+        var mine = slots.filter(function(s){return ign.indexOf(s.id)>=0;});
+        var lo=99, hi=0;
+        mine.forEach(function(s){ var np=s.p+(p-base); lo=Math.min(lo,np); hi=Math.max(hi,np); if(np<1||np>{{ plan.periods }}) why.push('เกินจำนวนคาบของวัน'); else why=why.concat(busy(sel.lesson,d,np,ign)); });
+        var lunch={{ plan.lunch_after }}; if(lunch && lo<=lunch && hi>lunch) why.push('ข้ามพักกลางวัน');
+      } else { why = busy(sel.lesson,d,p,ign); }
+      why = why.filter(function(x,i){return why.indexOf(x)===i;});
+      td.classList.add(why.length?'no-target':'ok-target');
+      td.title = why.length ? 'ชน: '+why.join(', ') : 'วางได้';
+    });
+  }
+  function post(data){
+    var fd = new FormData(); Object.keys(data).forEach(function(k){fd.append(k,data[k]);});
+    return fetch(EDIT_URL,{method:'POST',body:fd,headers:{'X-Requested-With':'fetch'},credentials:'same-origin'}).then(function(r){return r.json();});
+  }
+  document.querySelectorAll('.tt-chip[data-slot]').forEach(function(ch){
+    ch.addEventListener('click',function(e){
+      e.stopPropagation();
+      var s = slots.find(function(x){return x.id===+ch.dataset.slot;});
+      sel = {slot:s, lesson:s.l};
+      document.getElementById('btnLock').disabled=false; document.getElementById('btnUnplace').disabled=false;
+      if(s.k) show('คาบนี้ล็อกอยู่ — ปลดล็อกก่อนจึงย้ายได้'); else msg.style.display='none';
+      mark();
+    });
+  });
+  document.querySelectorAll('.tt-chip.pending').forEach(function(ch){
+    ch.addEventListener('click',function(){ sel={slot:null, lesson:+ch.dataset.lesson}; msg.style.display='none'; mark(); });
+  });
+  document.querySelectorAll('td.cell').forEach(function(td){
+    td.addEventListener('click',function(){
+      if(!sel) return;
+      var d=+td.dataset.d, p=+td.dataset.p;
+      if(td.classList.contains('no-target') && !confirm('ช่องนี้จะชน: '+td.title.replace('ชน: ','')+'\nยืนยันวางอยู่ดี?')) return;
+      var req = sel.slot ? {action: (document.getElementById('moveBlock').checked?'move_block':'move'), slot_id: sel.slot.id, day:d, period:p}
+                         : {action:'place', lesson_id: sel.lesson, day:d, period:p};
+      post(req).then(function(r){ if(r.ok) location.reload(); else show(r.msg||'ทำรายการไม่สำเร็จ','danger'); });
+    });
+  });
+  document.getElementById('btnLock').addEventListener('click',function(){ if(sel&&sel.slot) post({action:'lock',slot_id:sel.slot.id}).then(function(){location.reload();}); });
+  document.getElementById('btnUnplace').addEventListener('click',function(){ if(sel&&sel.slot) post({action:'unplace',slot_id:sel.slot.id}).then(function(r){ if(r.ok) location.reload(); else show(r.msg,'danger'); }); });
+  document.addEventListener('keydown',function(e){ if(e.key==='Escape'){ sel=null; clearMarks(); } });
+})();
+</script>
+{% endblock %}

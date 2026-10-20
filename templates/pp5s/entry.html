@@ -1,0 +1,289 @@
+{% extends 'base.html' %}
+{% block content %}
+{% include 'pp5s/_style.html' %}
+{% set code, nm = split_subject(subject.name) %}
+<div class="p5-head">
+  <div><h1>📗 บันทึกคะแนน (ปพ.5)</h1>
+    <select class="p5-select" style="margin-top:8px" onchange="if(this.value)location.href=this.value">
+      {% for p in pairs %}{% set c2, n2 = split_subject(p.subject.name) %}
+      <option value="{{ url_for('pp5s_entry', subject_id=p.subject_id, classroom_id=p.classroom_id) }}" {% if p.subject_id==subject.id and p.classroom_id==room.id %}selected{% endif %}>{{ c2 }} - {{ n2 }} ({{ p.classroom.name }})</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="p5-tools">
+    <a class="p5-pill" href="{{ url_for('pp5s_structure', subject_id=subject.id, room=room.id) }}">⚙️ โครงสร้างวิชา</a>
+    <button type="button" class="p5-pill" onclick="openSgs()">📤 SGS</button>
+    <a class="p5-pill" href="{{ url_for('pp5s_export', subject_id=subject.id, classroom_id=room.id) }}">⬇ Excel</a>
+    <a class="p5-pill" href="{{ url_for('pp5s_print', subject_id=subject.id, classroom_id=room.id) }}" target="_blank">🖨 พิมพ์ ปพ.5</a>
+    <button type="submit" form="p5form" class="p5-pill primary">💾 บันทึก</button>
+  </div>
+</div>
+
+<div class="p5-tabs" role="tablist">
+  <button type="button" data-tab="score" class="{{ 'on' if tab!='trait' }}">☰ คะแนนรายวิชา (ปพ.5)</button>
+  <button type="button" data-tab="trait" class="{{ 'on' if tab=='trait' }}">★ คุณลักษณะ / อ่านคิดวิเคราะห์</button>
+</div>
+
+<form method="post" id="p5form" autocomplete="off">
+<input type="hidden" name="tab" id="tabField" value="{{ tab }}">
+
+{# ---------------- คะแนนรายวิชา ---------------- #}
+<section id="pane-score" {% if tab=='trait' %}hidden{% endif %} style="margin-top:14px">
+  <div class="p5-bar">
+    <span>ปพ.5: วิชา {{ code }} {{ nm }} ห้อง {{ room.name }}</span>
+    <span>
+      <span class="p5-badge gray">คาบทั้งหมด {{ total_periods }} · เช็กชื่อแล้ว {{ taught }} · ขาด/ลาได้ไม่เกิน {{ quota }} คาบ</span>
+      <span class="p5-badge">สัดส่วนปัจจุบัน {{ fmt(st.collect_total) }}:{{ fmt(st.mid_total) }}:{{ fmt(st.final_total) }}</span>
+    </span>
+  </div>
+  <div class="p5-wrap" id="wrapScore">
+  <table class="p5" id="tblScore">
+    <thead>
+      <tr class="r1">
+        <th class="c-no" rowspan="2">ที่</th>
+        <th class="c-name" rowspan="2">รหัส / ชื่อ-สกุล</th>
+        {% for it in items %}<th title="{{ it.code }} {{ it.name }}{% if it.detail %} — {{ it.detail }}{% endif %}"><span class="itemh">{{ it.code }}</span><span class="itemh" style="font-weight:400">{{ it.name }}</span></th>{% endfor %}
+        <th>รวมเก็บ</th><th>กลางภาค</th><th title="คะแนนสอบแก้ตัวสำหรับผู้ได้ 0 (0–100) ได้ไม่เกินระดับ 1">ซ่อม</th><th>ปลายภาค</th><th>รวม</th><th>เกรด</th><th>หมายเหตุ</th>
+      </tr>
+      <tr class="r2">
+        {% for it in items %}<th>({{ fmt(it.max_score) }})</th>{% endfor %}
+        <th>({{ fmt(st.collect_total) }})</th><th>({{ fmt(st.mid_total) }})</th><th>(0–100)</th><th>({{ fmt(st.final_total) }})</th><th>(100)</th><th>0–4</th><th>(ร, มส)</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for r in rows %}{% set u = r.student %}{% set a = r.att %}
+      <tr data-sid="{{ u.id }}" data-att="{{ a.pct if a else '' }}">
+        <td class="c-no">{{ r.no }}</td>
+        <td class="c-name"><b>{{ u.full_name }}</b><small>{{ r.sno }}</small>
+          {% if a %}<span class="att {{ 'ok' if a.pct >= 85 else ('warn' if a.pct >= ATT_MIN else 'bad') }}" title="มา {{ a['มา'] }} · สาย {{ a['สาย'] }} · ลา {{ a['ลา'] }} · ขาด {{ a['ขาด'] }} · ขาด/ลาได้อีก {{ a.left }} คาบ">👤 {{ '%.2f'|format(a.pct) }}%</span>{% else %}<span class="att ok" title="ยังไม่มีข้อมูลเช็กชื่อ">👤 –</span>{% endif %}
+        </td>
+        {% for it in items %}<td><input class="cell" data-k="item" data-max="{{ it.max_score }}" name="s_{{ u.id }}_i{{ it.id }}" value="{{ fmt(r['items'][loop.index0]) }}" inputmode="decimal"></td>{% endfor %}
+        <td class="col-collect" data-out="collect">{{ fmt(r.collect) }}</td>
+        <td class="col-mid"><input class="cell" data-k="mid" data-max="{{ st.mid_total }}" name="s_{{ u.id }}_mid" value="{{ fmt(r.mid) }}" inputmode="decimal"></td>
+        <td class="col-retake"><input class="cell" data-k="retake" data-max="100" name="s_{{ u.id }}_retake" value="{{ fmt(r.retake) }}" inputmode="decimal" placeholder="-"></td>
+        <td class="col-final"><input class="cell" data-k="final" data-max="{{ st.final_total }}" name="s_{{ u.id }}_final" value="{{ fmt(r.final) }}" inputmode="decimal"></td>
+        <td class="col-total" data-out="total">{{ r.total if r.any else '' }}</td>
+        <td class="col-grade" data-out="grade">{{ r.grade }}</td>
+        <td><select class="rm" name="s_{{ u.id }}_remark"><option value="">-</option><option value="ร" {% if r.remark=='ร' %}selected{% endif %}>ร</option><option value="มส" {% if r.remark=='มส' %}selected{% endif %}>มส</option></select></td>
+      </tr>
+    {% else %}
+      <tr><td colspan="{{ items|length + 9 }}">ยังไม่มีนักเรียนในห้องนี้</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  <div class="p5-sum" id="distBox"></div>
+  <div class="p5-note">
+    <b>ℹ️ วิธีใช้</b>
+    <ul style="margin:6px 0 0;padding-left:20px">
+      <li>กด <b>Enter</b> หรือ <b>↓</b> เพื่อไปช่องถัดไปด้านล่าง · <b>↑ ← →</b> เลื่อนช่อง · คัดลอกคะแนนจาก Excel แล้ววาง (Ctrl+V) ในช่องแรกได้ทั้งตาราง</li>
+      <li>เกรด: 80+ = 4 · 75 = 3.5 · 70 = 3 · 65 = 2.5 · 60 = 2 · 55 = 1.5 · 50 = 1 · ต่ำกว่า 50 = 0 · เวลาเรียนต่ำกว่า {{ ATT_MIN|int }}% = <b>มส</b> อัตโนมัติ</li>
+      <li><b>ซ่อม</b> = คะแนนสอบแก้ตัว (เต็ม 100) สำหรับผู้ได้ 0 — ได้ 50 ขึ้นไปเปลี่ยนเป็นระดับ 1 · <b>หมายเหตุ ร</b> = ไม่ส่งงาน/ไม่สอบ</li>
+    </ul>
+  </div>
+</section>
+
+{# ---------------- คุณลักษณะ / อ่านคิดวิเคราะห์ ---------------- #}
+<section id="pane-trait" {% if tab!='trait' %}hidden{% endif %} style="margin-top:14px">
+  <div class="p5-bar"><span>★ ประเมินคุณลักษณะอันพึงประสงค์ และ อ่าน คิดวิเคราะห์ และเขียน</span></div>
+  <div class="p5-note" style="margin-top:0;border-radius:0">
+    <ul style="margin:0;padding-left:20px">
+      <li>การประเมินแบ่งออกเป็น <b>4 ช่วง</b> ทุก ๆ 5 สัปดาห์ ช่วงละ <b>25 คะแนน</b></li>
+      <li>ตัดสินระดับอัตโนมัติ: <b style="color:#dc2626">0–49 = 0</b> | <b style="color:#1d4ed8">50–69 = 1</b> | <b style="color:#15803d">70–79 = 2</b> | <b style="color:#a16207">80–100 = 3</b></li>
+    </ul>
+  </div>
+  <div class="p5-wrap" id="wrapTrait">
+  <table class="p5" id="tblTrait">
+    <thead>
+      <tr class="r1"><th class="c-no" rowspan="2">ที่</th><th class="c-name" rowspan="2">รหัส / ชื่อ-สกุล</th>
+        <th colspan="6">คุณลักษณะอันพึงประสงค์ (8 ข้อ)</th><th colspan="6">อ่าน คิดวิเคราะห์ และเขียน (3 ด้าน)</th></tr>
+      <tr class="r2">{% for k in ['c','r'] %}{% for p in range(1,5) %}<th>ช่วง {{ p }} (25)</th>{% endfor %}<th>รวม (100)</th><th>ระดับ (0-3)</th>{% endfor %}</tr>
+    </thead>
+    <tbody>
+      <tr class="fill"><td class="c-no"></td><td class="c-name"><small>ใส่คะแนนเดียวกันทั้งห้อง →</small></td>
+        {% for k in ['c','r'] %}{% for p in range(1,5) %}<td><input data-fill="{{ k }}{{ p }}" placeholder="ทุกคน" title="พิมพ์แล้วกด Enter เพื่อใส่ให้ทุกคนที่ยังว่าง"></td>{% endfor %}<td></td><td></td>{% endfor %}</tr>
+    {% for r in rows %}{% set u = r.student %}
+      <tr data-sid="{{ u.id }}">
+        <td class="c-no">{{ r.no }}</td>
+        <td class="c-name"><b>{{ u.full_name }}</b><small>{{ r.sno }}</small></td>
+        {% for k in ['c','r'] %}{% set t = r.traits[k] %}
+          {% for p in range(1,5) %}<td><input class="cell" data-k="{{ k }}" data-max="25" name="s_{{ u.id }}_{{ k }}{{ p }}" value="{{ fmt(t.vals[loop.index0]) }}" inputmode="decimal"></td>{% endfor %}
+          <td class="tsum" data-out="{{ k }}sum">{{ fmt(t.total) }}</td>
+          <td class="lv l{{ t.level if t.level is not none else '' }}" data-out="{{ k }}lv">{{ t.level if t.level is not none else '' }}</td>
+        {% endfor %}
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</section>
+<div class="p5-save"><span class="dirty-dot">● ยังไม่ได้บันทึก</span><button type="submit" class="btn">💾 บันทึกคะแนน</button></div>
+</form>
+
+{# ---------------- SGS modal ---------------- #}
+<div class="p5-modal" id="sgsModal" onclick="if(event.target===this)closeSgs()">
+  <div class="box">
+    <div class="top"><h2 style="margin:0">📤 ข้อมูลส่งออก SGS</h2><button type="button" class="p5-pill" onclick="closeSgs()">✕</button></div>
+    <div class="tip">💡 กดปุ่ม <b>“คัดลอกคะแนน”</b> แล้วกด <b>Ctrl+V</b> ในช่องแรกของโปรแกรม SGS · ลากคลุมเฉพาะบางช่องในตารางแล้วกด Ctrl+C ก็ได้</div>
+    <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center">
+      <div class="p5-seg"><button type="button" data-v="pp5">▦ ตาราง ปพ.5 เดิม</button><button type="button" data-v="sgs" class="on">✎ แปลงเป็น SGS (แยก 7 ช่อง)</button><button type="button" data-v="trait">★ คุณลักษณะฯ (แปลง 0-3)</button></div>
+      <span><button type="button" class="p5-pill" onclick="copySgs(true)">⧉ คัดลอกพร้อมชื่อ</button> <button type="button" class="p5-pill primary" onclick="copySgs(false)">⧉ คัดลอกคะแนน (Ctrl+C)</button></span>
+    </div>
+    <p class="muted" id="sgsHint" style="font-size:13px;margin:8px 0 0"></p>
+    <div style="overflow:auto;max-height:62vh"><table class="sgs" id="sgsTbl"></table></div>
+  </div>
+</div>
+
+<script>
+(function(){
+  var ITEMS = {{ items|map(attribute='id')|list|tojson }};
+  var HALF = {{ items|map(attribute='half')|list|tojson }};
+  var ICODE = {{ items|map(attribute='code')|list|tojson }};
+  var MID = {{ st.mid_total|tojson }}, FIN = {{ st.final_total|tojson }}, ATTMIN = {{ ATT_MIN|tojson }};
+  var form = document.getElementById('p5form');
+  function num(v){ if(v===null||v===undefined) return null; v=String(v).trim().replace(',',''); if(v===''||v==='-') return null; var x=parseFloat(v); return isFinite(x)?x:null; }
+  function fmt(x){ if(x===null) return ''; return (Math.round(x*100)/100).toString(); }
+  function grade(t){ var s=[[80,'4'],[75,'3.5'],[70,'3'],[65,'2.5'],[60,'2'],[55,'1.5'],[50,'1']]; for(var i=0;i<s.length;i++) if(t>=s[i][0]) return s[i][1]; return '0'; }
+  function lvl(t){ return t>=80?3:t>=70?2:t>=50?1:0; }
+  function calcScore(tr){
+    var col=0, any=false, mid=null, fin=null, ret=null;
+    tr.querySelectorAll('input.cell').forEach(function(i){
+      var v=num(i.value), mx=parseFloat(i.dataset.max);
+      i.classList.toggle('over', v!==null && (v>mx || v<0));
+      if(v===null) return;
+      var k=i.dataset.k;
+      if(k==='item'){ col+=Math.min(v,mx); any=true; }
+      else if(k==='mid'){ mid=v; any=true; } else if(k==='final'){ fin=v; any=true; } else if(k==='retake'){ ret=v; }
+    });
+    var total=Math.round(col+Math.min(mid||0,MID)+Math.min(fin||0,FIN)+1e-9);
+    var att=num(tr.dataset.att), rm=tr.querySelector('select.rm').value;
+    var g=any?grade(total):'';
+    if(rm==='มส' || (att!==null && att<ATTMIN)) g='มส'; else if(rm==='ร') g='ร'; else if(g==='0' && ret!==null) g=ret>=50?'1':'0';
+    tr.querySelector('[data-out=collect]').textContent=fmt(col);
+    var tc=tr.querySelector('[data-out=total]'); tc.textContent=any?total:''; tc.classList.toggle('bad', g==='มส'&&any);
+    var gc=tr.querySelector('[data-out=grade]'); gc.textContent=g; gc.className='col-grade'+(g==='0'?' g0':g==='มส'?' gms':g==='ร'?' gr':'');
+    tr._g=g; tr._total=any?total:null; tr._col=col; tr._mid=mid; tr._fin=fin;
+  }
+  function calcTrait(tr){
+    ['c','r'].forEach(function(k){
+      var s=0, any=false;
+      tr.querySelectorAll('input.cell[data-k='+k+']').forEach(function(i){ var v=num(i.value); i.classList.toggle('over', v!==null&&(v>25||v<0)); if(v!==null){s+=v;any=true;} });
+      tr.querySelector('[data-out='+k+'sum]').textContent=any?fmt(s):'';
+      var l=tr.querySelector('[data-out='+k+'lv]'); var lv=any?lvl(s):''; l.textContent=lv; l.className='lv l'+lv;
+      tr['_'+k]=any?lv:null;
+    });
+  }
+  var scoreRows=[].slice.call(document.querySelectorAll('#tblScore tbody tr[data-sid]'));
+  var traitRows=[].slice.call(document.querySelectorAll('#tblTrait tbody tr[data-sid]'));
+  function dist(){
+    var order=['4','3.5','3','2.5','2','1.5','1','0','ร','มส'], c={}; order.forEach(function(g){c[g]=0});
+    scoreRows.forEach(function(tr){ if(tr._g in c) c[tr._g]++; });
+    document.getElementById('distBox').innerHTML='<span>นักเรียน <b>'+scoreRows.length+'</b></span>'+order.map(function(g){return '<span'+((g==='0'||g==='ร'||g==='มส')&&c[g]?' style="border-color:#fecaca;color:#b91c1c"':'')+'>เกรด '+g+' <b>'+c[g]+'</b></span>';}).join('');
+  }
+  scoreRows.forEach(calcScore); traitRows.forEach(calcTrait); dist();
+  var dirty=false;
+  form.addEventListener('input', function(e){
+    var tr=e.target.closest('tr[data-sid]'); if(!tr) return;
+    dirty=true; document.body.classList.add('dirty');
+    if(tr.closest('#tblScore')){ calcScore(tr); dist(); } else calcTrait(tr);
+  });
+  form.addEventListener('change', function(e){ if(e.target.classList.contains('rm')){ calcScore(e.target.closest('tr')); dist(); dirty=true; document.body.classList.add('dirty'); } });
+  form.addEventListener('submit', function(){ dirty=false; });
+  window.addEventListener('beforeunload', function(e){ if(dirty){ e.preventDefault(); e.returnValue=''; } });
+
+  // tabs
+  document.querySelectorAll('.p5-tabs button').forEach(function(b){ b.addEventListener('click', function(){
+    document.querySelectorAll('.p5-tabs button').forEach(function(x){x.classList.toggle('on', x===b)});
+    document.getElementById('pane-score').hidden = b.dataset.tab!=='score';
+    document.getElementById('pane-trait').hidden = b.dataset.tab!=='trait';
+    document.getElementById('tabField').value=b.dataset.tab; fixHeads();
+  }); });
+  function fixHeads(){ document.querySelectorAll('table.p5').forEach(function(t){ var r=t.querySelector('thead tr.r1'); if(r&&r.offsetHeight) t.style.setProperty('--h1', r.offsetHeight+'px'); }); }
+  fixHeads(); window.addEventListener('resize', fixHeads);
+
+  // keyboard navigation + paste from Excel
+  function grid(table){ return [].slice.call(table.querySelectorAll('tbody tr[data-sid]')).map(function(tr){ return [].slice.call(tr.querySelectorAll('input.cell')); }); }
+  function pos(table, input){ var g=grid(table); for(var r=0;r<g.length;r++){ var c=g[r].indexOf(input); if(c>=0) return {g:g,r:r,c:c}; } return null; }
+  document.querySelectorAll('table.p5').forEach(function(table){
+    table.addEventListener('keydown', function(e){
+      var t=e.target; if(!t.classList.contains('cell')) return;
+      var p=pos(table,t); if(!p) return; var r=p.r, c=p.c, mv=null;
+      if(e.key==='Enter'||e.key==='ArrowDown'){ mv=[r+(e.shiftKey&&e.key==='Enter'?-1:1),c]; }
+      else if(e.key==='ArrowUp'){ mv=[r-1,c]; }
+      else if(e.key==='ArrowRight' && t.selectionStart===t.value.length){ mv=[r,c+1]; }
+      else if(e.key==='ArrowLeft' && t.selectionStart===0){ mv=[r,c-1]; }
+      if(mv){ var row=p.g[mv[0]]; if(row&&row[mv[1]]){ e.preventDefault(); row[mv[1]].focus(); row[mv[1]].select(); } else if(e.key==='Enter') e.preventDefault(); }
+    });
+    table.addEventListener('paste', function(e){
+      var t=e.target; if(!t.classList.contains('cell')) return;
+      var txt=(e.clipboardData||window.clipboardData).getData('text'); if(!/[\t\n]/.test(txt.trim())) return;
+      e.preventDefault(); var p=pos(table,t);
+      txt.replace(/\r/g,'').replace(/\n$/,'').split('\n').forEach(function(line,i){
+        var row=p.g[p.r+i]; if(!row) return;
+        line.split('\t').forEach(function(v,j){ var cell=row[p.c+j]; if(cell){ cell.value=v.trim(); } });
+        var tr=row[0].closest('tr'); if(table.id==='tblScore') calcScore(tr); else calcTrait(tr);
+      });
+      dist(); dirty=true; document.body.classList.add('dirty');
+    });
+    table.addEventListener('focusin', function(e){ if(e.target.classList.contains('cell')) e.target.select(); });
+  });
+  // fill whole class (traits)
+  document.querySelectorAll('[data-fill]').forEach(function(f){
+    f.addEventListener('keydown', function(e){ if(e.key!=='Enter') return; e.preventDefault();
+      var v=num(f.value); if(v===null) return; var k=f.dataset.fill;
+      traitRows.forEach(function(tr){ var i=tr.querySelector('input[name$="_'+k+'"]'); if(i && num(i.value)===null){ i.value=fmt(Math.min(v,25)); } calcTrait(tr); });
+      f.value=''; dirty=true; document.body.classList.add('dirty');
+    });
+  });
+
+  // ---------------- SGS ----------------
+  var view='sgs';
+  function slots(){ // ก่อนกลางภาค → ย่อย 1-3, หลังกลางภาค → ย่อย 4-5 (เกินช่องรวมไว้ช่องสุดท้ายของช่วง)
+    var a=[[],[],[],[],[]], h1=[], h2=[];
+    ITEMS.forEach(function(id,i){ (HALF[i]===2?h2:h1).push(i); });
+    h1.forEach(function(ix,j){ a[Math.min(j,2)].push(ix); });
+    h2.forEach(function(ix,j){ a[3+Math.min(j,1)].push(ix); });
+    return a;
+  }
+  function itemVals(tr){ return [].slice.call(tr.querySelectorAll('input.cell[data-k=item]')).map(function(i){ return num(i.value); }); }
+  function build(){
+    var tb=document.getElementById('sgsTbl'), h='', hint='';
+    var names=scoreRows.map(function(tr){ var n=tr.querySelector('.c-name'); return [n.querySelector('small').textContent, n.querySelector('b').textContent]; });
+    var cols=[], data=[];
+    if(view==='sgs'){
+      var sl=slots();
+      cols=['ย่อย 1','ย่อย 2','ย่อย 3','กลางภาค','ย่อย 4','ย่อย 5','ปลายภาค'];
+      hint='ย่อย 1–3 = คะแนนเก็บก่อนกลางภาค, ย่อย 4–5 = หลังกลางภาค · '+sl.map(function(s,i){ return 'ย่อย '+(i+1)+': '+(s.map(function(ix){return ICODE[ix];}).join('+')||'-'); }).join(' · ');
+      scoreRows.forEach(function(tr){ var iv=itemVals(tr);
+        var sub=sl.map(function(s){ if(!s.length) return null; var t=0, any=false; s.forEach(function(ix){ if(iv[ix]!==null){t+=iv[ix];any=true;} }); return any?t:null; });
+        data.push([sub[0],sub[1],sub[2],tr._mid,sub[3],sub[4],tr._fin].concat([tr._total, tr._g]));
+      });
+      cols=cols.concat(['รวม','เกรด']);
+    } else if(view==='pp5'){
+      cols=ICODE.concat(['รวมเก็บ','กลางภาค','ปลายภาค','รวม','เกรด']);
+      scoreRows.forEach(function(tr){ data.push(itemVals(tr).concat([tr._col,tr._mid,tr._fin,tr._total,tr._g])); });
+    } else {
+      cols=['คุณลักษณะฯ (0-3)','อ่าน คิดวิเคราะห์ เขียน (0-3)'];
+      traitRows.forEach(function(tr){ data.push([tr._c, tr._r]); });
+    }
+    h='<tr><th>ที่</th><th>รหัสนักเรียน</th><th>ชื่อ-สกุล</th>'+cols.map(function(c){return '<th>'+c+'</th>';}).join('')+'</tr>';
+    data.forEach(function(d,i){ h+='<tr><td>'+(i+1)+'</td><td>'+names[i][0]+'</td><td style="text-align:left">'+names[i][1]+'</td>'+d.map(function(v,j){
+      var cls=view==='sgs'?(j===3?' mid':(j===6?' fin':'')):''; return '<td class="num'+cls+'">'+(v===null||v===undefined?'':(typeof v==='number'?fmt(v):v))+'</td>'; }).join('')+'</tr>'; });
+    tb.innerHTML=h; document.getElementById('sgsHint').textContent=hint;
+    tb._data=data; tb._names=names; tb._n=view==='sgs'?7:cols.length;
+  }
+  window.openSgs=function(){ scoreRows.forEach(calcScore); traitRows.forEach(calcTrait); build(); document.getElementById('sgsModal').classList.add('open'); };
+  window.closeSgs=function(){ document.getElementById('sgsModal').classList.remove('open'); };
+  document.querySelectorAll('.p5-seg button').forEach(function(b){ b.addEventListener('click', function(){ view=b.dataset.v; document.querySelectorAll('.p5-seg button').forEach(function(x){x.classList.toggle('on',x===b)}); build(); }); });
+  window.copySgs=function(withNames){
+    var tb=document.getElementById('sgsTbl');
+    var lines=tb._data.map(function(d,i){ var row=d.slice(0,tb._n).map(function(v){ return v===null||v===undefined?'':(typeof v==='number'?fmt(v):v); });
+      return (withNames?[i+1, tb._names[i][0], tb._names[i][1]].concat(row):row).join('\t'); });
+    var txt=lines.join('\n');
+    (navigator.clipboard?navigator.clipboard.writeText(txt):Promise.reject()).then(done).catch(function(){ var ta=document.createElement('textarea'); ta.value=txt; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); done(); });
+    function done(){ var t=document.querySelector('#sgsModal .tip'); t.innerHTML='✅ คัดลอกแล้ว '+lines.length+' แถว — ไปที่โปรแกรม SGS แล้วกด <b>Ctrl+V</b> ในช่องแรก'; }
+  };
+  document.addEventListener('keydown', function(e){ if(e.key==='Escape') closeSgs(); });
+})();
+</script>
+{% endblock %}

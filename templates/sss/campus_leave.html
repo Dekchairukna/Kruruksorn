@@ -1,0 +1,85 @@
+{% extends 'base.html' %}
+{% block content %}
+{% include 'sss/_style.html' %}
+<div class="page-head">
+  <div>
+    <h1>บันทึกอนุญาตออกนอกบริเวณโรงเรียน</h1>
+    <p class="muted">{{ thai_date_label(today) }}</p>
+  </div>
+  <div class="actions-row"><a class="btn secondary" href="{{ url_for('campus_leave_history') }}">ประวัติ/ส่งออก Excel</a></div>
+</div>
+
+<div class="sss-stats">
+  <div class="sss-stat"><small>ยังไม่กลับเข้าโรงเรียน</small><b class="{{ 'sss-low' if stats.out_now }}">{{ stats.out_now }}</b></div>
+  <div class="sss-stat"><small>วันนี้</small><b>{{ stats.today }}</b><small>ครั้ง</small></div>
+  <div class="sss-stat"><small>เดือนนี้</small><b>{{ stats.month }}</b><small>ครั้ง</small></div>
+  <div class="sss-stat"><small>ภาคเรียนนี้</small><b>{{ stats.term }}</b><small>ครั้ง</small></div>
+</div>
+
+<section class="card">
+  <h3>1) ค้นหานักเรียน</h3>
+  <form method="get" class="sss-filter">
+    <label>รหัสนักเรียน / ชื่อ<input name="q" value="{{ q }}" autofocus placeholder="พิมพ์รหัสหรือชื่อ"></label>
+    <button class="btn secondary" type="submit">ค้นหา</button>
+  </form>
+  {% if q and not found %}<p>ไม่พบนักเรียน "{{ q }}"</p>{% endif %}
+  {% if found %}
+  <div class="sss-pick-list">
+    {% for s in found %}
+    <a class="sss-pick" style="text-decoration:none;color:inherit" href="{{ url_for('campus_leave', q=q, student_id=s.id) }}">
+      <div><b>{{ s.full_name }}</b><div class="meta">{{ s.username }}{% if rooms_of.get(s.id) %} · {{ rooms_of.get(s.id) }}{% endif %}</div></div>
+    </a>
+    {% endfor %}
+  </div>
+  {% endif %}
+</section>
+
+{% if chosen %}
+<form method="post" class="card form-grid">
+  <h3 class="full">2) บันทึกการขออนุญาต: {{ chosen.full_name }} ({{ chosen.username }}{% if chosen_room %} · {{ chosen_room.name }}{% endif %})</h3>
+  <input type="hidden" name="student_id" value="{{ chosen.id }}"><input type="hidden" name="q" value="{{ q }}">
+  <label class="full">ขออนุญาตไป (สถานที่)<input name="destination" required placeholder="เช่น โรงพยาบาลน้ำพอง / กลับบ้าน"></label>
+  <label class="full">เหตุผล<input name="reason" placeholder="เช่น ไม่สบาย ผู้ปกครองมารับ"></label>
+  <label>เวลาออก<input type="time" name="out_time" value="{{ now_time }}"></label>
+  <label>คาดว่าจะกลับ (ถ้ามี)<input type="time" name="expect_return"></label>
+  <label class="full">หมายเหตุ (เช่น ผู้มารับ/ติดต่อผู้ปกครองแล้ว)<input name="note"></label>
+  {% if chosen.guardian_phone %}<p class="full muted">เบอร์ผู้ปกครอง: {{ chosen.guardian_phone }}</p>{% endif %}
+  <div class="full"><button class="btn" type="submit">บันทึกอนุญาตออก</button></div>
+</form>
+{% endif %}
+
+<section class="card">
+  <h3>นักเรียนที่ยังไม่กลับเข้าโรงเรียน</h3>
+  <div class="table-wrap"><table>
+    <tr><th>ออกเมื่อ</th><th>นักเรียน</th><th>ห้อง</th><th>ไปที่</th><th>ผู้อนุญาต</th><th></th></tr>
+    {% for r in out_now %}
+    <tr>
+      <td data-label="ออกเมื่อ">{{ thai_date_short(r.out_at.date()) }} {{ r.out_at.strftime('%H:%M') }}{% if r.expect_return %}<br><small class="sss-muted">คาดกลับ {{ r.expect_return }}</small>{% endif %}</td>
+      <td data-label="นักเรียน">{{ r.student.full_name if r.student else '-' }}</td>
+      <td data-label="ห้อง">{{ r.classroom.name if r.classroom else '-' }}</td>
+      <td data-label="ไปที่">{{ r.destination }}{% if r.reason %}<br><small class="sss-muted">{{ r.reason }}</small>{% endif %}</td>
+      <td data-label="ผู้อนุญาต">{{ r.approved_by.full_name if r.approved_by else '-' }}</td>
+      <td><form method="post" action="{{ url_for('campus_leave_return', leave_id=r.id) }}"><button class="btn small success-btn" type="submit">บันทึกกลับเข้า</button></form></td>
+    </tr>
+    {% else %}<tr><td colspan="6">ไม่มี</td></tr>{% endfor %}
+  </table></div>
+</section>
+
+<section class="card">
+  <h3>รายการวันนี้</h3>
+  <div class="table-wrap"><table>
+    <tr><th>เวลาออก</th><th>เวลากลับ</th><th>นักเรียน</th><th>ห้อง</th><th>ไปที่</th><th>ผู้อนุญาต</th><th></th></tr>
+    {% for r in today_rows %}
+    <tr>
+      <td data-label="ออก">{{ r.out_at.strftime('%H:%M') }}</td>
+      <td data-label="กลับ">{{ r.returned_at.strftime('%H:%M') if r.returned_at else '—' }}</td>
+      <td data-label="นักเรียน">{{ r.student.full_name if r.student else '-' }}</td>
+      <td data-label="ห้อง">{{ r.classroom.name if r.classroom else '-' }}</td>
+      <td data-label="ไปที่">{{ r.destination }}</td>
+      <td data-label="ผู้อนุญาต">{{ r.approved_by.full_name if r.approved_by else '-' }}</td>
+      <td>{% if current_user.role=='admin' or r.approved_by_id==current_user.id %}<form method="post" action="{{ url_for('campus_leave_delete', leave_id=r.id) }}"><button class="btn small danger-btn" type="submit" data-confirm="ลบรายการนี้?">ลบ</button></form>{% endif %}</td>
+    </tr>
+    {% else %}<tr><td colspan="7">ยังไม่มีรายการวันนี้</td></tr>{% endfor %}
+  </table></div>
+</section>
+{% endblock %}

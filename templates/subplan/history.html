@@ -1,0 +1,30 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-head"><div><h1>สถิติการสอนแทน</h1><p class="muted">{{ thai_full_date(start) }} – {{ thai_full_date(end) }} · ทั้งหมด {{ total }} คาบ · ไม่ได้จัดสอนแทน {{ uncovered }} คาบ</p></div></div>
+{% include 'subplan/_style.html' %}
+<section class="card">
+  <form method="get" class="sp-filter">
+    <label>เลือกเดือน<input type="month" name="month" value="{{ request.args.get('month','') }}"></label>
+    <button class="btn small secondary" type="submit">ดู</button>
+    <a class="btn small secondary" href="{{ url_for('subplan_history') }}">ทั้งภาคเรียน</a>
+  </form>
+  <h3>จำนวนครั้งต่อครู</h3>
+  <div class="table-wrap"><table>
+    <tr><th>ครู</th><th>สอนแทนให้คนอื่น (คาบ)</th><th>มีคนสอนแทนให้ (คาบ)</th></tr>
+    {% for t in teachers|sort(attribute='full_name') %}{% if sub_count.get(t.id) or absent_count.get(t.id) %}
+    <tr><td>{{ t.full_name }}</td><td><b>{{ sub_count.get(t.id,0) }}</b></td><td>{{ absent_count.get(t.id,0) }}</td></tr>
+    {% endif %}{% endfor %}
+  </table></div>
+</section>
+<section class="card">
+  <h3>รายวัน</h3>
+  <div class="table-wrap"><table>
+    <tr><th>วันที่</th><th>ครูไม่มา</th><th>คาบที่ต้องสอนแทน</th><th>จัดแล้ว</th><th></th></tr>
+    {% for x in days %}{% set s = per_day[x.id] %}
+    <tr><td>{{ thai_full_date(x.sub_date) }}</td><td>{{ s.absent }}</td><td>{{ s.periods }}</td>
+      <td>{% if s.periods and s.covered < s.periods %}<span class="sp-badge red">{{ s.covered }}/{{ s.periods }}</span>{% else %}{{ s.covered }}/{{ s.periods }}{% endif %}</td>
+      <td><a class="btn small secondary" href="{{ url_for('subplan_day', date=x.sub_date.isoformat()) }}">เปิด</a> <a class="btn small secondary" href="{{ url_for('subplan_print', date=x.sub_date.isoformat()) }}" target="_blank">พิมพ์</a></td></tr>
+    {% else %}<tr><td colspan="5">ยังไม่มีข้อมูล</td></tr>{% endfor %}
+  </table></div>
+</section>
+{% endblock %}

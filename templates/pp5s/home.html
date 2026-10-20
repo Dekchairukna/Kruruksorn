@@ -1,0 +1,29 @@
+{% extends 'base.html' %}
+{% block content %}
+{% include 'pp5s/_style.html' %}
+<div class="p5-head">
+  <div><h1>📝 บันทึกคะแนน (ปพ.5)</h1><p class="muted">{{ sem.name if sem else '' }} · เลือกวิชาและห้องเพื่อกรอกคะแนนตามรูปแบบ ปพ.5</p></div>
+  <div class="p5-tools"><a class="p5-pill" href="{{ url_for('pp5s_risk') }}">⚠️ นักเรียนกลุ่มเสี่ยง (0, ร, มส.)</a></div>
+</div>
+<div class="p5-note">
+  <ol style="margin:0;padding-left:20px">
+    <li><b>ตั้งค่าโครงสร้างวิชา</b> — สัดส่วนคะแนน เก็บ : กลางภาค : ปลายภาค และตัวชี้วัด/ชิ้นงานของคะแนนเก็บ (ทำครั้งเดียวต่อวิชา ใช้กับทุกห้อง)</li>
+    <li><b>บันทึกคะแนน</b> — กรอกคะแนนในตาราง ระบบรวมคะแนนและตัดเกรดให้ทันที เวลาเรียนต่ำกว่า 80% ขึ้น มส. อัตโนมัติ</li>
+    <li><b>คุณลักษณะฯ / อ่าน คิดวิเคราะห์ เขียน</b> — 4 ช่วง ช่วงละ 25 คะแนน แปลงเป็นระดับ 0–3</li>
+    <li><b>SGS / พิมพ์ ปพ.5</b> — คัดลอกคะแนนไปวางในโปรแกรม SGS หรือพิมพ์แบบ ปพ.5</li>
+  </ol>
+</div>
+<div class="table-wrap"><table>
+  <tr><th>รายวิชา</th><th>ห้อง</th><th>โครงสร้างวิชา</th><th></th></tr>
+  {% for p in pairs %}{% set code, nm = split_subject(p.subject.name) %}{% set s = structs.get(p.subject_id) %}
+  <tr>
+    <td data-label="รายวิชา"><b>{{ code }}</b> {{ nm }}</td>
+    <td data-label="ห้อง">{{ p.classroom.name }}</td>
+    <td data-label="โครงสร้างวิชา">{% if s %}<span class="p5-badge">{{ fmt(s.collect_total) }}:{{ fmt(s.mid_total) }}:{{ fmt(s.final_total) }}</span>{% else %}<span class="p5-badge gray">ยังไม่ตั้งค่า</span>{% endif %}
+      <a class="btn small secondary" href="{{ url_for('pp5s_structure', subject_id=p.subject_id, room=p.classroom_id) }}">⚙️ ตั้งค่า</a></td>
+    <td><a class="btn small" href="{{ url_for('pp5s_entry', subject_id=p.subject_id, classroom_id=p.classroom_id) }}">✏️ บันทึกคะแนน</a>
+      <a class="btn small secondary" href="{{ url_for('pp5s_print', subject_id=p.subject_id, classroom_id=p.classroom_id) }}" target="_blank">🖨 ปพ.5</a></td>
+  </tr>
+  {% else %}<tr><td colspan="4">ยังไม่มีรายวิชาที่ผูกกับห้องเรียน</td></tr>{% endfor %}
+</table></div>
+{% endblock %}

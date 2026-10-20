@@ -94,6 +94,17 @@
     <h2>กรอกคะแนน {{ period_room_text }}</h2>
     <p>{% if is_group_period is defined and is_group_period %}กรอกคะแนนคาบเรียนของกลุ่มห้องนี้ในหน้าเดียว{% else %}กรอกคะแนนในคาบเรียน แล้วไปรวมกับคะแนนตัดเกรด{% endif %}</p>
   </a>
+  {% if period_grade_groups is defined %}
+  <a class="period-action-card grade-action-card" href="#grade-entry">
+    <div class="period-icon">🎓</div>
+    <h2>ตัดเกรด {{ period_room_text }}</h2>
+    <p>กรอกคะแนนกลางภาค ปลายภาค และจิตพิสัยของทุกห้องในคาบนี้ได้ตรงหน้านี้</p>
+  </a>
+  {% else %}
+  <a class="period-action-card grade-action-card" href="{{ url_for('grades', subject_id=row.subject_id, classroom_id=row.classroom_id) }}">
+    <div class="period-icon">🎓</div><h2>ตัดเกรด {{ period_room_text }}</h2><p>เปิดสมุดคะแนนและตัดเกรดของห้องนี้</p>
+  </a>
+  {% endif %}
   {% endif %}
 
   {% if lesson %}
@@ -194,8 +205,26 @@
   {% endif %}
 </section>
 
+{% if current_user.role in ['teacher','admin'] and period_grade_groups is defined %}
+<section class="card period-grade-entry" id="grade-entry">
+  <div class="section-head-row"><div><h2>🎓 คีย์คะแนนตัดเกรด</h2><p class="muted">คะแนนอัตโนมัติจากงาน แบบทดสอบ เวลาเรียน และคะแนนในคาบยังคำนวณตามระบบเดิม</p></div><a class="btn secondary" href="{{ url_for('grades', subject_id=row.subject_id, classroom_id=row.classroom_id) }}">เปิดสมุดคะแนนเต็ม</a></div>
+  <form method="post" action="{{ url_for('schedule_period_group_grades', schedule_id=row.id) }}">
+    <input type="hidden" name="date" value="{{ selected_date.isoformat() }}">
+    {% for group in period_grade_groups %}
+    <h3 class="period-grade-room">{{ group.room.name }} · {{ group.rows|length }} คน</h3>
+    <div class="table-wrap period-grade-table-wrap"><table class="period-grade-table">
+      <tr><th>ที่</th><th>นักเรียน</th><th>กลางภาค</th><th>ปลายภาค</th><th>จิตพิสัย</th><th>รวมปัจจุบัน</th><th>เกรด</th></tr>
+      {% for score in group.rows %}<tr><td>{{ loop.index }}</td><td class="student-name-cell">{{ score.student.full_name }}</td><td><input name="midterm_{{ score.student.id }}" type="number" min="0" max="100" step="0.1" value="{{ score.manual.midterm }}"></td><td><input name="final_{{ score.student.id }}" type="number" min="0" max="100" step="0.1" value="{{ score.manual.final }}"></td><td><input name="behavior_{{ score.student.id }}" type="number" min="0" max="100" step="0.1" value="{{ score.manual.behavior }}"></td><td><b>{{ score.total }}</b></td><td><b>{{ score.grade }}</b></td></tr>{% endfor %}
+    </table></div>
+    {% endfor %}
+    <div class="sticky-save-bar"><button class="save-attendance-btn" type="submit">บันทึกคะแนนตัดเกรดทุกห้อง</button></div>
+  </form>
+</section>
+{% endif %}
+
 <style>
 .group-period-note{margin-top:10px;padding:10px 12px;border-radius:14px;background:#eff6ff;border:1px solid #bfdbfe;color:#1e40af;font-weight:800}.group-period-note span{display:inline-block;margin:2px 4px;padding:3px 8px;border-radius:999px;background:#dbeafe}.period-summary-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-top:12px}.period-summary-grid div{background:#f8fafc;border:1px solid #e5e7eb;border-radius:14px;padding:10px}.period-summary-grid b{display:block;color:#64748b;font-size:12px}.period-summary-grid span{font-weight:800}.period-topic{margin-top:12px}.period-action-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px;margin:18px 0}.period-action-card{display:block;text-decoration:none;color:inherit;background:#fff;border:1px solid #e5e7eb;border-radius:18px;padding:16px;box-shadow:0 8px 24px rgba(15,23,42,.06)}.period-action-card:hover{transform:translateY(-1px);box-shadow:0 10px 28px rgba(15,23,42,.09)}.period-action-card h2{margin:4px 0 6px}.period-action-card p{color:#64748b;margin:0 0 8px}.period-icon{font-size:30px}.list-card{display:flex;flex-direction:column;gap:8px}.warning-card{grid-column:1/-1;border-color:#fed7aa;background:#fff7ed}.muted-card{border-color:#e5e7eb;background:#f8fafc}.period-overview-card .form-row{align-items:end}
 .current-content-box{margin-top:14px;border-radius:18px;padding:14px 16px;display:flex;justify-content:space-between;align-items:flex-start;gap:12px;border:1px solid #e5e7eb;background:#f8fafc}.current-content-box h2{margin:4px 0;font-size:20px}.current-content-box p{margin:3px 0}.current-content-box.is-live{border-color:#86efac;background:#f0fdf4}.current-content-box.is-hidden{border-color:#fecaca;background:#fff7f7}.preline{white-space:pre-line}
+.grade-action-card{border-color:#c4b5fd;background:linear-gradient(145deg,#fff,#f5f3ff)}.period-grade-entry{border-top:5px solid #7c3aed!important}.period-grade-room{margin:20px 0 8px;padding:8px 12px;border-radius:12px;background:#ede9fe;color:#5b21b6}.period-grade-table{min-width:780px}.period-grade-table th{text-align:center}.period-grade-table td{text-align:center}.period-grade-table .student-name-cell{text-align:left!important;min-width:220px}.period-grade-table input{width:86px;min-width:86px;text-align:center;font-weight:800}.period-grade-table tr:focus-within td{background:#fffbea}
 </style>
 {% endblock %}

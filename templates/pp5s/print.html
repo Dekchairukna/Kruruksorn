@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+{% set code, nm = split_subject(subject.name) %}
+<title>ปพ.5 {{ code }} {{ nm }} {{ room.name }}</title>
+<link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;700&display=swap" rel="stylesheet">
+<style>
+@page{size:A4;margin:12mm}
+@page land{size:A4 landscape;margin:10mm}
+body{font-family:"Sarabun","TH Sarabun New",Tahoma,sans-serif;margin:0;background:#eef2f6;color:#111;font-size:14px}
+.bar{position:sticky;top:0;z-index:5;background:#1e3a5f;color:#fff;display:flex;align-items:center;justify-content:space-between;padding:10px 6vw;gap:12px;flex-wrap:wrap}
+.bar .t{display:flex;align-items:center;gap:12px}
+.bar .logo{background:#f472b6;color:#fff;font-weight:800;border-radius:10px;padding:8px 10px}
+.bar h1{font-size:19px;margin:0}.bar small{color:#f9a8d4}
+.bar button{font:inherit;font-weight:700;border:0;border-radius:10px;padding:9px 16px;cursor:pointer}
+.bar .pr{background:#f472b6;color:#fff}.bar .cl{background:#e2e8f0;color:#1e293b}
+.meta{background:#fff;padding:10px 6vw;display:flex;gap:18px;flex-wrap:wrap;border-bottom:1px solid #e2e8f0;font-weight:700}
+.tabs{background:#fff;padding:0 6vw;display:flex;gap:6px;flex-wrap:wrap;border-bottom:1px solid #e2e8f0}
+.tabs button{font:inherit;font-weight:700;border:0;background:#e9eef5;color:#334155;padding:10px 18px;border-radius:12px 12px 0 0;cursor:pointer;margin-top:8px}
+.tabs button.on{background:#1e3a5f;color:#fff}
+.sheet{background:#fff;max-width:1100px;margin:18px auto;padding:22px 28px;border-radius:16px;box-shadow:0 6px 20px rgba(15,23,42,.06)}
+.sheet h2{text-align:center;margin:6px 0 2px;font-size:22px;color:#1e3a5f}
+.sheet h3{font-size:16px;margin:16px 0 8px;color:#1e3a5f}
+.center{text-align:center}
+.cover-logo{height:90px;display:block;margin:0 auto 6px}
+.info{display:grid;grid-template-columns:1fr 1.3fr;gap:24px;margin-top:18px}
+.info dl{display:grid;grid-template-columns:150px 1fr;margin:0}
+.info dt,.info dd{margin:0;padding:8px 0;border-bottom:1px dashed #cbd5e1}
+.info dt{font-weight:700}.info dd{font-weight:700;color:#1e293b}
+table{border-collapse:collapse;width:100%}
+th,td{border:1px solid #64748b;padding:4px 5px;text-align:center;font-size:13px}
+th{background:#1e3a5f;color:#fff;font-weight:700}
+th.sub{background:#2f5583}
+td.l{text-align:left}
+.red{color:#dc2626;font-weight:700}
+.sign{display:grid;grid-template-columns:1fr 1fr;gap:28px 40px;margin-top:30px}
+.sign div{text-align:center;line-height:1.9}
+.foot{text-align:center;color:#94a3b8;font-size:12px;margin:12px 0 30px}
+.small{font-size:12px;color:#475569}
+@media screen{.sheet[hidden]{display:none}}
+@media print{
+  body{background:#fff;font-size:12px}.bar,.meta,.tabs,.foot{display:none}
+  .sheet{display:block!important;box-shadow:none;border-radius:0;margin:0;padding:0;max-width:none;page-break-after:always}
+  .sheet:last-of-type{page-break-after:auto}
+  .sheet.land{page:land}
+  th{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  th,td{font-size:11px;padding:3px 4px}
+}
+</style></head><body>
+<div class="bar">
+  <div class="t"><span class="logo">ปพ</span><div><h1>ปพ.5 บันทึกผลการพัฒนาคุณภาพผู้เรียน</h1><small>{{ nm }} — {{ room.name }} — {{ sem.name if sem else '' }}</small></div></div>
+  <div><button class="pr" onclick="window.print()">🖨 สั่งพิมพ์ทั้งชุด</button> <button class="cl" onclick="window.close()">✕ ปิดหน้าต่าง</button></div>
+</div>
+<div class="meta">
+  <span>🏫 {{ setting.school_name if setting and setting.school_name else '' }}</span>
+  <span>📚 {{ nm }} ({{ code }})</span><span>👩‍🏫 {{ teacher.full_name }}</span><span>👥 {{ room.name }}</span><span style="color:#15803d">📅 {{ sem.name if sem else '' }}</span>
+</div>
+<div class="tabs">
+  <button data-s="s1" class="on">📄 ปก/ข้อมูลวิชา</button>
+  <button data-s="s2">☰ รายละเอียดตัวชี้วัด</button>
+  <button data-s="s3">📊 ผลการเรียนรู้</button>
+  <button data-s="s4">📅 เวลาเรียน</button>
+  <button data-s="s5">✔ การประเมิน</button>
+</div>
+
+{# ---------- ปก ---------- #}
+<section class="sheet" id="s1">
+  {% if setting and setting.logo_path %}<img class="cover-logo" src="{{ url_for('uploaded_file', filename=setting.logo_path) }}" alt="">{% endif %}
+  <h2>แบบบันทึกผลการพัฒนาคุณภาพผู้เรียน</h2>
+  <div class="center small">ตามหลักสูตรแกนกลางการศึกษาขั้นพื้นฐาน พุทธศักราช 2551</div>
+  <h2 style="font-size:20px;margin-top:10px">{{ setting.school_name if setting and setting.school_name else '' }}</h2>
+  <div class="info">
+    <dl>
+      <dt>รายวิชา:</dt><dd>{{ nm }}</dd>
+      <dt>รหัสวิชา:</dt><dd>{{ code or '-' }}</dd>
+      <dt>หน่วยกิต / เวลาเรียน:</dt><dd>{{ subject.credit or '-' }} นก. / {{ total_periods }} คาบ</dd>
+      <dt>ชั้น/ห้อง:</dt><dd>{{ room.name }}</dd>
+      <dt>ภาคเรียน/ปีการศึกษา:</dt><dd>{{ (sem.term_no ~ ' / ' ~ sem.academic_year) if sem else '-' }}</dd>
+      <dt>ครูผู้สอน:</dt><dd>{{ teacher.full_name }}</dd>
+      <dt>ครูที่ปรึกษาคนที่ 1:</dt><dd>{{ st.advisor1 or (room.teacher.full_name if room.teacher else '.................................................') }}</dd>
+      <dt>ครูที่ปรึกษาคนที่ 2:</dt><dd>{{ st.advisor2 or '.................................................' }}</dd>
+    </dl>
+    <div>
+      <h3>◔ สรุปผลสัมฤทธิ์ทางการเรียน</h3>
+      <table><tr><th rowspan="2">นร. ทั้งหมด</th><th colspan="{{ GRADE_ORDER|length }}">จำนวนนักเรียนที่ได้รับระดับผลการเรียน</th></tr>
+        <tr>{% for gname in GRADE_ORDER %}<th class="sub">{{ gname }}</th>{% endfor %}</tr>
+        <tr><td><b>{{ rows|length }}</b></td>{% for gname in GRADE_ORDER %}<td class="{{ 'red' if gname in ['0','ร','มส'] }}">{{ dist[gname] }}</td>{% endfor %}</tr>
+        <tr><td class="small">ร้อยละ</td>{% for gname in GRADE_ORDER %}<td class="small">{{ '%.1f'|format(dist[gname] * 100 / rows|length) if rows else '0' }}</td>{% endfor %}</tr>
+      </table>
+      <h3>☑ สรุปการประเมินคุณลักษณะฯ และ อ่านคิดวิเคราะห์เขียน</h3>
+      <table><tr><th rowspan="2">นร. ทั้งหมด</th><th colspan="4">คุณลักษณะอันพึงประสงค์</th><th colspan="4">อ่าน คิดวิเคราะห์ เขียน</th></tr>
+        <tr>{% for _ in range(2) %}<th class="sub">ดีเยี่ยม (3)</th><th class="sub">ดี (2)</th><th class="sub">ผ่าน (1)</th><th class="sub">ไม่ผ่าน (0)</th>{% endfor %}</tr>
+        <tr><td><b>{{ rows|length }}</b></td>{% for d in [cdist, rdist] %}<td>{{ d[3] }}</td><td>{{ d[2] }}</td><td>{{ d[1] }}</td><td class="{{ 'red' if d[0] }}">{{ d[0] }}</td>{% endfor %}</tr>
+      </table>
+    </div>
+  </div>
+  <div class="sign">
+    <div>ลงชื่อ ..................................................... ครูผู้สอน<br>( {{ teacher.full_name }} )</div>
+    <div>ลงชื่อ ..................................................... หัวหน้ากลุ่มสาระการเรียนรู้<br>( ..................................................... )</div>
+    <div>ลงชื่อ ..................................................... หัวหน้างานวัดผล<br>( ..................................................... )</div>
+    <div>ลงชื่อ ..................................................... รองผู้อำนวยการฝ่ายวิชาการ<br>( {{ setting.deputy_director_name if setting and setting.deputy_director_name else '.....................................................' }} )</div>
+  </div>
+  <div class="center" style="margin-top:24px;line-height:2">
+    ☐ อนุมัติ &nbsp;&nbsp; ☐ ไม่อนุมัติ<br>
+    ลงชื่อ ..................................................... ผู้อำนวยการโรงเรียน<br>( {{ setting.director_name if setting and setting.director_name else '.....................................................' }} )
+  </div>
+</section>
+
+{# ---------- ตัวชี้วัด ---------- #}
+<section class="sheet" id="s2" hidden>
+  <h2>รายละเอียดโครงสร้างรายวิชาและตัวชี้วัด</h2>
+  <div class="center small">{{ code }} {{ nm }} · ห้อง {{ room.name }} · สัดส่วน เก็บ : กลางภาค : ปลายภาค = {{ fmt(st.collect_total) }} : {{ fmt(st.mid_total) }} : {{ fmt(st.final_total) }}</div>
+  <h3>คะแนนเก็บ ({{ fmt(st.collect_total) }} คะแนน)</h3>
+  <table><tr><th style="width:40px">ที่</th><th style="width:90px">รหัส</th><th>ชิ้นงาน / ตัวชี้วัด</th><th>รายละเอียด / จุดประสงค์</th><th style="width:110px">ช่วง</th><th style="width:80px">คะแนนเต็ม</th></tr>
+    {% for it in items %}<tr><td>{{ loop.index }}</td><td>{{ it.code }}</td><td class="l">{{ it.name }}</td><td class="l">{{ it.detail or '' }}</td><td>{{ 'หลังกลางภาค' if it.half==2 else 'ก่อนกลางภาค' }}</td><td>{{ fmt(it.max_score) }}</td></tr>{% endfor %}
+    <tr><td colspan="5" class="l"><b>รวมคะแนนเก็บ</b></td><td><b>{{ fmt(items|sum(attribute='max_score')) }}</b></td></tr>
+  </table>
+  <h3>สอบกลางภาค ({{ fmt(st.mid_total) }} คะแนน) และ สอบปลายภาค ({{ fmt(st.final_total) }} คะแนน)</h3>
+  <table><tr><th style="width:140px">การสอบ</th><th style="width:160px">ตัวชี้วัด</th><th>รายละเอียด</th><th style="width:80px">คะแนนเต็ม</th></tr>
+    <tr><td>กลางภาค</td><td>{{ st.mid_codes or '-' }}</td><td class="l">{{ st.mid_detail or '' }}</td><td>{{ fmt(st.mid_total) }}</td></tr>
+    <tr><td>ปลายภาค</td><td>{{ st.final_codes or '-' }}</td><td class="l">{{ st.final_detail or '' }}</td><td>{{ fmt(st.final_total) }}</td></tr>
+  </table>
+  <h3>เกณฑ์การตัดสินผลการเรียน</h3>
+  <table><tr>{% for a,b in [('80–100','4'),('75–79','3.5'),('70–74','3'),('65–69','2.5'),('60–64','2'),('55–59','1.5'),('50–54','1'),('0–49','0')] %}<th class="sub">{{ a }}</th>{% endfor %}</tr>
+    <tr>{% for b in ['4','3.5','3','2.5','2','1.5','1','0'] %}<td><b>{{ b }}</b></td>{% endfor %}</tr></table>
+  <p class="small">ร = รอการตัดสิน/ยังตัดสินผลไม่ได้ · มส = ไม่มีสิทธิ์สอบ (เวลาเรียนไม่ถึงร้อยละ {{ ATT_MIN|int }})</p>
+</section>
+
+{# ---------- ผลการเรียนรู้ ---------- #}
+<section class="sheet land" id="s3" hidden>
+  <h2>บันทึกผลการเรียนรู้</h2>
+  <div class="center small">{{ code }} {{ nm }} · ห้อง {{ room.name }} · {{ sem.name if sem else '' }}</div>
+  <table style="margin-top:10px">
+    <tr><th rowspan="2" style="width:30px">ที่</th><th rowspan="2" style="width:62px">รหัส</th><th rowspan="2">ชื่อ-สกุล</th>
+      {% for it in items %}<th class="sub">{{ it.code }}</th>{% endfor %}<th rowspan="2">รวมเก็บ<br>({{ fmt(st.collect_total) }})</th><th rowspan="2">กลางภาค<br>({{ fmt(st.mid_total) }})</th><th rowspan="2">ปลายภาค<br>({{ fmt(st.final_total) }})</th><th rowspan="2">รวม<br>(100)</th><th rowspan="2">ซ่อม</th><th rowspan="2">เกรด</th></tr>
+    <tr>{% for it in items %}<th class="sub">({{ fmt(it.max_score) }})</th>{% endfor %}</tr>
+    {% for r in rows %}<tr><td>{{ r.no }}</td><td>{{ r.sno }}</td><td class="l">{{ r.student.full_name }}</td>
+      {% for v in r['items'] %}<td>{{ fmt(v) }}</td>{% endfor %}
+      <td><b>{{ fmt(r.collect) }}</b></td><td>{{ fmt(r.mid) }}</td><td>{{ fmt(r.final) }}</td><td><b>{{ r.total if r.any else '' }}</b></td><td>{{ fmt(r.retake) }}</td>
+      <td class="{{ 'red' if r.grade in ['0','ร','มส'] }}"><b>{{ r.grade }}</b></td></tr>{% endfor %}
+  </table>
+</section>
+
+{# ---------- เวลาเรียน ---------- #}
+<section class="sheet" id="s4" hidden>
+  <h2>บันทึกเวลาเรียน</h2>
+  <div class="center small">{{ code }} {{ nm }} · ห้อง {{ room.name }} · เวลาเรียนทั้งภาค {{ total_periods }} คาบ · เช็กชื่อแล้ว {{ taught }} คาบ · ต้องมีเวลาเรียนไม่น้อยกว่าร้อยละ {{ ATT_MIN|int }}</div>
+  <table style="margin-top:10px">
+    <tr><th>ที่</th><th>รหัส</th><th>ชื่อ-สกุล</th><th>มา</th><th>สาย</th><th>ลา</th><th>ขาด</th><th>ไปกิจกรรม</th><th>ขาด+ลา</th><th>ร้อยละเวลาเรียน</th><th>ผล</th></tr>
+    {% for r in rows %}{% set a = r.att %}<tr><td>{{ r.no }}</td><td>{{ r.sno }}</td><td class="l">{{ r.student.full_name }}</td>
+      {% if a %}<td>{{ a['มา'] }}</td><td>{{ a['สาย'] }}</td><td>{{ a['ลา'] }}</td><td>{{ a['ขาด'] }}</td><td>{{ a['กิจกรรม'] }}</td><td>{{ a.lost }}</td>
+      <td class="{{ 'red' if a.pct < ATT_MIN }}">{{ '%.2f'|format(a.pct) }}</td><td class="{{ 'red' if a.pct < ATT_MIN }}">{{ 'มส' if a.pct < ATT_MIN else 'มีสิทธิ์สอบ' }}</td>
+      {% else %}<td colspan="8" class="small">ยังไม่มีข้อมูลเช็กชื่อ</td>{% endif %}</tr>{% endfor %}
+  </table>
+</section>
+
+{# ---------- การประเมิน ---------- #}
+<section class="sheet land" id="s5" hidden>
+  <h2>บันทึกผลการประเมินคุณลักษณะอันพึงประสงค์ และ การอ่าน คิดวิเคราะห์ และเขียน</h2>
+  <div class="center small">{{ code }} {{ nm }} · ห้อง {{ room.name }} · ระดับ 3 = ดีเยี่ยม · 2 = ดี · 1 = ผ่าน · 0 = ไม่ผ่าน</div>
+  <table style="margin-top:10px">
+    <tr><th rowspan="2">ที่</th><th rowspan="2">รหัส</th><th rowspan="2">ชื่อ-สกุล</th><th colspan="6">คุณลักษณะอันพึงประสงค์</th><th colspan="6">อ่าน คิดวิเคราะห์ และเขียน</th></tr>
+    <tr>{% for _ in range(2) %}{% for p in range(1,5) %}<th class="sub">ช่วง {{ p }}</th>{% endfor %}<th class="sub">รวม</th><th class="sub">ระดับ</th>{% endfor %}</tr>
+    {% for r in rows %}<tr><td>{{ r.no }}</td><td>{{ r.sno }}</td><td class="l">{{ r.student.full_name }}</td>
+      {% for k in ['c','r'] %}{% set t = r.traits[k] %}{% for v in t.vals %}<td>{{ fmt(v) }}</td>{% endfor %}<td>{{ fmt(t.total) }}</td><td class="{{ 'red' if t.level == 0 }}"><b>{{ t.level if t.level is not none else '' }}</b></td>{% endfor %}</tr>{% endfor %}
+  </table>
+</section>
+<div class="foot">ระบบงานวิชาการ KRURUKSORN · พิมพ์เมื่อ {{ printed_at.strftime('%d/%m/') }}{{ printed_at.year + 543 }} {{ printed_at.strftime('%H:%M') }}</div>
+<script>
+document.querySelectorAll('.tabs button').forEach(function(b){ b.addEventListener('click', function(){
+  document.querySelectorAll('.tabs button').forEach(function(x){ x.classList.toggle('on', x===b); });
+  document.querySelectorAll('.sheet').forEach(function(s){ s.hidden = s.id !== b.dataset.s; });
+}); });
+</script>
+</body></html>

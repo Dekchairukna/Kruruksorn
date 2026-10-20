@@ -1,0 +1,8 @@
+<div class="sss-tabs sss-noprint">
+  <a href="{{ url_for('behavior_home') }}" class="{{ 'active' if request.endpoint=='behavior_home' }}">ภาพรวมห้อง</a>
+  <a href="{{ url_for('behavior_record', kind='plus') }}" class="{{ 'active' if request.endpoint=='behavior_record' and kind=='plus' }}">➕ เพิ่มคะแนน</a>
+  <a href="{{ url_for('behavior_record', kind='minus') }}" class="{{ 'active' if request.endpoint=='behavior_record' and kind=='minus' }}">➖ ตัดคะแนน</a>
+  <a href="{{ url_for('behavior_records') }}" class="{{ 'active' if request.endpoint=='behavior_records' }}">รายการที่บันทึก/แก้ไข</a>
+  <a href="{{ url_for('behavior_report') }}" class="{{ 'active' if request.endpoint=='behavior_report' }}">รายงาน/สารสนเทศ</a>
+  {% if current_user.role=='admin' %}<a href="{{ url_for('behavior_settings') }}" class="{{ 'active' if request.endpoint=='behavior_settings' }}">⚙️ ตั้งค่า</a>{% endif %}
+</div>

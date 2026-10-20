@@ -1,0 +1,33 @@
+<style>
+.sss-tabs{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 14px}
+.sss-tabs a{padding:8px 14px;border-radius:999px;background:#eef2f7;color:#334155;text-decoration:none;font-weight:600;font-size:14px}
+.sss-tabs a.active{background:#2563eb;color:#fff}
+.sss-filter{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;margin-bottom:12px}
+.sss-filter label{display:flex;flex-direction:column;font-size:13px;gap:4px;min-width:140px}
+.sss-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:16px}
+.sss-stat{background:#fff;border:1px solid #e5e7eb;border-radius:16px;padding:14px 16px}
+.sss-stat b{display:block;font-size:28px;line-height:1.2}
+.sss-stat small{color:#64748b}
+.sss-btn-red{background:linear-gradient(135deg,#f87171,#ef4444)!important;color:#fff!important;border:0}
+.pts-plus{color:#059669;font-weight:700}
+.pts-minus{color:#dc2626;font-weight:700}
+.sss-kind{display:inline-block;padding:2px 10px;border-radius:999px;font-size:12px;font-weight:700}
+.sss-kind.plus{background:#d1fae5;color:#065f46}.sss-kind.minus{background:#fee2e2;color:#991b1b}
+.sss-pick-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:8px;margin:10px 0}
+.sss-pick{display:flex;gap:10px;align-items:center;border:1px solid #e5e7eb;border-radius:12px;padding:10px 12px;background:#fff;cursor:pointer}
+.sss-pick input{width:20px;height:20px;flex:none}
+.sss-pick:has(input:checked){border-color:#2563eb;background:#eff6ff}
+.sss-pick .meta{font-size:12px;color:#64748b}
+.sss-grid-wrap{overflow:auto;max-width:100%}
+.sss-grid{border-collapse:collapse;font-size:13px}
+.sss-grid th,.sss-grid td{border:1px solid #e2e8f0;padding:4px 6px;text-align:center;white-space:nowrap}
+.sss-grid td.name,.sss-grid th.name{text-align:left;position:sticky;left:0;background:#fff;z-index:1}
+.sss-grid th.vh{writing-mode:vertical-rl;transform:rotate(180deg);font-weight:500;max-height:160px;white-space:normal}
+.sss-grid .st-ขาด,.sss-grid .st-โดดเรียน{background:#fee2e2;color:#991b1b;font-weight:700}
+.sss-grid .st-ลาป่วย{background:#fef3c7;color:#92400e}
+.sss-grid .st-สาย{background:#e0e7ff;color:#3730a3}
+.sss-low{color:#dc2626;font-weight:700}
+.sss-band-bar{height:10px;border-radius:6px;background:#3b82f6;min-width:2px}
+.sss-muted{color:#64748b;font-size:13px}
+@media print{.sidebar,.topbar,.sss-noprint,.sidebar-collapse-btn,.alert{display:none!important}.main{margin:0!important;padding:0!important}.card{box-shadow:none!important;border:0!important}}
+</style>

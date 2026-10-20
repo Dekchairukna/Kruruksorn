@@ -1,0 +1,51 @@
+{% extends 'base.html' %}
+{% block content %}
+{% include 'pp5s/_style.html' %}
+<style>
+.rk-cards{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin:14px 0}
+.rk-card{border-radius:18px;padding:18px 22px;color:#fff;position:relative;overflow:hidden}
+.rk-card b{display:block;font-size:44px;line-height:1.1}
+.rk-card .ic{position:absolute;right:20px;top:22px;font-size:44px;opacity:.35}
+.rk0{background:linear-gradient(135deg,#dc2626,#b91c1c)}.rkr{background:linear-gradient(135deg,#eab308,#ca8a04)}.rkm{background:linear-gradient(135deg,#64748b,#475569)}
+.rk-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px}
+.rk-room{background:#fff;border:1px solid #e2e8f0;border-top:4px solid #dc2626;border-radius:16px;padding:14px 16px}
+.rk-room h3{margin:0 0 10px;color:#b91c1c;display:flex;justify-content:space-between;align-items:center}
+.rk-sub{background:#fff5f5;border-left:4px solid #dc2626;padding:6px 10px;margin:8px 0;font-weight:700;color:#b91c1c;display:flex;justify-content:space-between}
+.rk-tag{display:inline-block;color:#fff;border-radius:6px;padding:1px 10px;font-size:12px;font-weight:800;margin:6px 0 4px}
+.rk-tag.t0{background:#dc2626}.rk-tag.tr{background:#ca8a04}.rk-tag.tms{background:#64748b}
+.rk-names{border-left:3px solid #e2e8f0;padding-left:10px;font-weight:700;line-height:1.6}
+.rk-names small{color:#64748b;font-weight:400}
+.cp{border:0;background:#eff6ff;border-radius:50%;width:34px;height:34px;cursor:pointer}
+@media(max-width:800px){.rk-cards{grid-template-columns:1fr}}
+@media print{.sidebar,.topbar,.no-print,.krs-lang{display:none!important}.main{margin:0!important;padding:0!important}.rk-room{break-inside:avoid}}
+</style>
+<div class="p5-head">
+  <div><h1 style="color:#b91c1c">⚠️ นักเรียนกลุ่มเสี่ยง (0, ร, มส.)</h1><p class="muted">สรุปนักเรียนที่ต้องติดตามแก้ไขผลการเรียนในวิชาของคุณ · {{ sem.name if sem else 'ภาคเรียนปัจจุบัน' }}</p></div>
+  <div class="p5-tools no-print"><a class="p5-pill" href="{{ url_for('pp5s_home') }}">← บันทึกคะแนน ปพ.5</a><button class="p5-pill" onclick="window.print()">🖨 พิมพ์แบบรายงาน</button></div>
+</div>
+<div class="rk-cards">
+  <div class="rk-card rk0">ติด "0"<b>{{ counts['0'] }}</b>รายการ<span class="ic">✖</span></div>
+  <div class="rk-card rkr">ติด "ร"<b>{{ counts['ร'] }}</b>รายการ<span class="ic">⌛</span></div>
+  <div class="rk-card rkm">ติด "มส"<b>{{ counts['มส'] }}</b>รายการ<span class="ic">🚫</span></div>
+</div>
+<div class="rk-grid">
+{% set ns = namespace(room=None) %}
+{% for gr in groups %}{% set p = gr.pair %}{% set code, nm = split_subject(p.subject.name) %}
+  <div class="rk-room">
+    <h3>🚪 ห้อง {{ p.classroom.name }} <button class="cp no-print" title="คัดลอกรายชื่อ" onclick="copyNames(this)">⧉</button></h3>
+    <div class="rk-sub"><span>{{ nm }} <small style="font-weight:400">({{ code }})</small></span><a class="no-print" href="{{ url_for('pp5s_entry', subject_id=p.subject_id, classroom_id=p.classroom_id) }}" title="เปิดตารางคะแนน">↗</a></div>
+    {% for key, cls in [('0','t0'),('ร','tr'),('มส','tms')] %}{% if gr.bad[key] %}
+      <span class="rk-tag {{ cls }}">ติด {{ key }}</span>
+      <div class="rk-names">{% for r in gr.bad[key] %}{{ r.student.full_name }}{% if key=='มส' and r.att %} <small>(เวลาเรียน {{ '%.0f'|format(r.att.pct) }}%)</small>{% elif key=='0' %} <small>({{ r.total }} คะแนน)</small>{% endif %}{{ ', ' if not loop.last }}{% endfor %}</div>
+    {% endif %}{% endfor %}
+  </div>
+{% else %}
+  <div class="p5-note">✅ ยังไม่พบนักเรียนที่ติด 0, ร หรือ มส ในภาคเรียนนี้ (นับเฉพาะวิชาที่ตั้งค่าโครงสร้างและบันทึกคะแนนในระบบ ปพ.5 แล้ว)</div>
+{% endfor %}
+</div>
+<script>
+function copyNames(b){var box=b.closest('.rk-room');var t=box.querySelector('h3').textContent.replace('⧉','').trim()+'\n'+box.querySelector('.rk-sub span').textContent.trim()+'\n';
+box.querySelectorAll('.rk-tag').forEach(function(tag){t+=tag.textContent+': '+tag.nextElementSibling.textContent.trim()+'\n'});
+(navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(function(){b.textContent='✓'}).catch(function(){});}
+</script>
+{% endblock %}

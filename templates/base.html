@@ -51,12 +51,15 @@
         <a href="{{ url_for('assignments') }}">📝 งานที่สั่งแล้ว</a>
         <a href="{{ url_for('schedule') }}">📅 ตารางสอน</a>
         <a href="{{ url_for('substitute_schedule') }}">👨‍🏫 สอนแทน</a>
+        {% if subplan_enabled %}<a href="{{ url_for('subplan_day') if subplan_can_manage else url_for('subplan_mine') }}">📋 {{ 'จัดสอนแทน' if subplan_can_manage else 'สอนแทนของฉัน' }}</a>{% endif %}
       </div>
       <div class="nav-section">
         <div class="nav-section-title">✅ เช็กชื่อและคะแนน</div>
         <a href="{{ url_for('attendance_dashboard') }}">📊 ภาพรวมวันนี้</a>
         <a href="{{ url_for('absence_risk_report') }}">🚨 ขาดเรียนเกินเกณฑ์</a>
         <a href="{{ url_for('records_center') }}">✅ เช็กชื่อ/คะแนน</a>
+        {% if pp5s_enabled %}<a href="{{ url_for('pp5s_home') }}">📗 บันทึกคะแนน (ปพ.5)</a>
+        <a href="{{ url_for('pp5s_risk') }}">⚠️ นักเรียนกลุ่มเสี่ยง 0/ร/มส</a>{% endif %}
         <a href="{{ url_for('accdb_home') }}">📒 สมุดคะแนน (.accdb)</a>
         <a href="{{ url_for('endterm_dashboard') }}">📦 งานปิดภาคเรียน</a>
         <a href="{{ url_for('line_absence') }}">📨 แจ้งผู้ปกครอง (LINE)</a>
@@ -64,6 +67,7 @@
       {% if sss_features_enabled %}<div class="nav-section">
         <div class="nav-section-title">🧭 ดูแลนักเรียน</div>
         <a href="{{ url_for('behavior_home') }}">⭐ คะแนนความประพฤติ</a>
+        <a href="{{ url_for('classroom_activity_hub') }}">🇹🇭 เข้าแถว/กิจกรรม</a>
         <a href="{{ url_for('homeroom_check') }}">🏠 เช็กชื่อโฮมรูม</a>
         <a href="{{ url_for('activity_report') }}">📈 รายงานเสาธง/โฮมรูม/กิจกรรม</a>
         <a href="{{ url_for('campus_leave') }}">🚸 ออกนอกบริเวณโรงเรียน</a>
@@ -90,6 +94,7 @@
         <div class="nav-section-title">🛡️ ผู้ดูแลระบบ</div>
         {% if current_user.is_superadmin %}<a href="{{ url_for('schools') }}">🏢 จัดการโรงเรียน</a>{% endif %}
         <a href="{{ url_for('teacher_assignments') }}">🧩 มอบหมายครู</a>
+        {% if timetable_enabled %}<a href="{{ url_for('tt_home') }}">🗓️ จัดตารางสอน</a>{% endif %}
         <a href="{{ url_for('users') }}">👥 ผู้ใช้</a>
       </div>
     {% endif %}

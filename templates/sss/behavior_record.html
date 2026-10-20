@@ -1,0 +1,77 @@
+{% extends 'base.html' %}
+{% block content %}
+{% include 'sss/_style.html' %}
+<div class="page-head">
+  <div>
+    <h1>{{ 'เพิ่มคะแนนความประพฤติ' if kind=='plus' else 'ตัดคะแนนความประพฤติ' }}</h1>
+    <p class="muted">เลือกห้อง (ทั้งห้อง) หรือค้นหานักเรียนรายคน แล้วติ๊กชื่อที่ต้องการ · {{ sem.name if sem else '' }}</p>
+  </div>
+</div>
+{% include 'sss/_behavior_tabs.html' %}
+
+<section class="card">
+  <div class="sss-filter">
+    <form method="get" class="sss-filter" style="margin:0">
+      <input type="hidden" name="kind" value="{{ kind }}">
+      <label>เลือกห้องเรียน (แบบทั้งห้อง)
+        <select name="room_id" onchange="this.form.submit()">
+          <option value="">-- เลือกห้อง --</option>
+          {% for r in rooms %}<option value="{{ r.id }}" {% if room and r.id==room.id and not q %}selected{% endif %}>{{ r.name }}</option>{% endfor %}
+        </select>
+      </label>
+    </form>
+    <form method="get" class="sss-filter" style="margin:0">
+      <input type="hidden" name="kind" value="{{ kind }}">
+      <label>หรือค้นหารายบุคคล (รหัส/ชื่อ)
+        <input name="q" value="{{ q }}" placeholder="เช่น 3618 หรือ สมชาย">
+      </label>
+      <button class="btn secondary" type="submit">ค้นหา</button>
+    </form>
+  </div>
+</section>
+
+{% if students %}
+<form method="post" enctype="multipart/form-data" class="card">
+  <input type="hidden" name="kind" value="{{ kind }}">
+  <input type="hidden" name="room_id" value="{{ room.id if room and not q else '' }}">
+  <input type="hidden" name="q" value="{{ q }}">
+  <div class="form-grid">
+    <label>วันที่
+      <input type="date" name="record_date" value="{{ today }}" required>
+    </label>
+    <label class="full">รายการ{{ 'ความดี' if kind=='plus' else 'ที่ตัดคะแนน' }}
+      <select name="item_id" required>
+        <option value="">-- เลือกรายการ --</option>
+        {% for it in items %}<option value="{{ it.id }}">{{ it.name }} ({{ it.points }} คะแนน)</option>{% endfor %}
+      </select>
+    </label>
+    <label class="full">รายละเอียด/หมายเหตุ (ไม่บังคับ)
+      <input name="note" placeholder="เช่น สถานที่ เหตุการณ์ ผู้แจ้ง">
+    </label>
+    <label class="full">แนบไฟล์หลักฐาน (รูป/PDF ไม่เกิน 5 MB, ไม่บังคับ)
+      <input type="file" name="evidence" accept=".pdf,.png,.jpg,.jpeg">
+    </label>
+  </div>
+
+  <h3 style="margin-top:16px">{{ source }} ({{ students|length }} คน)</h3>
+  <label class="checkline"><input type="checkbox" id="pickAll" onclick="document.querySelectorAll('.pick-student').forEach(c=>c.checked=this.checked)"> เลือกทั้งหมด</label>
+  <div class="sss-pick-list">
+    {% for s in students %}
+    {% set sc = scores.get(s.id) %}
+    <label class="sss-pick">
+      <input type="checkbox" class="pick-student" name="student_ids" value="{{ s.id }}" {% if q and students|length==1 %}checked{% endif %}>
+      <div>
+        <div><b>{{ s.full_name }}</b></div>
+        <div class="meta">{{ s.username }}{% if rooms_of.get(s.id) %} · {{ rooms_of.get(s.id) }}{% endif %} · คงเหลือ {{ sc.score if sc else '-' }} คะแนน</div>
+      </div>
+    </label>
+    {% endfor %}
+  </div>
+  <div class="sticky-save-bar">
+    <button class="btn {{ '' if kind=='plus' else 'sss-btn-red' }}" type="submit">{{ 'บันทึกเพิ่มคะแนน' if kind=='plus' else 'บันทึกตัดคะแนน' }}</button>
+  </div>
+</form>
+{% elif q %}
+<section class="card"><p>ไม่พบนักเรียนที่ตรงกับ "{{ q }}"</p></section>
+{% endif %}
+{% endblock %}

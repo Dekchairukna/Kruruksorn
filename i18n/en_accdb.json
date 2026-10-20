@@ -1,0 +1,9 @@
+{
+"🔓 จำรหัสไฟล์วิชานี้ไว้แล้ว — เขียนครั้งต่อไปเว้นช่องรหัสว่างได้เลย": "🔓 This subject's file password is remembered — leave the password field blank next time",
+"ล้างรหัสที่จำไว้": "Forget saved password",
+"ล้างรหัสที่จำไว้ของวิชานี้?": "Forget the saved password for this subject?",
+"ล้างรหัสที่จำไว้ของวิชานี้แล้ว ครั้งต่อไปกรอกรหัสใหม่": "Saved password for this subject cleared. Enter it again next time",
+"มีรหัสจำไว้แล้ว — เว้นว่างได้": "Password remembered — can leave blank",
+"รหัสไฟล์ (วันเกิด)": "File password (birthday)",
+"💡 กรอกรหัส (วันเกิด) ครั้งแรกครั้งเดียว เขียนสำเร็จแล้วระบบจะจำไว้ให้ ครั้งต่อไปไม่ต้องกรอกอีก": "💡 Enter the password (birthday) once; after a successful write it is remembered, so you won't need to type it again"
+}

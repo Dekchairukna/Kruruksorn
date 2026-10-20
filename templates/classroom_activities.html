@@ -40,18 +40,12 @@
   </div>
 </section>
 
-<section class="card">
-  <h2>เพิ่มกิจกรรมพิเศษ</h2>
+<section class="card" id="createActivity">
+  <h2>เพิ่มกิจกรรมพิเศษสำหรับทุกห้อง</h2>
+  <p class="muted">สร้างครั้งเดียว กิจกรรมนี้จะปรากฏในหน้าของทุกห้องเรียน</p>
   <form method="post" class="form-row">
     <label>ชื่อกิจกรรม
       <input name="title" placeholder="เช่น ซ้อมกีฬา / กิจกรรมวันไหว้ครู / ทัศนศึกษา" required>
-    </label>
-    <label>รูปแบบรายชื่อ
-      <select name="target_scope">
-        <option value="classroom">เฉพาะห้องนี้</option>
-        <option value="all">รวมทั้งหมดทุกห้องเรียน</option>
-        <option value="scout_m1_m3">ลูกเสือ/เนตรนารี ม.1-ม.3</option>
-      </select>
     </label>
     <label>วันที่จัดกิจกรรม
       <input name="event_date" type="date" value="{{ today_iso }}">
@@ -86,9 +80,9 @@
         </p>
         <div class="actions-row">
           <a class="btn" href="{{ url_for('classroom_activity_attendance', classroom_id=room.id, activity_id=a.id, date=(a.event_date.isoformat() if a.event_date else today_iso)) }}">เช็กชื่อกิจกรรม</a>
-          <form method="post" action="{{ url_for('classroom_activity_delete', classroom_id=room.id, activity_id=a.id) }}" class="inline" onsubmit="return confirm('ลบกิจกรรมนี้พร้อมข้อมูลเช็กชื่อที่เกี่ยวข้อง?')">
+          {% if current_user.role == 'admin' or a.classroom_id == room.id %}<form method="post" action="{{ url_for('classroom_activity_delete', classroom_id=a.classroom_id, activity_id=a.id) }}" class="inline" onsubmit="return confirm('ลบกิจกรรมนี้พร้อมข้อมูลเช็กชื่อที่เกี่ยวข้อง?')">
             <button class="danger-btn small">ลบ</button>
-          </form>
+          </form>{% endif %}
         </div>
       </div>
     </div>

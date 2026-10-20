@@ -1,0 +1,71 @@
+{% extends 'base.html' %}
+{% block content %}
+{% include 'sss/_style.html' %}
+<div class="page-head">
+  <div>
+    <h1>คะแนนความประพฤติ</h1>
+    <p class="muted">{{ sem.name if sem else '' }} · คะแนนตั้งต้นคนละ {{ base }} คะแนน</p>
+  </div>
+</div>
+{% include 'sss/_behavior_tabs.html' %}
+
+<div class="sss-stats">
+  <div class="sss-stat"><small>บันทึกวันนี้ (ทั้งโรงเรียน)</small><b>{{ today_count }}</b></div>
+  {% if rows %}
+  <div class="sss-stat"><small>นักเรียนห้อง {{ room.name }}</small><b>{{ rows|length }}</b></div>
+  <div class="sss-stat"><small>คะแนนเฉลี่ยของห้อง</small><b>{{ '%.1f'|format(rows|sum(attribute='score') / rows|length) }}</b></div>
+  <div class="sss-stat"><small>ต่ำกว่าคะแนนตั้งต้น</small><b class="sss-low">{{ rows|selectattr('score','lt',base)|list|length }}</b></div>
+  {% endif %}
+</div>
+
+<section class="card">
+  <form method="get" class="sss-filter">
+    <label>ห้องเรียน
+      <select name="room_id" onchange="this.form.submit()">
+        {% for r in rooms %}<option value="{{ r.id }}" {% if room and r.id==room.id %}selected{% endif %}>{{ r.name }}</option>{% endfor %}
+      </select>
+    </label>
+    {% if room %}
+    <a class="btn" href="{{ url_for('behavior_record', kind='plus', room_id=room.id) }}">➕ เพิ่มคะแนนทั้งห้อง</a>
+    <a class="btn sss-btn-red" href="{{ url_for('behavior_record', kind='minus', room_id=room.id) }}">➖ ตัดคะแนนทั้งห้อง</a>
+    {% endif %}
+  </form>
+  <div class="table-wrap">
+    <table>
+      <tr><th>ที่</th><th>รหัส</th><th>ชื่อ-สกุล</th><th>เพิ่ม</th><th>ตัด</th><th>คงเหลือ</th><th>ช่วงคะแนน</th><th></th></tr>
+      {% for r in rows %}
+      <tr>
+        <td data-label="ที่">{{ loop.index }}</td>
+        <td data-label="รหัส">{{ r.student.username }}</td>
+        <td data-label="ชื่อ-สกุล">{{ r.student.full_name }}</td>
+        <td data-label="เพิ่ม" class="pts-plus">{{ '+%d'|format(r.plus) if r.plus else '-' }}</td>
+        <td data-label="ตัด" class="pts-minus">{{ '-%d'|format(r.minus) if r.minus else '-' }}</td>
+        <td data-label="คงเหลือ"><b class="{{ 'sss-low' if r.score < base }}">{{ r.score }}</b></td>
+        <td data-label="ช่วงคะแนน">{{ r.band }}</td>
+        <td><a class="btn small secondary" href="{{ url_for('behavior_student', student_id=r.student.id) }}">ประวัติ</a></td>
+      </tr>
+      {% else %}
+      <tr><td colspan="8">ยังไม่มีนักเรียนในห้องนี้</td></tr>
+      {% endfor %}
+    </table>
+  </div>
+</section>
+
+{% if recent %}
+<section class="card">
+  <h3>บันทึกล่าสุด</h3>
+  <div class="table-wrap"><table>
+    <tr><th>วันที่</th><th>นักเรียน</th><th>รายการ</th><th>คะแนน</th><th>ผู้บันทึก</th></tr>
+    {% for r in recent %}
+    <tr>
+      <td data-label="วันที่">{{ thai_date_short(r.record_date) }}</td>
+      <td data-label="นักเรียน">{{ r.student.full_name if r.student else '-' }}{% if r.classroom %} <small class="sss-muted">({{ r.classroom.name }})</small>{% endif %}</td>
+      <td data-label="รายการ">{{ r.item_name }}</td>
+      <td data-label="คะแนน" class="{{ 'pts-plus' if r.points>=0 else 'pts-minus' }}">{{ '%+d'|format(r.points) }}</td>
+      <td data-label="ผู้บันทึก">{{ r.recorded_by.full_name if r.recorded_by else '-' }}</td>
+    </tr>
+    {% endfor %}
+  </table></div>
+</section>
+{% endif %}
+{% endblock %}

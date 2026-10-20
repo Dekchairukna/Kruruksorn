@@ -11,6 +11,8 @@
 .acc-badge{background:#eef4f3;border:1px solid #cfe3df;border-radius:20px;padding:2px 10px;font-size:.85rem;color:#0a4f47}
 .acc-inp{width:100%;border:1px solid #cdd5e2;border-radius:9px;padding:9px 11px;font-family:inherit}
 .acc-note{background:#fff7ea;border:1px solid #f0d9a8;color:#7a5a1a;border-radius:10px;padding:10px 13px;font-size:.9rem}
+.acc-tools{display:grid;grid-template-columns:repeat(auto-fit,minmax(205px,1fr));gap:10px}.acc-tool{display:flex;flex-direction:column;gap:5px;padding:14px;border:1px solid #dce6ea;border-radius:12px;background:#f8fbfb;text-decoration:none;color:#18202f}.acc-tool:hover{border-color:#75bdb4;background:#eef8f6}.acc-tool b{color:#0a4f47}.acc-tool span{font-size:.86rem;color:#5d6a7e;line-height:1.45}
+.acc-danger{background:#fff;color:#b42318;border:1px solid #f1b7b2}.acc-danger:hover{background:#fff0ef}.acc-select{width:18px;height:18px;accent-color:#0f6e63}
 </style>
 <div class="acc-wrap">
 <h1>📒 สมุดคะแนน (.accdb)</h1>
@@ -18,22 +20,34 @@
   <p style="margin:0;color:#5d6a7e">คีย์คะแนนที่นี่ครั้งเดียว ระบบเก็บลงฐานข้อมูลถาวร · ตัวช่วยในเครื่อง (Windows) ดึงคะแนนไปเขียนลงไฟล์ BookMark .accdb ให้ ไม่ต้องคีย์ซ้ำ</p>
 </div>
 <div class="acc-card">
-  <h3 style="margin-top:0">➕ เริ่มจากไฟล์ .accdb ของคุณ (ครูทุกคนใช้ได้)</h3>
-  <p style="color:#5d6a7e">อัปโหลดไฟล์ BookMark .accdb + ใส่รหัสไฟล์ → ระบบเปิดไฟล์ อ่านรายชื่อนักเรียน สร้างวิชาให้อัตโนมัติ แล้ว<b>จำรหัสไฟล์ไว้</b> (เขียนกลับได้เลยไม่ต้องกรอกซ้ำ)</p>
+  <h3 style="margin-top:0">📚 คะแนน ปพ.5 และงานปลายภาค</h3>
+  <div class="acc-tools">
+    <a class="acc-tool" href="{{ url_for('pp5s_home') }}"><b>✏️ ตารางคีย์คะแนน ปพ.5</b><span>กรอกคะแนนรายวิชา ตั้งโครงสร้าง ตัวชี้วัด และคุณลักษณะ</span></a>
+    <a class="acc-tool" href="{{ url_for('pp5s_home') }}"><b>📤 ส่งออก SGS / Excel</b><span>เลือกวิชาและห้อง แล้วคัดลอก 7 ช่องไป SGS หรือดาวน์โหลด Excel</span></a>
+    <a class="acc-tool" href="{{ url_for('endterm_dashboard') }}"><b>🖨️ พิมพ์เอกสาร</b><span>พิมพ์ ปพ.5 ปถ.05 รายงาน Bookmark และดาวน์โหลดเอกสารทั้งชุด</span></a>
+    <a class="acc-tool" href="{{ url_for('reports_home') }}"><b>📄 รายงานต่าง ๆ</b><span>วิเคราะห์ข้อสอบ วิจัยในชั้นเรียน สื่อ PLC และ Best Practice</span></a>
+    <a class="acc-tool" href="{{ url_for('export_term_all_xlsx') }}"><b>📦 Excel รวมทั้งเทอม</b><span>คะแนน เกรด เช็กชื่อ ปพ.5 รายชื่อ งานที่สั่ง และคะแนนในคาบ</span></a>
+    <a class="acc-tool" href="{{ url_for('records_center') }}"><b>📊 ศูนย์สรุปผล</b><span>ดูรายงานการเข้าเรียน คะแนนรายวิชา และพิมพ์รายงานสรุป</span></a>
+  </div>
+</div>
+<div class="acc-card">
+  <h3 style="margin-top:0">➕ นำเข้าไฟล์ .accdb เพื่อคีย์บนเว็บ</h3>
+  <p style="color:#5d6a7e">เลือกได้หลายวิชา ระบบจะหารหัสจากชื่อไฟล์ให้อัตโนมัติ อ่านทั้งรายชื่อ คะแนนเดิม คะแนนย่อย คุณลักษณะ และอ่าน–คิด–เขียน แล้วสร้างหน้าคีย์แยกตามวิชา</p>
   <form method="post" action="{{ url_for('accdb_upload_import') }}" enctype="multipart/form-data">
-    <input class="acc-inp" type="file" name="accdb_file" accept=".accdb" required style="margin-bottom:8px">
+    <input class="acc-inp" type="file" name="accdb_files" accept=".accdb" multiple required style="margin-bottom:8px">
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
-      <input class="acc-inp" id="imp-pw" type="password" name="password" placeholder="รหัสไฟล์ .accdb" required style="width:220px">
+      <input class="acc-inp" id="imp-pw" type="password" name="password" placeholder="รหัสไฟล์ (ไม่รู้เว้นว่างได้)" style="width:240px">
       <label style="display:flex;gap:5px;align-items:center;margin:0">
         <input type="checkbox" onchange="document.getElementById('imp-pw').type=this.checked?'text':'password'"> แสดงรหัส
       </label>
     </div>
+    <p class="acc-note" style="margin:0 0 10px">ถ้าเลือกไฟล์เดียว สามารถกำหนดข้อมูลด้านล่างเองได้ ถ้าเลือกหลายไฟล์ ระบบจะอ่านรหัสและชื่อวิชาจากแต่ละไฟล์ · สูงสุด 20 ไฟล์</p>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
       <input class="acc-inp" type="text" name="code" placeholder="รหัสวิชา (เว้นว่าง=ใช้ชื่อไฟล์)" style="width:220px">
       <input class="acc-inp" type="text" name="title" placeholder="ชื่อวิชา (ไม่บังคับ)" style="width:240px">
       <input class="acc-inp" type="text" name="level" placeholder="ชั้น เช่น ม.1 (ไม่บังคับ)" style="width:170px">
     </div>
-    <button class="acc-btn" type="submit">⬆️ อัปโหลด + สร้างวิชา</button>
+    <button class="acc-btn" type="submit">⬆️ นำเข้าและเปิดคีย์บนเว็บ</button>
   </form>
 </div>
 {% if not has_data %}
@@ -43,17 +57,26 @@
 </div>
 {% else %}
 <div class="acc-card">
+  <form method="post" action="{{ url_for('accdb_delete_selected') }}" id="accdb-delete-form">
+  <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px">
+    <label style="display:flex;align-items:center;gap:7px;margin:0"><input class="acc-select" id="accdb-select-all" type="checkbox"> เลือกทั้งหมด</label>
+    <button class="acc-btn acc-danger" type="submit" onclick="return confirmAccdbBatchDelete()">🗑️ ลบไฟล์ที่เลือก</button>
+  </div>
   <div class="acc-grid">
     {% for s in subjects %}
     <div class="acc-sub">
       <div style="display:flex;justify-content:space-between;align-items:start">
-        <div><span class="code">{{ s.code }}</span><br><span style="color:#5d6a7e;font-size:.9rem">{{ s.title }} · {{ s.level }}</span></div>
+        <div style="display:flex;gap:8px;align-items:start"><input class="acc-select acc-sub-check" type="checkbox" name="subject_ids" value="{{ s.id }}" aria-label="เลือก {{ s.code }}"><div><span class="code">{{ s.code }}</span><br><span style="color:#5d6a7e;font-size:.9rem">{{ s.title }} · {{ s.level }}</span>{% if s.filename %}<br><small style="color:#7b8794">{{ s.filename }}</small>{% endif %}</div></div>
         <span class="acc-badge">{{ counts[s.id] }} คน</span>
       </div>
-      <a class="acc-btn sm" href="{{ url_for('accdb_subject', sid=s.id) }}">✏️ คีย์คะแนน</a>
+      <div style="display:flex;gap:7px;flex-wrap:wrap">
+        <a class="acc-btn sm" style="flex:1;text-align:center" href="{{ url_for('accdb_subject', sid=s.id) }}">✏️ คีย์คะแนน</a>
+        <button class="acc-btn sm acc-danger" type="submit" formaction="{{ url_for('accdb_delete_subject', sid=s.id) }}" onclick="return confirm('ลบ {{ s.code|e }} และข้อมูลคะแนน ACCDB ของไฟล์นี้? ข้อมูลในระบบหลักจะไม่ถูกลบ')">🗑️ ลบ</button>
+      </div>
     </div>
     {% endfor %}
   </div>
+  </form>
 </div>
 {% endif %}
 {% if has_data %}
@@ -84,4 +107,17 @@
   <div class="acc-note" style="margin-top:10px">ตัวช่วยในเครื่องจะจับคู่ไฟล์ .accdb กับวิชาจากชื่อไฟล์/รหัส แล้วปลดล็อกด้วยรหัสที่ฝังไว้ให้อัตโนมัติ</div>
 </div>
 </div>
+<script>
+const accdbSelectAll=document.getElementById('accdb-select-all');
+if(accdbSelectAll){
+  const accdbChecks=[...document.querySelectorAll('.acc-sub-check')];
+  accdbSelectAll.addEventListener('change',()=>accdbChecks.forEach(c=>c.checked=accdbSelectAll.checked));
+  accdbChecks.forEach(c=>c.addEventListener('change',()=>{accdbSelectAll.checked=accdbChecks.length>0&&accdbChecks.every(x=>x.checked);accdbSelectAll.indeterminate=accdbChecks.some(x=>x.checked)&&!accdbSelectAll.checked;}));
+}
+function confirmAccdbBatchDelete(){
+  const n=document.querySelectorAll('.acc-sub-check:checked').length;
+  if(!n){alert('กรุณาเลือกไฟล์ที่จะลบก่อน');return false;}
+  return confirm('ลบไฟล์นำเข้าที่เลือก '+n+' รายการ พร้อมข้อมูลคะแนน ACCDB? ข้อมูลรายวิชาและนักเรียนในระบบหลักจะไม่ถูกลบ');
+}
+</script>
 {% endblock %}

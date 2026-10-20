@@ -1100,6 +1100,7 @@ input,select,textarea{background:#fff!important;border-color:#d9e8ef!important;c
 }
 .done-badge { color: #fff; background: #16845b; }
 .wait-badge { color: #7c2d12; background: #fed7aa; }
+.assembly-dashboard-card{border-top:5px solid #0ea5e9!important}.assembly-summary-strip{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:14px 0}.assembly-summary-strip>div{padding:13px 15px;border-radius:15px;background:#f8fafc;border:1px solid #e2e8f0}.assembly-summary-strip small{display:block;color:#64748b;margin-bottom:5px}.assembly-summary-strip b{font-size:22px}.compact-assembly-table th,.compact-assembly-table td{padding-top:10px!important;padding-bottom:10px!important}
 @media (max-width: 900px) {
   .daily-stat-grid { grid-template-columns: repeat(2, minmax(150px, 1fr)); }
   .attendance-dashboard-head,
@@ -1107,6 +1108,7 @@ input,select,textarea{background:#fff!important;border-color:#d9e8ef!important;c
 }
 @media (max-width: 560px) {
   .daily-stat-grid { grid-template-columns: 1fr; }
+  .assembly-summary-strip{grid-template-columns:repeat(2,minmax(0,1fr))}
   .head-actions { flex-wrap: wrap; }
 }
 @media print {

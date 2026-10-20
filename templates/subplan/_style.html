@@ -1,0 +1,30 @@
+<style>
+.sp-tabs{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 14px}
+.sp-tabs a{padding:8px 14px;border-radius:999px;background:#eef2f7;color:#334155;text-decoration:none;font-weight:600;font-size:14px}
+.sp-tabs a.active{background:#2563eb;color:#fff}
+.sp-muted{color:#64748b;font-size:13px}
+.sp-filter{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;margin-bottom:10px}
+.sp-filter label{display:flex;flex-direction:column;font-size:13px;gap:4px}
+.sp-tgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:8px}
+.sp-t{border:1px solid #e5e7eb;border-radius:12px;padding:10px 12px;background:#fff}
+.sp-t.on{border-color:#ef4444;background:#fef2f2}
+.sp-t .top{display:flex;gap:8px;align-items:center}
+.sp-t .top input[type=checkbox]{width:20px;height:20px;flex:none}
+.sp-t .extra{display:none;margin-top:8px;font-size:13px}
+.sp-t.on .extra{display:block}
+.sp-t .extra select{width:100%}
+.sp-pp{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px}
+.sp-pp label{display:inline-flex;align-items:center;gap:3px;border:1px solid #cbd5e1;border-radius:8px;padding:2px 6px;font-size:12px}
+.sp-pp label.has{background:#e0f2fe;border-color:#38bdf8;font-weight:700}
+.sp-badge{display:inline-block;padding:1px 8px;border-radius:999px;font-size:12px;background:#eef2f7;color:#334155}
+.sp-badge.red{background:#fee2e2;color:#991b1b}.sp-badge.green{background:#dcfce7;color:#166534}
+.sp-free td{font-size:13px;vertical-align:top}
+.sp-row-none{background:#fff7ed}
+.sp-sel{min-width:240px}
+</style>
+<div class="sp-tabs">
+  {% if subplan_can_manage %}<a href="{{ url_for('subplan_day') }}" class="{{ 'active' if request.endpoint=='subplan_day' }}">จัดสอนแทนรายวัน</a>
+  <a href="{{ url_for('subplan_history') }}" class="{{ 'active' if request.endpoint=='subplan_history' }}">สถิติ/ประวัติ</a>{% endif %}
+  <a href="{{ url_for('subplan_mine') }}" class="{{ 'active' if request.endpoint=='subplan_mine' }}">สอนแทนของฉัน</a>
+  {% if current_user.role=='admin' %}<a href="{{ url_for('subplan_settings') }}" class="{{ 'active' if request.endpoint=='subplan_settings' }}">⚙️ ตั้งค่าสิทธิ์</a>{% endif %}
+</div>

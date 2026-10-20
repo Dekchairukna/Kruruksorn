@@ -1,0 +1,49 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>🇹🇭 เช็กชื่อเข้าแถวและกิจกรรม</h1>
+    <p class="muted">เลือกห้องเพื่อเช็กชื่อเข้าแถวประจำวัน หรือสร้างกิจกรรมพิเศษสำหรับห้อง/หลายห้อง</p>
+  </div>
+  {% if sss_features_enabled %}<a class="btn secondary" href="{{ url_for('activity_report') }}">📈 ดูรายงานรวม</a>{% endif %}
+</div>
+
+<section class="card" id="createActivity">
+  <h2>+ สร้างกิจกรรมสำหรับทุกห้อง</h2>
+  <p class="muted">สร้างเพียงครั้งเดียว กิจกรรมจะปรากฏให้ครูทุกห้องใช้เช็กชื่อร่วมกัน</p>
+  <form method="post" class="form-row">
+    <label>ชื่อกิจกรรม<input name="title" placeholder="เช่น กิจกรรมวันไหว้ครู / กีฬาสี / ทัศนศึกษา" required></label>
+    <label>วันที่จัดกิจกรรม<input name="event_date" type="date"></label>
+    <label>หมายเหตุ<input name="note" placeholder="สถานที่หรือรายละเอียดเพิ่มเติม"></label>
+    <button type="submit">สร้างกิจกรรมทุกห้อง</button>
+  </form>
+</section>
+
+<section class="card">
+  <div class="section-head-row">
+    <div><h2>ห้องเรียนในสิทธิ์ของคุณ</h2><p class="muted">แสดงเฉพาะห้องจริง ม.1/1–ม.6/3</p></div>
+  </div>
+  <div class="activity-room-grid">
+    {% for room in rooms %}
+    <article class="activity-room-card">
+      <div class="activity-room-title">
+        <span class="activity-room-icon">🏫</span>
+        <div><small>ห้องเรียน</small><h3>{{ room.name }}</h3></div>
+      </div>
+      <p><b>{{ student_counts.get(room.id, 0) }}</b> นักเรียน · <b>{{ activity_counts.get(room.id, 0) }}</b> กิจกรรมพิเศษ</p>
+      <p class="muted">ครูที่ปรึกษา: {{ room.teacher.full_name if room.teacher else 'ยังไม่กำหนด' }}</p>
+      <div class="activity-room-actions">
+        <a class="btn" href="{{ url_for('classroom_activities', classroom_id=room.id) }}">เช็กชื่อเข้าแถว/กิจกรรม</a>
+        <a class="btn secondary" href="#createActivity">+ สร้างกิจกรรมรวม</a>
+      </div>
+    </article>
+    {% else %}
+    <div class="empty-state">ยังไม่มีห้องเรียนในสิทธิ์ของคุณ กรุณาให้ผู้ดูแลกำหนดห้องก่อน</div>
+    {% endfor %}
+  </div>
+</section>
+
+<style>
+.activity-room-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}.activity-room-card{border:1px solid #dbeafe;border-radius:20px;padding:16px;background:linear-gradient(145deg,#fff,#f8fbff);box-shadow:0 8px 20px rgba(15,23,42,.05)}.activity-room-title{display:flex;align-items:center;gap:12px}.activity-room-icon{display:grid;place-items:center;width:48px;height:48px;border-radius:16px;background:#e0f2fe;font-size:23px}.activity-room-title small{color:#64748b}.activity-room-title h3{margin:2px 0 0;font-size:23px}.activity-room-actions{display:flex;gap:8px;flex-wrap:wrap}.activity-room-actions .btn{flex:1;justify-content:center}@media(max-width:900px){.activity-room-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:560px){.activity-room-grid{grid-template-columns:1fr}.activity-room-actions{display:grid}}
+</style>
+{% endblock %}

@@ -1,0 +1,40 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-head"><div><h1>สอนแทนของฉัน</h1><p class="muted">คาบที่ได้รับมอบหมายให้สอนแทน</p></div></div>
+{% include 'subplan/_style.html' %}
+
+<section class="card">
+  <h3>วันนี้และวันถัดไป</h3>
+  <div class="table-wrap"><table>
+    <tr><th>วันที่</th><th>คาบ</th><th>รายวิชา</th><th>ชั้นเรียน</th><th>แทนครู</th><th>หมายเหตุ</th><th></th></tr>
+    {% for r in upcoming %}{% set dd = days[r.day_id].sub_date %}
+    <tr>
+      <td data-label="วันที่">{{ thai_full_date(dd) }}{% if dd == today %} <span class="sp-badge green">วันนี้</span>{% endif %}</td>
+      <td data-label="คาบ"><b>{{ r.period_no }}</b></td>
+      <td data-label="รายวิชา">{{ r.subject_label }}</td>
+      <td data-label="ชั้นเรียน">{{ r.classroom_label }}</td>
+      <td data-label="แทนครู">{{ r.absent_teacher.full_name }}</td>
+      <td data-label="หมายเหตุ">{{ r.note or '-' }}</td>
+      <td>{% if r.subject_id and r.classroom_id %}<a class="btn small" href="{{ url_for('attendance', subject_id=r.subject_id, classroom_id=r.classroom_id, date=dd.isoformat(), period_no=r.period_no, schedule_id=r.schedule_id, substitute='1', sub_teacher_id=r.absent_teacher_id) }}">เช็กชื่อแทน</a>{% endif %}</td>
+    </tr>
+    {% else %}<tr><td colspan="7">ยังไม่มีคาบสอนแทน</td></tr>{% endfor %}
+  </table></div>
+</section>
+
+{% if recent_days %}
+<section class="card">
+  <h3>แบบมอบหมายสอนแทนล่าสุด</h3>
+  <div class="actions-row">{% for x in recent_days %}<a class="btn small secondary" href="{{ url_for('subplan_print', date=x.sub_date.isoformat()) }}" target="_blank">{{ thai_full_date(x.sub_date) }}</a>{% endfor %}</div>
+</section>
+{% endif %}
+
+{% if past %}
+<section class="card">
+  <h3>สอนแทนที่ผ่านมา (30 วัน) · {{ past|length }} คาบ</h3>
+  <div class="table-wrap"><table>
+    <tr><th>วันที่</th><th>คาบ</th><th>รายวิชา</th><th>ชั้นเรียน</th><th>แทนครู</th></tr>
+    {% for r in past %}<tr><td>{{ thai_full_date(days[r.day_id].sub_date) }}</td><td>{{ r.period_no }}</td><td>{{ r.subject_label }}</td><td>{{ r.classroom_label }}</td><td>{{ r.absent_teacher.full_name }}</td></tr>{% endfor %}
+  </table></div>
+</section>
+{% endif %}
+{% endblock %}

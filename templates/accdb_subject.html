@@ -26,6 +26,8 @@ select,input{font-family:inherit}
     <a class="btn btn-sm btn-outline-secondary ms-2" href="{{ url_for('accdb_home') }}"><i class="bi bi-arrow-left"></i> กลับ</a></div>
   <div class="d-flex align-items-center gap-2">
     <span id="saveLog" class="text-muted small"></span>
+    <a class="btn btn-outline-secondary" href="{{ url_for('pp5s_home') }}">📗 ปพ.5 / SGS</a>
+    <a class="btn btn-outline-secondary" href="{{ url_for('endterm_dashboard') }}">🖨 เอกสาร</a>
     <button class="btn btn-outline-primary" id="btnPull">⬇️ ดึงจากระบบหลัก</button>
     <button class="btn btn-success" id="btnSave"><i class="bi bi-save"></i> บันทึกลงฐานข้อมูล</button>
   </div>
@@ -35,6 +37,7 @@ select,input{font-family:inherit}
     <b>ดึงคะแนนจากระบบหลัก:</b>
     <select id="pullSubject" class="gsel"><option value="">— เลือกวิชา —</option></select>
     <select id="pullRoom" class="gsel"><option value="">— เลือกห้อง —</option></select>
+    <select id="pullSource" class="gsel" title="แหล่งคะแนน"><option value="auto">ปพ.5 (ถ้ามี) ไม่มีใช้สมุดคะแนนเดิม</option><option value="pp5">บันทึกคะแนน ปพ.5</option><option value="main">สมุดคะแนนเดิม</option></select>
     <button class="btn btn-sm btn-success" id="pullGo">ดึงมาแสดง</button>
     <button class="btn btn-sm btn-outline-secondary" id="pullCancel">ปิด</button>
     <span id="pullLog" class="text-muted small"></span>
@@ -51,14 +54,18 @@ select,input{font-family:inherit}
 <div class="soft-card p-3 mt-3">
   <h4 style="margin:0 0 8px">📥 เขียนคะแนนลงไฟล์ .accdb แล้วดาวน์โหลด</h4>
   <p class="text-muted small" style="margin:0 0 10px">1) กด "บันทึกลงฐานข้อมูล" ด้านบนก่อน · 2) อัปโหลดไฟล์ .accdb ของวิชานี้ (ไฟล์ที่วิชาการส่งมา) · ระบบจะเขียนคะแนนล่าสุดลงไฟล์ แล้วให้ดาวน์โหลดกลับไปส่ง — ทำได้ทุกเครื่อง ไม่ต้องลงโปรแกรม</p>
+  {% if has_pw %}<p class="small" style="margin:0 0 10px;color:#1f9d63;font-weight:700">🔓 จำรหัสไฟล์วิชานี้ไว้แล้ว — เขียนครั้งต่อไปเว้นช่องรหัสว่างได้เลย
+    <form method="post" action="{{ url_for('accdb_forget_password', sid=sub.id) }}" style="display:inline" onsubmit="return confirm('ล้างรหัสที่จำไว้ของวิชานี้?')">
+      <button type="submit" class="btn btn-sm btn-outline-secondary" style="margin-left:8px">ล้างรหัสที่จำไว้</button></form></p>{% endif %}
   <form method="post" action="{{ url_for('accdb_to_accdb', sid=sub.id) }}" enctype="multipart/form-data" class="d-flex gap-2 flex-wrap align-items-center">
     <input type="file" name="accdb_file" accept=".accdb" required style="font-family:inherit">
     <span class="d-inline-flex align-items-center gap-1">
-      <input id="accdb-password" type="password" name="password" placeholder="รหัสไฟล์ (ไม่รู้เว้นว่าง)" style="border:1px solid #cdd5e2;border-radius:8px;padding:7px 10px;font-family:inherit">
+      <input id="accdb-password" type="password" name="password" placeholder="{{ 'มีรหัสจำไว้แล้ว — เว้นว่างได้' if has_pw else 'รหัสไฟล์ (วันเกิด)' }}" style="border:1px solid #cdd5e2;border-radius:8px;padding:7px 10px;font-family:inherit">
       <button id="accdb-password-toggle" class="btn btn-outline-secondary" type="button" aria-label="แสดงรหัสผ่าน" aria-pressed="false" onclick="toggleAccdbPassword()"><i class="bi bi-eye"></i></button>
     </span>
     <button class="btn btn-success" type="submit">⬇️ เขียน + ดาวน์โหลด .accdb</button>
   </form>
+  {% if not has_pw %}<p class="text-muted small" style="margin:8px 0 0">💡 กรอกรหัส (วันเกิด) ครั้งแรกครั้งเดียว เขียนสำเร็จแล้วระบบจะจำไว้ให้ ครั้งต่อไปไม่ต้องกรอกอีก</p>{% endif %}
 </div>
 <script>
 function toggleAccdbPassword(){
@@ -87,7 +94,8 @@ const COLS=[{key:'um01',label:'เก็บก่อนกลาง',max:30},{ke
 const QN=DATA.quality,LN=DATA.literature,GS=DATA.gradeScale;
 const LVTXT={'3':'ดีเยี่ยม','2':'ดี','1':'ผ่าน','0':'ไม่ผ่าน','':'-'};
 let rows=DATA.rows, sub='score', curUnit=1;
-rows.forEach(r=>{['um01','um02','mid','final','q1','q2','q3','q4','q5','q6','q7','q8','l1','l2','l3','l4','l5'].forEach(k=>{if(r[k]===0||r[k]==null)r[k]='';});if(!r.sub)r.sub={};});
+const dirtySections=new Set();
+rows.forEach(r=>{['um01','um02','mid','final','q1','q2','q3','q4','q5','q6','q7','q8','l1','l2','l3','l4','l5'].forEach(k=>{if(r[k]===0||r[k]==null)r[k]='';});if(!r.sub)r.sub={};if(['ร','มส'].includes(String(r.grade||'')))r.gradeOverride=String(r.grade);});
 function num(v){const n=parseFloat(v);return isNaN(n)?0:n;}
 function fmt(n){return (Math.round(n*100)/100).toString();}
 function gradeOf(p){for(const g of GS){if(p>=g.min&&p<=g.max)return g.g;}return"0";}
@@ -113,7 +121,7 @@ function renderScore(){
   head+=`<th>รวม<br><small class="text-muted">${maxTotal()}</small></th><th>เกรด</th>`;
   let body='';rows.forEach((r,i)=>{body+=`<tr data-i="${i}"><td>${i+1}</td><td class="gname">${nm(r)}</td>`;
     COLS.forEach(c=>body+=`<td><input class="sc" inputmode="decimal" data-i="${i}" data-key="${c.key}" data-max="${c.max}" value="${r[c.key]}"></td>`);
-    body+=`<td class="gtot fw-bold">${fmt(rowTotal(r))}</td><td class="ggr fw-bold">${hasSc(r)?grd(r):''}</td></tr>`;});
+    body+=`<td class="gtot fw-bold">${fmt(rowTotal(r))}</td><td class="ggr fw-bold">${r.gradeOverride||(hasSc(r)?grd(r):'')}</td></tr>`;});
   document.getElementById('panel').innerHTML=tbl(head,body);bindScore();
 }
 function renderRate(pfx,cnt,labels,gk,pre){
@@ -140,31 +148,32 @@ function renderUnit(){
 }
 function gselHtml(i,gk,val){let o='';['','3','2','1','0'].forEach(v=>o+=`<option value="${v}"${String(val)===v?' selected':''}>${v===''?'-':LVTXT[v]}</option>`);return `<select class="gsel gs" data-i="${i}" data-key="${gk}">${o}</select>`;}
 function bindScore(){
-  document.querySelectorAll('#panel .sc').forEach(inp=>inp.addEventListener('input',()=>{let v=inp.value.replace(/[^0-9.]/g,'');inp.value=v;rows[+inp.dataset.i][inp.dataset.key]=v;inp.classList.toggle('over',v!==''&&+v>+inp.dataset.max);const tr=inp.closest('tr');tr.querySelector('.gtot').textContent=fmt(rowTotal(rows[+inp.dataset.i]));const g=grd(rows[+inp.dataset.i]);tr.querySelector('.ggr').textContent=hasSc(rows[+inp.dataset.i])?g:'';}));
+  document.querySelectorAll('#panel .sc').forEach(inp=>inp.addEventListener('input',()=>{dirtySections.add('score');let v=inp.value.replace(/[^0-9.]/g,'');inp.value=v;rows[+inp.dataset.i][inp.dataset.key]=v;inp.classList.toggle('over',v!==''&&+v>+inp.dataset.max);const tr=inp.closest('tr');tr.querySelector('.gtot').textContent=fmt(rowTotal(rows[+inp.dataset.i]));const g=grd(rows[+inp.dataset.i]);tr.querySelector('.ggr').textContent=hasSc(rows[+inp.dataset.i])?g:'';}));
   bulk();
 }
 function bindRate(pfx,cnt,gk){
   const keys=[];for(let i=1;i<=cnt;i++)keys.push(pfx+i);
-  document.querySelectorAll('#panel .sc').forEach(inp=>inp.addEventListener('input',()=>{let v=inp.value.replace(/[^0-9.]/g,'');if(v!==''){if(+v>3)v='3';v=v.replace('.','');}inp.value=v;const r=rows[+inp.dataset.i];r[inp.dataset.key]=v;const tr=inp.closest('tr');const lv=rateLevel(rateAvg(r,keys));const sel=tr.querySelector('.gs');sel.value=lv;r[gk]=lv;}));
-  document.querySelectorAll('#panel .gs').forEach(s=>s.addEventListener('change',()=>{rows[+s.dataset.i][s.dataset.key]=s.value;}));
+  document.querySelectorAll('#panel .sc').forEach(inp=>inp.addEventListener('input',()=>{dirtySections.add(pfx==='q'?'qual':'read');let v=inp.value.replace(/[^0-9.]/g,'');if(v!==''){if(+v>3)v='3';v=v.replace('.','');}inp.value=v;const r=rows[+inp.dataset.i];r[inp.dataset.key]=v;const tr=inp.closest('tr');const lv=rateLevel(rateAvg(r,keys));const sel=tr.querySelector('.gs');sel.value=lv;r[gk]=lv;}));
+  document.querySelectorAll('#panel .gs').forEach(s=>s.addEventListener('change',()=>{dirtySections.add(pfx==='q'?'qual':'read');rows[+s.dataset.i][s.dataset.key]=s.value;}));
   bulk();
 }
 function bindUnit(){
-  document.querySelectorAll('#panel .us').forEach(inp=>inp.addEventListener('input',()=>{let v=inp.value.replace(/[^0-9.]/g,'');inp.value=v;subArr(rows[+inp.dataset.i])[+inp.dataset.k]=v;inp.closest('tr').querySelector('.usum').textContent=fmt(subSum(rows[+inp.dataset.i]));}));
-  document.querySelectorAll('#panel .bb2').forEach(b=>b.addEventListener('click',()=>{const k=+b.dataset.k-1;const val=document.querySelector(`#panel .bv[data-k="${b.dataset.k}"]`).value.replace(/[^0-9.]/g,'');rows.forEach(r=>subArr(r)[k]=val);renderUnit();}));
+  document.querySelectorAll('#panel .us').forEach(inp=>inp.addEventListener('input',()=>{dirtySections.add('unit');let v=inp.value.replace(/[^0-9.]/g,'');inp.value=v;subArr(rows[+inp.dataset.i])[+inp.dataset.k]=v;inp.closest('tr').querySelector('.usum').textContent=fmt(subSum(rows[+inp.dataset.i]));}));
+  document.querySelectorAll('#panel .bb2').forEach(b=>b.addEventListener('click',()=>{dirtySections.add('unit');const k=+b.dataset.k-1;const val=document.querySelector(`#panel .bv[data-k="${b.dataset.k}"]`).value.replace(/[^0-9.]/g,'');rows.forEach(r=>subArr(r)[k]=val);renderUnit();}));
 }
-function bulk(){document.querySelectorAll('#panel .bb').forEach(b=>b.addEventListener('click',()=>{const key=b.dataset.key;const val=document.querySelector(`#panel .bv[data-key="${key}"]`).value.replace(/[^0-9.]/g,'');rows.forEach(r=>r[key]=val);render();}));}
+function bulk(){document.querySelectorAll('#panel .bb').forEach(b=>b.addEventListener('click',()=>{dirtySections.add(sub);const key=b.dataset.key;const val=document.querySelector(`#panel .bv[data-key="${key}"]`).value.replace(/[^0-9.]/g,'');rows.forEach(r=>r[key]=val);render();}));}
 document.querySelectorAll('#subtabs .nav-link').forEach(b=>b.addEventListener('click',()=>{sub=b.dataset.t;render();}));
 document.getElementById('btnSave').onclick=async()=>{
   const log=document.getElementById('saveLog');log.textContent='กำลังบันทึก...';
   const mx=maxTotal();
   const out=rows.map(r=>{const qk=['q1','q2','q3','q4','q5','q6','q7','q8'],lk=['l1','l2','l3','l4','l5'];
-    return {sid:r.sid,um01:num(r.um01),um02:num(r.um02),mid:num(r.mid),final:num(r.final),grade:hasSc(r)?grd(r):'',
+    return {sid:r.sid,um01:num(r.um01),um02:num(r.um02),mid:num(r.mid),final:num(r.final),grade:r.gradeOverride||(hasSc(r)?grd(r):''),
       q1:num(r.q1),q2:num(r.q2),q3:num(r.q3),q4:num(r.q4),q5:num(r.q5),q6:num(r.q6),q7:num(r.q7),q8:num(r.q8),
       qgrade:r.qgrade||rateLevel(rateAvg(r,qk)),l1:num(r.l1),l2:num(r.l2),l3:num(r.l3),l4:num(r.l4),l5:num(r.l5),
       lgrade:r.lgrade||rateLevel(rateAvg(r,lk)),sub:r.sub};});
-  try{const res=await fetch(window.location.pathname+'/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rows:out})});
-    const j=await res.json();log.textContent=j.ok?('✓ บันทึกแล้ว '+j.saved+' คน'):'บันทึกไม่ได้';log.className=j.ok?'text-success small':'text-danger small';}
+  const sections=dirtySections.size?[...dirtySections]:[sub];
+  try{const res=await fetch(window.location.pathname+'/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rows:out,sections})});
+    const j=await res.json();if(j.ok)dirtySections.clear();log.textContent=j.ok?('✓ บันทึกแล้ว '+j.saved+' คน'):'บันทึกไม่ได้';log.className=j.ok?'text-success small':'text-danger small';}
   catch(e){log.textContent='ผิดพลาด: '+e.message;log.className='text-danger small';}
 };
 // ---- ดึงจากระบบหลัก ----
@@ -188,16 +197,17 @@ document.getElementById('pullGo').onclick=async()=>{
   const log=document.getElementById('pullLog');
   if(!subId||!roomId){log.textContent='เลือกวิชาและห้องก่อน';return;}
   log.textContent='กำลังดึง...';
-  try{const r=await fetch(window.location.pathname+'/pull-preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({subject_id:+subId,classroom_id:+roomId})});
+  try{const r=await fetch(window.location.pathname+'/pull-preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({subject_id:+subId,classroom_id:+roomId,source:(document.getElementById('pullSource')||{}).value||'auto'})});
     const j=await r.json();
     if(!j.ok){log.textContent=j.error||'ดึงไม่สำเร็จ';return;}
     if(j.weights){
       COLS.forEach(c=>{if(j.weights[c.key]!=null)c.max=Number(j.weights[c.key]);});
       document.getElementById('pullHint').innerHTML='ใช้น้ำหนักจากวิชาหลัก: เก็บก่อนกลาง '+j.weights.um01+' · กลางภาค '+j.weights.mid+' · เก็บหลังกลาง '+j.weights.um02+' · ปลายภาค '+j.weights.final+' · <b>ยังไม่บันทึก</b> จนกว่าจะกด “บันทึกลงฐานข้อมูล”';
     }
+    if(j.hint)document.getElementById('pullHint').innerHTML=j.hint;
     let filled=0,matched=0;
-    rows.forEach(r0=>{const v=j.values[String(r0.sid).trim()];if(v){matched++;['mid','final','um01','um02'].forEach(k=>{if(v[k]!=null){r0[k]=v[k];filled++;}});}});
-    render();
+    rows.forEach(r0=>{const v=j.values[String(r0.sid).trim()];if(v){matched++;['mid','final','um01','um02','q1','q2','q3','q4','q5','q6','q7','q8','qgrade','l1','l2','l3','l4','l5','lgrade'].forEach(k=>{if(v[k]!=null){r0[k]=v[k];filled++;}});if(v.grade_override)r0.gradeOverride=v.grade_override;else delete r0.gradeOverride;}});
+    ['score','qual','read'].forEach(x=>dirtySections.add(x));render();
     if(matched){log.innerHTML='<span class="text-success">✓ ดึงมา '+matched+' คน (เติม '+filled+' ช่อง) — ตรวจแล้วกด “บันทึกลงฐานข้อมูล”</span>';}
     else{const d=j.debug||{};const mm=(d.sample_main||[]).map(x=>(x.no||'(ไม่มีรหัส)')+' | '+x.name).join('<br>');const aa=(d.sample_accdb||[]).map(x=>x.sid+' | '+x.name).join('<br>');
       log.innerHTML='<span class="text-danger">จับคู่ไม่ได้</span> (ระบบหลัก '+(d.main_students||0)+' คน · .accdb '+(d.accdb_rows||0)+' คน)<br><small><b>ระบบหลัก (รหัส | ชื่อ):</b><br>'+mm+'<br>—<br><b>.accdb (sid | ชื่อ):</b><br>'+aa+'</small>';}

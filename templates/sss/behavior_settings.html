@@ -1,0 +1,54 @@
+{% extends 'base.html' %}
+{% block content %}
+{% include 'sss/_style.html' %}
+{% set kind = None %}
+<div class="page-head">
+  <div>
+    <h1>ตั้งค่าคะแนนความประพฤติ</h1>
+    <p class="muted">ปรับคะแนนตั้งต้น ช่วงคะแนนในรายงาน และรายการเพิ่ม/ตัดคะแนนให้ตรงกับระเบียบของโรงเรียน</p>
+  </div>
+</div>
+{% include 'sss/_behavior_tabs.html' %}
+
+<form method="post" class="card form-grid">
+  <input type="hidden" name="action" value="config">
+  <label>คะแนนตั้งต้นต่อภาคเรียน
+    <input type="number" name="base_score" value="{{ base }}" required>
+  </label>
+  <label>จุดแบ่งช่วงคะแนน (คั่นด้วย ,)
+    <input name="bands" value="{{ bands }}" required>
+  </label>
+  <div class="full sss-muted">ช่วงที่จะแสดงในรายงาน: {% for b in band_list %}<span class="tag">{{ b[0] }}</span> {% endfor %}</div>
+  <div class="full"><button class="btn" type="submit">บันทึกการตั้งค่า</button></div>
+</form>
+
+<form method="post" class="card form-grid">
+  <input type="hidden" name="action" value="add">
+  <h3 class="full">เพิ่มรายการใหม่</h3>
+  <label class="full">ชื่อรายการ<input name="name" required></label>
+  <label>ประเภท
+    <select name="kind"><option value="minus">ตัดคะแนน</option><option value="plus">เพิ่มคะแนน (ความดี)</option></select>
+  </label>
+  <label>คะแนน<input type="number" name="points" min="1" value="5" required></label>
+  <div class="full"><button class="btn" type="submit">เพิ่มรายการ</button></div>
+</form>
+
+<section class="card">
+  <h3>รายการทั้งหมด</h3>
+  <div class="table-wrap"><table>
+    <tr><th>ประเภท</th><th>รายการ</th><th>คะแนน</th><th>ใช้งาน</th><th></th></tr>
+    {% for it in items %}
+    <tr>
+      <td data-label="ประเภท"><span class="sss-kind {{ it.kind }}">{{ 'เพิ่ม' if it.kind=='plus' else 'ตัด' }}</span></td>
+      <td data-label="รายการ"><input form="item{{ it.id }}" name="name" value="{{ it.name }}" style="min-width:260px"></td>
+      <td data-label="คะแนน"><input form="item{{ it.id }}" type="number" name="points" min="1" value="{{ it.points }}" style="width:80px"></td>
+      <td data-label="ใช้งาน"><input form="item{{ it.id }}" type="checkbox" name="is_active" value="1" {% if it.is_active %}checked{% endif %}></td>
+      <td><button form="item{{ it.id }}" class="btn small secondary" type="submit">บันทึก</button></td>
+    </tr>
+    {% endfor %}
+  </table></div>
+  {% for it in items %}
+  <form method="post" id="item{{ it.id }}"><input type="hidden" name="action" value="update"><input type="hidden" name="item_id" value="{{ it.id }}"></form>
+  {% endfor %}
+</section>
+{% endblock %}

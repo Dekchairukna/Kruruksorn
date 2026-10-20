@@ -1,0 +1,43 @@
+{% extends 'base.html' %}
+{% block content %}
+{% include 'sss/_style.html' %}
+<div class="page-head">
+  <div>
+    <h1>คะแนนความประพฤติ{{ 'ของฉัน' if current_user.role=='student' else '' }}</h1>
+    <p class="muted">{{ student.full_name }} · {{ student.username }}{% if room %} · ห้อง {{ room.name }}{% endif %} · {{ sem.name if sem else '' }}</p>
+  </div>
+  {% if current_user.role != 'student' %}
+  <div class="actions-row sss-noprint">
+    <a class="btn secondary" href="{{ url_for('behavior_home', room_id=room.id if room else None) }}">← กลับ</a>
+    <button class="btn secondary" onclick="window.print()">พิมพ์</button>
+  </div>
+  {% endif %}
+</div>
+
+<div class="sss-stats">
+  <div class="sss-stat"><small>คะแนนตั้งต้น</small><b>{{ base }}</b></div>
+  <div class="sss-stat"><small>เพิ่ม</small><b class="pts-plus">+{{ s.plus }}</b></div>
+  <div class="sss-stat"><small>ตัด</small><b class="pts-minus">-{{ s.minus }}</b></div>
+  <div class="sss-stat"><small>คงเหลือ</small><b class="{{ 'sss-low' if s.score < base }}">{{ s.score }}</b><small>ช่วง {{ band }}</small></div>
+</div>
+
+<section class="card">
+  <div class="table-wrap"><table>
+    <tr><th>วันที่</th><th>ประเภท</th><th>รายการ</th><th>คะแนน</th>{% if current_user.role!='student' %}<th>หลักฐาน</th><th>ผู้บันทึก</th>{% endif %}</tr>
+    {% for r in records %}
+    <tr>
+      <td data-label="วันที่">{{ thai_date_short(r.record_date) }}</td>
+      <td data-label="ประเภท"><span class="sss-kind {{ r.kind }}">{{ 'ความดี' if r.kind=='plus' else 'ตัดคะแนน' }}</span></td>
+      <td data-label="รายการ">{{ r.item_name }}{% if r.note %}<br><small class="sss-muted">{{ r.note }}</small>{% endif %}</td>
+      <td data-label="คะแนน" class="{{ 'pts-plus' if r.points>=0 else 'pts-minus' }}">{{ '%+d'|format(r.points) }}</td>
+      {% if current_user.role!='student' %}
+      <td data-label="หลักฐาน">{% if r.evidence_path %}<a href="{{ url_for('uploaded_file', filename=r.evidence_path) }}" target="_blank">ดูไฟล์</a>{% else %}-{% endif %}</td>
+      <td data-label="ผู้บันทึก">{{ r.recorded_by.full_name if r.recorded_by else '-' }}</td>
+      {% endif %}
+    </tr>
+    {% else %}
+    <tr><td colspan="6">ยังไม่มีรายการในภาคเรียนนี้</td></tr>
+    {% endfor %}
+  </table></div>
+</section>
+{% endblock %}

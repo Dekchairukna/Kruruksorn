@@ -60,6 +60,27 @@
   </div>
 </section>
 
+<section class="card assembly-dashboard-card">
+  <div class="section-head-row">
+    <div><h2>🇹🇭 สรุปการเข้าแถว</h2><p class="muted">การเช็กชื่อเข้าแถวของวันที่เลือก แยกตามห้องเรียน</p></div>
+    <a class="btn" href="{{ url_for('classroom_activity_hub') }}">ไปหน้าเช็กชื่อเข้าแถว</a>
+  </div>
+  <div class="assembly-summary-strip">
+    <div><small>นักเรียนทั้งหมด</small><b>{{ assembly_totals.students }}</b></div>
+    <div class="ok-text"><small>มาเข้าแถว</small><b>{{ assembly_totals.present }}</b></div>
+    <div class="bad-text"><small>ไม่มา</small><b>{{ assembly_totals.absent }}</b></div>
+    <div><small>เช็กแล้ว</small><b>{{ assembly_totals.checked_rooms }}/{{ assembly_rows|length }} ห้อง</b></div>
+  </div>
+  <div class="table-wrap">
+    <table class="attendance-overview-table compact-assembly-table">
+      <tr><th>ห้อง</th><th>ทั้งหมด</th><th>มาเข้าแถว</th><th>ไม่มา</th><th>ยังไม่บันทึก</th><th>สถานะ</th><th></th></tr>
+      {% for r in assembly_rows %}<tr>
+        <td data-label="ห้อง"><b>{{ r.room.name }}</b></td><td data-label="ทั้งหมด">{{ r.student_count }}</td><td data-label="มาเข้าแถว" class="ok-text">{{ r.present }}</td><td data-label="ไม่มา" class="bad-text">{{ r.absent }}</td><td data-label="ยังไม่บันทึก">{{ r.unchecked }}</td><td data-label="สถานะ">{% if r.checked %}<span class="done-badge">เช็กแล้ว</span>{% else %}<span class="wait-badge">ยังไม่เช็ก</span>{% endif %}</td><td><a class="btn small secondary" href="{{ url_for('classroom_activities', classroom_id=r.room.id) }}">เปิดห้อง</a></td>
+      </tr>{% endfor %}
+    </table>
+  </div>
+</section>
+
 <section class="card">
   <div class="section-head-row">
     <div>
@@ -69,30 +90,12 @@
   </div>
   <div class="table-wrap">
     <table class="attendance-overview-table">
-      <tr>
-        <th>ห้องเรียน</th>
-        <th>ทั้งหมด (คน)</th>
-        <th>มาเรียน (คน)</th>
-        <th>ไม่มา (คน)</th>
-        <th>ยังไม่บันทึก</th>
-        <th>ร้อยละการมาเรียน</th>
-        <th>สถานะการเช็กชื่อ</th>
-        <th>เปิดรายงาน</th>
-      </tr>
+      <tr><th>ห้องเรียน</th><th>ทั้งหมด (คน)</th><th>มาเรียน (คน)</th><th>ไม่มา (คน)</th><th>ยังไม่บันทึก</th><th>ร้อยละการมาเรียน</th><th>สถานะการเช็กชื่อ</th><th>เปิดรายงาน</th></tr>
       {% for r in rows %}
       <tr>
-        <td data-label="ห้องเรียน"><b>{{ r.room.name }}</b></td>
-        <td data-label="ทั้งหมด">{{ r.student_count }}</td>
-        <td data-label="มาเรียน" class="ok-text">{{ r.present }}</td>
-        <td data-label="ไม่มา" class="bad-text">{{ r.absent }}</td>
-        <td data-label="ยังไม่บันทึก">{{ r.unchecked }}</td>
-        <td data-label="ร้อยละ" class="percent-cell {% if r.percent < 80 %}low-percent{% endif %}">{{ r.percent }}%</td>
-        <td data-label="สถานะ">{% if r.checked %}<span class="done-badge">ครบแล้ว</span>{% else %}<span class="wait-badge">ยังไม่เช็ก</span>{% endif %}</td>
-        <td data-label="เปิดรายงาน"><a class="btn small secondary" href="{{ url_for('classroom_day_report', classroom_id=r.room.id, date=report_date.isoformat()) }}">ดูคาบ 1-8</a></td>
+        <td data-label="ห้องเรียน"><b>{{ r.room.name }}</b></td><td data-label="ทั้งหมด">{{ r.student_count }}</td><td data-label="มาเรียน" class="ok-text">{{ r.present }}</td><td data-label="ไม่มา" class="bad-text">{{ r.absent }}</td><td data-label="ยังไม่บันทึก">{{ r.unchecked }}</td><td data-label="ร้อยละ" class="percent-cell {% if r.percent < 80 %}low-percent{% endif %}">{{ r.percent }}%</td><td data-label="สถานะ">{% if r.checked %}<span class="done-badge">ครบแล้ว</span>{% else %}<span class="wait-badge">ยังไม่เช็ก</span>{% endif %}</td><td data-label="เปิดรายงาน"><a class="btn small secondary" href="{{ url_for('classroom_day_report', classroom_id=r.room.id, date=report_date.isoformat()) }}">ดูคาบ 1-8</a></td>
       </tr>
-      {% else %}
-      <tr><td colspan="8">ยังไม่มีห้องเรียนในระบบหรือยังไม่มีสิทธิ์ดูห้องเรียน</td></tr>
-      {% endfor %}
+      {% else %}<tr><td colspan="8">ยังไม่มีห้องเรียนในระบบหรือยังไม่มีสิทธิ์ดูห้องเรียน</td></tr>{% endfor %}
     </table>
   </div>
 </section>

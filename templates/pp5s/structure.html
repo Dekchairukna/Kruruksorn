@@ -1,0 +1,84 @@
+{% extends 'base.html' %}
+{% block content %}
+{% include 'pp5s/_style.html' %}
+{% set code, nm = split_subject(subject.name) %}
+<div class="p5-head">
+  <div><h1>⚙️ ตั้งค่าโครงสร้างวิชา</h1><p class="muted">กำหนดสัดส่วนคะแนน + ตัวชี้วัด/ชิ้นงาน ประจำรายวิชา (ปพ.5) · {{ sem.name if sem else '' }}</p></div>
+  <div class="p5-tools">
+    {% if back_room %}<a class="p5-pill" href="{{ url_for('pp5s_entry', subject_id=subject.id, classroom_id=back_room) }}">← กลับไปบันทึกคะแนน</a>{% else %}<a class="p5-pill" href="{{ url_for('pp5s_home') }}">← รายวิชาทั้งหมด</a>{% endif %}
+  </div>
+</div>
+<form method="post" id="stForm">
+<input type="hidden" name="room" value="{{ back_room or '' }}">
+<div class="p5-grid2">
+  <div>
+    <div class="p5-card"><h3>📘 1. เลือกรายวิชา</h3><div class="in">
+      <label class="muted">รายวิชา</label>
+      <select class="p5-select" style="width:100%" onchange="location.href='{{ url_for('pp5s_structure', subject_id=0) }}'.replace('/0','/'+this.value)">
+        {% for s in subjects %}{% set c2, n2 = split_subject(s.name) %}<option value="{{ s.id }}" {% if s.id==subject.id %}selected{% endif %}>{{ c2 }} - {{ n2 }}</option>{% endfor %}
+      </select>
+      <div class="p5-note" style="margin-top:14px">
+        <div class="muted" style="font-size:12px">กำลังตั้งค่าสำหรับ</div>
+        <div style="font-size:20px;font-weight:900">{{ code }} {{ nm }}</div>
+        <div style="margin-top:6px">{% for r in rooms %}<span class="p5-badge gray">ห้อง {{ r.name }}</span> {% endfor %}</div>
+        <div class="muted" style="font-size:12px;margin-top:6px">โครงสร้างนี้ใช้กับทุกห้องของรายวิชาในภาคเรียนนี้</div>
+      </div>
+      <label class="muted">จำนวนคาบทั้งภาคเรียน (ใช้คิดเวลาเรียน 80%)</label>
+      <input name="total_periods" value="{{ st.total_periods or '' }}" placeholder="{{ subject.total_periods or 40 }} (ตามรายวิชา)" style="width:100%;padding:9px 10px;border:1px solid #d7dee8;border-radius:10px">
+      <label class="muted" style="display:block;margin-top:10px">ครูที่ปรึกษาคนที่ 1 / 2 (แสดงใน ปพ.5)</label>
+      <input name="advisor1" value="{{ st.advisor1 or '' }}" placeholder="ครูที่ปรึกษาคนที่ 1" style="width:100%;padding:9px 10px;border:1px solid #d7dee8;border-radius:10px;margin-bottom:6px">
+      <input name="advisor2" value="{{ st.advisor2 or '' }}" placeholder="ครูที่ปรึกษาคนที่ 2" style="width:100%;padding:9px 10px;border:1px solid #d7dee8;border-radius:10px">
+    </div></div>
+  </div>
+  <div>
+    <div class="p5-card"><h3>⚖️ 2. โครงสร้างคะแนน <span class="p5-total" id="grand">รวม <b>0</b> / 100</span></h3><div class="in">
+      <div class="p5-row3">
+        <label>รวมคะแนนเก็บ<input name="collect_total" id="collect_total" value="{{ fmt(st.collect_total) }}" inputmode="decimal"></label>
+        <label>สอบกลางภาค<input name="mid_total" id="mid_total" value="{{ fmt(st.mid_total) }}" inputmode="decimal"></label>
+        <label>สอบปลายภาค<input name="final_total" id="final_total" value="{{ fmt(st.final_total) }}" inputmode="decimal"></label>
+      </div>
+      <div class="p5-ind">
+        <div><b>📄 ตัวชี้วัด กลางภาค</b><input name="mid_codes" value="{{ st.mid_codes }}" placeholder="รหัสตัวชี้วัด (ถ้ามี) เช่น พ1.1 ม.4/1" style="margin:8px 0"><textarea name="mid_detail" rows="2" placeholder="รายละเอียด/จุดประสงค์...">{{ st.mid_detail }}</textarea></div>
+        <div><b>📄 ตัวชี้วัด ปลายภาค</b><input name="final_codes" value="{{ st.final_codes }}" placeholder="รหัสตัวชี้วัด (ถ้ามี)" style="margin:8px 0"><textarea name="final_detail" rows="2" placeholder="รายละเอียด/จุดประสงค์...">{{ st.final_detail }}</textarea></div>
+      </div>
+      <div class="p5-items" style="margin-top:16px">
+        <div style="display:flex;justify-content:space-between;align-items:center"><b>☰ รายละเอียดตัวชี้วัด / ชิ้นงาน (คะแนนเก็บ)</b>
+          <span><span class="p5-total" id="itemsum">รวม <b>0</b></span> <button type="button" class="p5-pill" onclick="addRow()">＋ เพิ่มแถว</button></span></div>
+        <table id="itemsTbl">
+          <tr><th>#</th><th>รหัส / ชื่อชิ้นงาน</th><th>รายละเอียด / จุดประสงค์</th><th>ก่อน/หลังกลางภาค</th><th>คะแนนเต็ม</th><th>ลบ</th></tr>
+          {% for it in items %}
+          <tr><td class="n">{{ loop.index }}</td>
+            <td><input type="hidden" name="item_id" value="{{ it.id }}"><input name="item_code" value="{{ it.code }}" placeholder="ว1.1" style="margin-bottom:6px"><input name="item_name" value="{{ it.name }}" placeholder="ชื่อชิ้นงาน" style="color:#1d4ed8;font-weight:700"></td>
+            <td><textarea name="item_detail" rows="3" placeholder="ระบุรายละเอียดหรือจุดประสงค์...">{{ it.detail }}</textarea></td>
+            <td><select name="item_half"><option value="1" {% if it.half!=2 %}selected{% endif %}>ก่อนกลางภาค</option><option value="2" {% if it.half==2 %}selected{% endif %}>หลังกลางภาค</option></select></td>
+            <td><input class="mx" name="item_max" value="{{ fmt(it.max_score) }}" inputmode="decimal"></td>
+            <td><button type="button" class="del" title="ลบแถว" onclick="delRow(this)">🗑</button></td></tr>
+          {% endfor %}
+        </table>
+        <p class="muted" style="font-size:12px">“ช่วง” ใช้แบ่งคะแนนเก็บเป็นก่อน/หลังกลางภาคตอนส่งออกไปโปรแกรม SGS · การลบแถวจะลบคะแนนของช่องนั้นด้วย</p>
+      </div>
+      <button class="btn" type="submit" style="width:100%;margin-top:10px;padding:14px;font-size:17px">💾 บันทึกโครงสร้างวิชา</button>
+    </div></div>
+  </div>
+</div>
+</form>
+<template id="rowTpl"><tr><td class="n"></td>
+  <td><input type="hidden" name="item_id" value=""><input name="item_code" placeholder="ว1.1" style="margin-bottom:6px"><input name="item_name" placeholder="ชื่อชิ้นงาน" style="color:#1d4ed8;font-weight:700"></td>
+  <td><textarea name="item_detail" rows="3" placeholder="ระบุรายละเอียดหรือจุดประสงค์..."></textarea></td>
+  <td><select name="item_half"><option value="1">ก่อนกลางภาค</option><option value="2">หลังกลางภาค</option></select></td>
+  <td><input class="mx" name="item_max" value="10" inputmode="decimal"></td>
+  <td><button type="button" class="del" title="ลบแถว" onclick="delRow(this)">🗑</button></td></tr></template>
+<script>
+function num(v){v=parseFloat(String(v).replace(',',''));return isFinite(v)?v:0}
+function renum(){document.querySelectorAll('#itemsTbl tr .n').forEach(function(c,i){c.textContent=i+1});calc()}
+function addRow(){var t=document.getElementById('rowTpl').content.cloneNode(true);document.getElementById('itemsTbl').appendChild(t);renum()}
+function delRow(b){if(!confirm('ลบแถวนี้? คะแนนที่กรอกไว้ของแถวนี้จะถูกลบเมื่อบันทึก'))return;b.closest('tr').remove();renum()}
+function calc(){
+  var c=num(document.getElementById('collect_total').value),m=num(document.getElementById('mid_total').value),f=num(document.getElementById('final_total').value);
+  var g=document.getElementById('grand');g.querySelector('b').textContent=+(c+m+f).toFixed(2);g.classList.toggle('bad',Math.abs(c+m+f-100)>0.001);
+  var s=0;document.querySelectorAll('#itemsTbl input[name=item_max]').forEach(function(i){s+=num(i.value)});
+  var e=document.getElementById('itemsum');e.querySelector('b').textContent=+s.toFixed(2)+' / '+c;e.classList.toggle('bad',Math.abs(s-c)>0.001);
+}
+document.getElementById('stForm').addEventListener('input',calc);calc();
+</script>
+{% endblock %}

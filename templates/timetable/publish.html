@@ -1,0 +1,49 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>นำตารางนี้ไปใช้</h1>
+    <p class="muted">{{ plan.name }} → {{ semester.name if semester else 'ยังไม่มีภาคเรียนปัจจุบัน' }}</p>
+  </div>
+  <a class="btn secondary" href="{{ url_for('tt_plan', pid=plan.id) }}">← กลับภาพรวม</a>
+</div>
+{% include 'timetable/_nav.html' %}
+
+<div class="tt-stats">
+  <div class="tt-stat"><small>คาบที่จะนำไปใช้</small><b>{{ slots|length }}</b></div>
+  <div class="tt-stat"><small>ครูในแผน</small><b>{{ teachers|length }}</b></div>
+  <div class="tt-stat"><small>ตารางเดิมในเทอมนี้</small><b>{{ existing }}</b></div>
+</div>
+
+{% if not semester %}<div class="alert danger">ยังไม่มีภาคเรียนปัจจุบัน กรุณาเลือกภาคเรียนก่อน</div>{% endif %}
+{% if missing %}<div class="alert danger">ยังมีคาบที่วางไม่ครบ {{ missing|length }} รายวิชา กรุณากลับไปจัดตารางให้ครบก่อน</div>{% endif %}
+{% if hard_issues %}<div class="alert warning">พบตารางชนหรือผิดข้อห้ามเด็ดขาด {{ hard_issues|length }} จุด คุณยังนำไปใช้ได้หากเป็นตารางจริงที่โรงเรียนตรวจสอบแล้ว</div>{% endif %}
+{% if existing %}<div class="alert warning">เมื่อยืนยัน ระบบจะแทนที่ตารางเดิม {{ existing }} คาบเฉพาะภาคเรียนนี้ หากตารางเดิมมีการเปิดคาบหรือเช็กชื่อแล้ว ระบบจะหยุดเพื่อป้องกันข้อมูลสูญหาย</div>{% endif %}
+
+<form method="post" class="card" onsubmit="return confirm('ยืนยันนำตาราง {{ plan.name }} ไปใช้ใน {{ semester.name if semester else '' }}?')">
+  <h2>ตรวจการจับคู่บัญชีครู</h2>
+  <p class="muted">ชื่อจากไฟล์อาจสะกดต่างจากบัญชีจริง กรุณาตรวจทุกแถวก่อนยืนยัน</p>
+  <div class="table-wrap"><table>
+    <tr><th>ชื่อครูในแผน</th><th>บัญชีครูในระบบ</th><th>สถานะ</th></tr>
+    {% for teacher in teachers %}
+    <tr>
+      <td><b>{{ teacher.name }}</b></td>
+      <td>
+        <select name="teacher_{{ teacher.id }}" required>
+          <option value="">— เลือกบัญชีครู —</option>
+          {% for user in users %}<option value="{{ user.id }}" {% if suggestions.get(teacher.id)==user.id %}selected{% endif %}>{{ user.full_name }} ({{ user.username }})</option>{% endfor %}
+        </select>
+      </td>
+      <td>
+        {% if suggestions.get(teacher.id) %}<span class="status-pill {{ 'ok' if suggestion_scores.get(teacher.id,0) >= 0.95 else 'warn' }}">{{ 'ตรงกัน' if suggestion_scores.get(teacher.id,0) >= 0.95 else 'โปรดตรวจ' }}</span>
+        {% else %}<span class="status-pill danger">ยังไม่ได้จับคู่</span>{% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </table></div>
+  <div class="actions-row" style="margin-top:16px">
+    <button class="btn" type="submit" {% if not semester or missing or not slots %}disabled{% endif %}>✅ ยืนยันนำ {{ slots|length }} คาบไปใช้</button>
+    <a class="btn secondary" href="{{ url_for('tt_plan', pid=plan.id) }}">ยกเลิก</a>
+  </div>
+</form>
+{% endblock %}

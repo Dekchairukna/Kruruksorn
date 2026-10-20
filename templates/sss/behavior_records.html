@@ -1,0 +1,55 @@
+{% extends 'base.html' %}
+{% block content %}
+{% include 'sss/_style.html' %}
+{% set kind = None %}
+<div class="page-head">
+  <div>
+    <h1>รายการคะแนนความประพฤติที่บันทึก</h1>
+    <p class="muted">ค้นหาแล้วติ๊กเพื่อลบรายการที่บันทึกผิด (ลบได้เฉพาะที่ตัวเองบันทึก แอดมินลบได้ทั้งหมด) · {{ sem.name if sem else '' }}</p>
+  </div>
+</div>
+{% include 'sss/_behavior_tabs.html' %}
+
+<section class="card">
+  <form method="get" class="sss-filter">
+    <label>ห้อง
+      <select name="room_id"><option value="">ทุกห้อง</option>
+        {% for r in rooms %}<option value="{{ r.id }}" {% if room_id==r.id %}selected{% endif %}>{{ r.name }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>ประเภท
+      <select name="kind">
+        <option value="">ทั้งหมด</option>
+        <option value="plus" {% if request.args.get('kind')=='plus' %}selected{% endif %}>เพิ่มคะแนน</option>
+        <option value="minus" {% if request.args.get('kind')=='minus' %}selected{% endif %}>ตัดคะแนน</option>
+      </select>
+    </label>
+    <label>ตั้งแต่<input type="date" name="date_from" value="{{ d_from.isoformat() if d_from else '' }}"></label>
+    <label>ถึง<input type="date" name="date_to" value="{{ d_to.isoformat() if d_to else '' }}"></label>
+    <label>ค้นหา<input name="q" value="{{ q }}" placeholder="ชื่อ/รหัส/รายการ"></label>
+    <label class="checkline" style="flex-direction:row;align-items:center"><input type="checkbox" name="mine" value="1" {% if mine_only %}checked{% endif %}> เฉพาะที่ฉันบันทึก</label>
+    <button class="btn secondary" type="submit">กรอง</button>
+  </form>
+
+  <form method="post" action="{{ url_for('behavior_records_delete') }}" class="js-confirm-form" data-confirm="ลบรายการที่เลือก? คะแนนของนักเรียนจะถูกคำนวณใหม่">
+    <div class="table-wrap"><table>
+      <tr><th><input type="checkbox" onclick="document.querySelectorAll('.pick-rec').forEach(c=>c.checked=this.checked)"></th><th>วันที่</th><th>นักเรียน</th><th>ห้อง</th><th>รายการ</th><th>คะแนน</th><th>หลักฐาน</th><th>ผู้บันทึก</th></tr>
+      {% for r in records %}
+      <tr>
+        <td>{% if can_manage(r) %}<input type="checkbox" class="pick-rec" name="record_ids" value="{{ r.id }}">{% endif %}</td>
+        <td data-label="วันที่">{{ thai_date_short(r.record_date) }}</td>
+        <td data-label="นักเรียน"><a href="{{ url_for('behavior_student', student_id=r.student_id) }}">{{ r.student.full_name if r.student else '-' }}</a></td>
+        <td data-label="ห้อง">{{ r.classroom.name if r.classroom else '-' }}</td>
+        <td data-label="รายการ">{{ r.item_name }}{% if r.note %}<br><small class="sss-muted">{{ r.note }}</small>{% endif %}</td>
+        <td data-label="คะแนน" class="{{ 'pts-plus' if r.points>=0 else 'pts-minus' }}">{{ '%+d'|format(r.points) }}</td>
+        <td data-label="หลักฐาน">{% if r.evidence_path %}<a href="{{ url_for('uploaded_file', filename=r.evidence_path) }}" target="_blank">ดูไฟล์</a>{% else %}-{% endif %}</td>
+        <td data-label="ผู้บันทึก">{{ r.recorded_by.full_name if r.recorded_by else '-' }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="8">ไม่พบรายการ</td></tr>
+      {% endfor %}
+    </table></div>
+    {% if records %}<button class="danger-btn" type="submit" style="margin-top:10px">ลบรายการที่เลือก</button>{% endif %}
+  </form>
+</section>
+{% endblock %}

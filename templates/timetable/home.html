@@ -1,0 +1,49 @@
+{% extends 'base.html' %}
+{% block content %}
+<style>.tt-muted{color:#64748b;font-size:13px}</style>
+<div class="page-head">
+  <div>
+    <h1>จัดตารางสอน</h1>
+    <p class="muted">สร้างแผน ใส่ครู รายวิชา และข้อห้าม แล้วให้ระบบจัดตารางให้อัตโนมัติ ปรับแก้เองได้ทุกช่อง</p>
+  </div>
+  <div class="actions-row"><a class="btn secondary" href="{{ url_for('tt_template') }}">⬇ แม่แบบ Excel</a></div>
+</div>
+
+<section class="card">
+  <h3>แผนตารางสอนของโรงเรียน</h3>
+  <div class="table-wrap"><table>
+    <tr><th>ชื่อแผน</th><th>ครู</th><th>รายวิชา</th><th>คาบที่ต้องจัด</th><th>วางแล้ว</th><th>จัดล่าสุด</th><th></th></tr>
+    {% for p in plans %}{% set s = stats[p.id] %}
+    <tr>
+      <td data-label="ชื่อแผน"><a href="{{ url_for('tt_plan', pid=p.id) }}"><b>{{ p.name }}</b></a></td>
+      <td data-label="ครู">{{ s.teachers }}</td>
+      <td data-label="รายวิชา">{{ s.lessons }}</td>
+      <td data-label="คาบที่ต้องจัด">{{ s.periods }}</td>
+      <td data-label="วางแล้ว" class="{{ 'tt-ok' if s.periods and s.placed >= s.periods else '' }}">{{ s.placed }}</td>
+      <td data-label="จัดล่าสุด">{{ p.last_run_at.strftime('%d/%m/%Y %H:%M') if p.last_run_at else '-' }}</td>
+      <td><a class="btn small" href="{{ url_for('tt_plan', pid=p.id) }}">เปิด</a></td>
+    </tr>
+    {% else %}<tr><td colspan="7">ยังไม่มีแผน — สร้างใหม่หรือนำเข้าจาก Excel ด้านล่าง</td></tr>{% endfor %}
+  </table></div>
+</section>
+
+<div class="grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px">
+<form method="post" action="{{ url_for('tt_import') }}" enctype="multipart/form-data" class="card form-grid">
+  <h3 class="full">นำเข้าจาก Excel (แนะนำ)</h3>
+  <p class="full tt-muted">ใช้แม่แบบที่มีชีต ตั้งค่า / ครู / รายวิชา / ข้อห้าม / ตารางเดิม — ใส่ "ตารางเดิม" ด้วยถ้าต้องการปรับจากตารางที่ใช้อยู่</p>
+  <label class="full">ไฟล์ Excel<input type="file" name="file" accept=".xlsx,.xlsm" required></label>
+  <div class="full"><button class="btn" type="submit">นำเข้าและสร้างแผน</button></div>
+</form>
+
+<form method="post" action="{{ url_for('tt_new') }}" class="card form-grid">
+  <h3 class="full">สร้างแผนเปล่า</h3>
+  <label class="full">ชื่อแผน<input name="name" required placeholder="เช่น ตารางสอน 1/2570"></label>
+  <label>วันต่อสัปดาห์<input type="number" name="days" value="5" min="1" max="7"></label>
+  <label>คาบต่อวัน<input type="number" name="periods" value="8" min="1" max="14"></label>
+  <label>พักกลางวันหลังคาบที่<input type="number" name="lunch_after" value="4" min="0" max="13"></label>
+  <label>คาบสูงสุดต่อวันของครู<input type="number" name="max_per_day" value="6" min="0"></label>
+  <label class="full">เวลาแต่ละคาบ (คั่นด้วย ,)<input name="period_times" value="{{ default_times }}"></label>
+  <div class="full"><button class="btn secondary" type="submit">สร้างแผน</button></div>
+</form>
+</div>
+{% endblock %}

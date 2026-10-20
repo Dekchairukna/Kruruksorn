@@ -58,6 +58,26 @@ public class AccdbTool {
 
     static void doRead(Database db) throws Exception {
         JSONObject out = new JSONObject();
+        JSONObject subject = new JSONObject();
+        try {
+            Table subjects = db.getTable("SUBJECTS");
+            for (Row r : subjects) {
+                subject.put("code", str(r.get("Code")));
+                subject.put("title", str(r.get("Titles")));
+                subject.put("credit", str(r.get("Credits")));
+                if (!subject.optString("code").isEmpty() || !subject.optString("title").isEmpty()) break;
+            }
+        } catch (Exception ignore) {}
+
+        Map<String, Row> transcriptById = new HashMap<>();
+        try {
+            for (Row r : db.getTable("TRANSCRIPTS")) transcriptById.put(str(r.get("ID")), r);
+        } catch (Exception ignore) {}
+        Map<String, Row> transcript2ById = new HashMap<>();
+        try {
+            for (Row r : db.getTable("TRANSCRIPTS2")) transcript2ById.put(str(r.get("ID")), r);
+        } catch (Exception ignore) {}
+
         JSONArray studs = new JSONArray();
         Table st = db.getTable("STUDENTS");
         for (Row r : st) {
@@ -65,11 +85,54 @@ public class AccdbTool {
             o.put("id", str(r.get("ID"))); o.put("prefix", str(r.get("PREFIX")));
             o.put("fn", str(r.get("FIRSTNAME"))); o.put("ln", str(r.get("LASTNAME")));
             o.put("room", str(r.get("ROOM"))); o.put("no", str(r.get("ORDINAL")));
+            Row tr = transcriptById.get(o.getString("id"));
+            if (tr != null) {
+                copyNumber(tr, o, "UM01", "um01"); copyNumber(tr, o, "UM02", "um02");
+                copyNumber(tr, o, "MidtermMark", "mid"); copyNumber(tr, o, "FinalMark", "final");
+                copyText(tr, o, "Grade", "grade");
+                for (int i = 1; i <= 8; i++) copyNumber(tr, o, "QM" + i, "q" + i);
+                copyText(tr, o, "QGrade", "qgrade");
+                for (int i = 1; i <= 5; i++) copyNumber(tr, o, "LM" + i, "l" + i);
+                copyText(tr, o, "LGrade", "lgrade");
+            }
+            Row tr2 = transcript2ById.get(o.getString("id"));
+            JSONObject sub = new JSONObject();
+            if (tr2 != null) {
+                for (int unit = 1; unit <= 20; unit++) {
+                    JSONArray scores = new JSONArray();
+                    boolean found = false;
+                    for (int part = 1; part <= 5; part++) {
+                        Object value = null;
+                        try { value = tr2.get("um" + String.format("%02d", unit) + "_" + part); }
+                        catch (Exception ignore) {}
+                        if (value != null) found = true;
+                        scores.put(number(value));
+                    }
+                    if (found) sub.put(String.valueOf(unit), scores);
+                }
+            }
+            o.put("sub", sub);
             studs.put(o);
         }
+        out.put("subject", subject);
         out.put("students", studs);
         out.put("ok", true);
         System.out.println(out.toString());
+    }
+
+    static void copyNumber(Row row, JSONObject out, String column, String key) {
+        try { out.put(key, number(row.get(column))); } catch (Exception ignore) {}
+    }
+
+    static void copyText(Row row, JSONObject out, String column, String key) {
+        try { out.put(key, str(row.get(column))); } catch (Exception ignore) {}
+    }
+
+    static double number(Object value) {
+        if (value == null) return 0;
+        if (value instanceof Number) return ((Number)value).doubleValue();
+        try { return Double.parseDouble(String.valueOf(value).trim()); }
+        catch (Exception ignore) { return 0; }
     }
 
     static void doWrite(Database db, String scoresPath) throws Exception {
