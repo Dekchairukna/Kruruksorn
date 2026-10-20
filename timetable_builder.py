@@ -325,8 +325,15 @@ def register(app, g):
         if linked:
             return linked
         key = person_key(user.full_name)
-        return next((t for t in TtTeacher.query.filter_by(plan_id=plan.id).all()
-                     if person_key(t.name) == key), None)
+        teachers = TtTeacher.query.filter_by(plan_id=plan.id).all()
+        exact = next((t for t in teachers if person_key(t.name) == key), None)
+        if exact:
+            return exact
+        # รองรับชื่อในบัญชีกับชื่อจากไฟล์ตารางสะกดต่างกันเล็กน้อย เช่น
+        # "พิมคำไหล" / "พิมพ์คำไหล" แต่กำหนดเกณฑ์สูงเพื่อไม่ผูกผิดคน
+        scored = [(difflib.SequenceMatcher(None, key, person_key(t.name)).ratio(), t) for t in teachers]
+        score, candidate = max(scored, default=(0, None), key=lambda x: x[0])
+        return candidate if score >= .90 else None
 
     @app.context_processor
     def _tt_ctx():
