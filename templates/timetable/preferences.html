@@ -1,0 +1,49 @@
+{% extends 'base.html' %}
+{% block content %}
+<style>
+.pref-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px}
+.pref-subject{display:grid;grid-template-columns:minmax(0,1fr) 150px;gap:12px;align-items:center;padding:14px 0;border-bottom:1px solid #e5e7eb}
+.pref-subject:last-child{border-bottom:0}.pref-code{color:#0f766e;font-weight:800}.pref-class{color:#475569;font-size:14px}
+.pref-table{border-collapse:separate;border-spacing:5px;width:100%;min-width:700px}.pref-table th{font-size:13px;color:#475569}
+.pref-table td:first-child{font-weight:700;white-space:nowrap}.pref-cell{display:block;cursor:pointer}.pref-cell input{position:absolute;opacity:0;pointer-events:none}
+.pref-cell span{display:flex;min-height:43px;align-items:center;justify-content:center;border:1px solid #cbd5e1;border-radius:10px;background:#fff;color:#94a3b8;font-size:12px}
+.pref-cell input:checked+span{background:#fee2e2;border-color:#ef4444;color:#991b1b;font-weight:800}.pref-note{background:#eff6ff;border:1px solid #bfdbfe;border-radius:14px;padding:12px 14px;color:#1e3a8a}
+@media(max-width:700px){.pref-subject{grid-template-columns:1fr}.pref-table{min-width:620px}}
+</style>
+<div class="page-head"><div><h1>🗓️ แจ้งความต้องการตารางสอน</h1><p class="muted">เลือกคาบติดกันของแต่ละวิชา และช่วงเวลาที่ไม่สามารถเข้าสอนได้</p></div></div>
+
+{% if not plan %}
+<section class="card"><h3>ยังไม่มีแบบสอบถามสำหรับคุณ</h3><p class="muted">ผู้จัดตารางยังไม่ได้เพิ่มชื่อคุณในแผนตารางสอน หรือชื่อในแผนไม่ตรงกับบัญชี กรุณาแจ้งผู้ดูแลระบบให้เชื่อมบัญชีครูกับแผนก่อน</p></section>
+{% else %}
+{% if plans|length > 1 %}
+<section class="card"><form method="get" class="form-row"><label>เลือกแผนตารางสอน<select name="plan_id" onchange="this.form.submit()">{% for p,t in plans %}<option value="{{ p.id }}" {% if p.id==plan.id %}selected{% endif %}>{{ p.name }}</option>{% endfor %}</select></label></form></section>
+{% endif %}
+
+<div class="pref-note"><b>{{ plan.name }}</b> · ผู้ตอบ {{ current_user.full_name }}<br>ข้อมูลที่บันทึกจะถูกใช้เป็นเงื่อนไขตอนระบบจัดตารางอัตโนมัติ</div>
+<form method="post">
+  <input type="hidden" name="plan_id" value="{{ plan.id }}">
+  <section class="card">
+    <h2>1. วิชาที่รับผิดชอบ</h2>
+    <p class="muted">กำหนดว่าต้องการให้วิชานั้นเรียนครั้งละกี่คาบติดกัน เช่น เลือก 2 สำหรับวิชาปฏิบัติที่ต้องใช้เวลาต่อเนื่อง</p>
+    {% for lesson in lessons %}
+    <div class="pref-subject">
+      <div><div class="pref-code">{{ lesson.code or 'ไม่ระบุรหัส' }} · {{ lesson.name }}</div><div class="pref-class">{{ lesson.class_label }} · รวม {{ lesson.periods }} คาบ/สัปดาห์</div></div>
+      <label>ต้องการคาบติดกัน<select name="block_{{ lesson.id }}">{% for n in range(1, ([lesson.periods or 1,4]|min)+1) %}<option value="{{ n }}" {% if lesson.block==n %}selected{% endif %}>{{ n }} คาบ</option>{% endfor %}</select></label>
+    </div>
+    {% else %}<div class="alert warning">ยังไม่พบวิชาที่มอบหมายให้คุณในแผนนี้ กรุณาติดต่อผู้จัดตาราง</div>{% endfor %}
+  </section>
+
+  <section class="card">
+    <h2>2. วันและคาบที่ติดประชุม/ภารกิจ</h2>
+    <p class="muted">กดเลือกทุกช่องที่ห้ามลงคาบสอน เช่น ประชุมหัวหน้าแผนก ระบบจะไม่นำวิชาไปวางในช่วงดังกล่าว</p>
+    <div class="table-wrap"><table class="pref-table">
+      <tr><th>วัน/คาบ</th>{% for p in range(1,plan.periods+1) %}<th>คาบ {{ p }}{% if times[p-1] %}<br><small>{{ times[p-1] }}</small>{% endif %}</th>{% endfor %}</tr>
+      {% for d in range(1,plan.days+1) %}<tr><td>{{ tt_day_names[d-1] }}</td>{% for p in range(1,plan.periods+1) %}<td><label class="pref-cell"><input type="checkbox" name="cell" value="{{ d }}-{{ p }}" {% if (d,p) in current_blocks %}checked{% endif %}><span>ว่าง</span></label></td>{% endfor %}</tr>{% endfor %}
+    </table></div>
+    <label style="display:block;margin-top:12px">เหตุผล/ชื่อการประชุม<input name="reason" value="{{ (current_blocks.values()|list|first).reason if current_blocks else '' }}" placeholder="เช่น ประชุมหัวหน้าแผนกทุกวันพุธ คาบ 7-8"></label>
+  </section>
+  <div class="actions-row"><button class="btn" type="submit" {% if not lessons %}disabled{% endif %}>บันทึกแบบสอบถาม</button><a class="btn secondary" href="{{ url_for('schedule') }}">กลับตารางสอน</a></div>
+</form>
+<script>document.querySelectorAll('.pref-cell input').forEach(function(x){function label(){x.nextElementSibling.textContent=x.checked?'ห้ามลงสอน':'ว่าง'}x.addEventListener('change',label);label()})</script>
+{% endif %}
+{% endblock %}

@@ -50,6 +50,7 @@
         <a href="{{ url_for('assign') }}">📌 สั่งงาน</a>
         <a href="{{ url_for('assignments') }}">📝 งานที่สั่งแล้ว</a>
         <a href="{{ url_for('schedule') }}">📅 ตารางสอน</a>
+        {% if timetable_enabled and current_user.role=='teacher' %}<a href="{{ url_for('tt_preferences') }}">🗓️ แจ้งความต้องการตารางสอน</a>{% endif %}
         <a href="{{ url_for('substitute_schedule') }}">👨‍🏫 สอนแทน</a>
         {% if subplan_enabled %}<a href="{{ url_for('subplan_day') if subplan_can_manage else url_for('subplan_mine') }}">📋 {{ 'จัดสอนแทน' if subplan_can_manage else 'สอนแทนของฉัน' }}</a>{% endif %}
       </div>

@@ -315,6 +315,19 @@ def register(app, g):
         score, user = max(scored, default=(0, None), key=lambda x: x[0])
         return (user, score) if score >= .80 else (None, score)
 
+    def teacher_for_user(plan, user):
+        """Find the timetable teacher belonging to a login account.
+
+        Older imported plans may not have user_id populated, so retain the
+        conservative name matching already used by the timetable module.
+        """
+        linked = TtTeacher.query.filter_by(plan_id=plan.id, user_id=user.id).first()
+        if linked:
+            return linked
+        key = person_key(user.full_name)
+        return next((t for t in TtTeacher.query.filter_by(plan_id=plan.id).all()
+                     if person_key(t.name) == key), None)
+
     @app.context_processor
     def _tt_ctx():
         return {'tt_day_names': DAY_NAMES, 'timetable_enabled': True}
@@ -336,6 +349,59 @@ def register(app, g):
                 'placed': TtSlot.query.filter_by(plan_id=p.id).count(),
             }
         return render_template('timetable/home.html', plans=plans, stats=stats, default_times=DEFAULT_TIMES)
+
+    @app.route('/timetable/preferences', methods=['GET', 'POST'])
+    @login_required
+    @role_required('teacher')
+    def tt_preferences():
+        """Teacher questionnaire used as constraints for automatic scheduling."""
+        plans = TtPlan.query.filter_by(school_id=sid()).order_by(TtPlan.created_at.desc()).all()
+        available = []
+        for item in plans:
+            tt_teacher = teacher_for_user(item, current_user)
+            if tt_teacher:
+                available.append((item, tt_teacher))
+
+        requested_pid = request.values.get('plan_id', type=int)
+        selected = next(((p, t) for p, t in available if not requested_pid or p.id == requested_pid), None)
+        if not selected:
+            return render_template('timetable/preferences.html', plans=available, plan=None, tt_teacher=None,
+                                   lessons=[], current_blocks={}, times=[])
+
+        plan, tt_teacher = selected
+        lessons = TtLesson.query.filter_by(plan_id=plan.id, teacher_id=tt_teacher.id).order_by(
+            TtLesson.code, TtLesson.class_label).all()
+
+        if request.method == 'POST':
+            allowed_lesson_ids = {lesson.id for lesson in lessons}
+            for lesson in lessons:
+                requested = request.form.get(f'block_{lesson.id}', type=int)
+                if lesson.id in allowed_lesson_ids and requested is not None:
+                    lesson.block = max(1, min(4, int(lesson.periods or 1), requested))
+
+            # ครูแก้เฉพาะข้อห้ามเด็ดขาดของตัวเอง ข้อเสนอแบบ "หลีกเลี่ยง"
+            # ที่ผู้จัดตารางตั้งไว้ยังคงอยู่และไม่ถูกแบบสอบถามนี้ลบ
+            TtBlock.query.filter_by(plan_id=plan.id, scope='teacher', teacher_id=tt_teacher.id,
+                                    hard=True).delete(synchronize_session=False)
+            reason = (request.form.get('reason') or 'ประชุม/ติดภารกิจ').strip()[:200]
+            for cell in request.form.getlist('cell'):
+                try:
+                    day, period = [int(x) for x in cell.split('-', 1)]
+                except (TypeError, ValueError):
+                    continue
+                if 1 <= day <= plan.days and 1 <= period <= plan.periods:
+                    db.session.add(TtBlock(plan_id=plan.id, scope='teacher', teacher_id=tt_teacher.id,
+                                           day=day, period=period, hard=True, weight=30, reason=reason))
+            if not tt_teacher.user_id:
+                tt_teacher.user_id = current_user.id
+            db.session.commit()
+            flash('บันทึกความต้องการจัดตารางสอนแล้ว ระบบจะไม่นำคาบสอนไปลงในช่วงที่เลือก', 'success')
+            return redirect(url_for('tt_preferences', plan_id=plan.id))
+
+        current_blocks = {(b.day, b.period): b for b in TtBlock.query.filter_by(
+            plan_id=plan.id, scope='teacher', teacher_id=tt_teacher.id, hard=True).all()}
+        return render_template('timetable/preferences.html', plans=available, plan=plan, tt_teacher=tt_teacher,
+                               lessons=lessons, current_blocks=current_blocks, times=times_of(plan))
 
     @app.route('/timetable/new', methods=['POST'])
     @login_required
